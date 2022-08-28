@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/custom-shaders/">
+		<meta property="og:type" content="article">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/custom-shaders/tutorial-image.jpg">
+		<meta property="og:title" content="Custom Shaders">
+		<meta property="og:description" content="A Unity Scriptable Render Pipeline tutorial about creating custom shaders, supporting batching and GPU instancing.">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta name="viewport" content="width=768">
+		<title>Custom Shaders</title>
+		<link href="../../tutorials.css" rel="stylesheet">
+
+				<link rel="manifest" href="https://catlikecoding.com/site.webmanifest">
+		<link rel="mask-icon" href="https://catlikecoding.com/safari-pinned-tab.svg" color="#aa0000">
+
+		<script type="application/ld+json">{
+			"@context": "http://schema.org",
+			"@type": "WebPage",
+			"mainEntity": {
+				"@type": "TechArticle",
+				"@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/custom-shaders/#article",
+				"headline": "Custom Shaders",
+				"alternativeHeadline": "HLSL and Core Library",
+				"datePublished": "2018-10-31",
+				"dateModified": "2019-01-09",
+				"author": { "@type": "Person", "name": "Jasper Flick", "@id": "https://catlikecoding.com/jasper-flick/#person" },
+				"publisher": { "@type": "Organization", "name": "Catlike Coding", "@id": "https://catlikecoding.com/#organization" },
+				"description": "A Unity Scriptable Render Pipeline tutorial about creating custom shaders, supporting batching and GPU instancing.",
+				"image": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/custom-shaders/tutorial-image.jpg",
+				"dependencies": "Unity 2019.1.2f1",
+				"proficiencyLevel": "Expert"
+			},
+			"breadcrumb": {
+				"@type": "BreadcrumbList",
+				"itemListElement": [
+					{ "@type": "ListItem", "position": 1, "item": { "@id": "https://catlikecoding.com/unity/", "name": "Unity" }},
+					{ "@type": "ListItem", "position": 2, "item": { "@id": "https://catlikecoding.com/unity/tutorials/", "name": "Tutorials" }},
+					{ "@type": "ListItem", "position": 3, "item": { "@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/", "name": "Scriptable Render Pipeline" }}
+				]
+			}
+		}</script>
+		<script>
+			var customTypes = {
+				InstancedColor: 1,
+				MyPipeline: 1,
+				MyPipelineAsset: 1
+			};
+			
+			var defaultCodeClass = 'shader';
+		</script>
+	</head>
+	<body>
+		<header>
+			<a href="https://catlikecoding.com"><img src="https://catlikecoding.com/catlike-coding-logo.svg" alt="Catlike Coding" width="45" height="45"></a>
+			<nav>
+				<ol>
+					<li><a href="https://catlikecoding.com">Catlike Coding</a></li>
+					<li><a href="https://catlikecoding.com/unity/">Unity</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/">Tutorials</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">Scriptable Render Pipeline</a></li>
+				</ol>
+			</nav>
+		</header>
+		
+		<main>
+			<article>
+				<header>
+					<h1>Custom Shaders</h1>
+					<p>HLSL and Core Library</p>
+					<ul>
+						<li>Write an HLSL shader.</li>
+						<li>Define constant buffers.</li>
+						<li>Use the Render Pipeline Core Library.</li>
+						<li>Support dynamic batching and GPU instancing.</li>
+					</ul>
+				</header>
+				
+				<p>This is the second installment of a tutorial series covering Unity's <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">scriptable render pipeline</a>. It's about creating a shader using HLSL and efficiently rendering multiple objects by batching them in a single draw call.
+				
+				<p>This tutorial is made with Unity 2019.1.2f1.</p>
+				
+				<figure>
+					<img src="tutorial-image.jpg" width="512" height="256">
+					<figcaption>256 spheres, a single draw call.</figcaption>
+				</figure>
+				
+				<section>
+					<h2>Custom Unlit Shader</h2>
+					
+					<p>Although we've used the default unlit shader to test our pipeline, taking full advantage of a nontrivial custom pipeline requires the creation of custom shaders to work with it. So we're going to create a shader of our own, replacing Unity's default unlit shader.</p>
+					
+					<section>
+						<h3>Creating a Shader</h3>
+						
+						<p>A shader asset can be created via one of the options in the <em translate="no">Assets / Create / Shader</em> menu. The <em translate="no">Unlit Shader</em> is most appropriate, but we're going to start fresh, by deleting all the default code from the created shader file. Name the asset <em translate="no">Unlit</em>.</p>
+						
+						<figure>
+							<img src="custom-unlit-shader/unlit-shader.png" width="160" height="82">
+							<figcaption>Unlit shader asset.</figcaption>
+						</figure>
+						
+						<p>The fundamentals of shader files are explained in <a href="https://catlikecoding.com/unity/tutorials/rendering/part-2/">Rendering 2, Shader Fundamentals</a>. Give it a read if you're unfamiliar with writing shaders so you know the basics. The minimum to get a working shader is to define a <code>Shader</code> block with a <code>Properties</code> block plus a <code>SubShader</code> block with a <code>Pass</code> block inside it. Unity will turn that into a default white unlit shader. After the <code>Shader</code> keyword comes a string that will be used in the shader dropdown menu for materials. We'll use <em translate="no">My Pipeline/Unlit</em> for it.</p>
+						
+						<pre translate="no"><ins>Shader "My Pipeline/Unlit" {</ins>
+	
+	<ins>Properties {}</ins>
+	
+	<ins>SubShader {</ins>
+		
+		<ins>Pass {}</ins>
+	<ins>}</ins>
+<ins>}</ins></pre>
+						
+						<p>Adjust the <em translate="no">Unlit Opaque</em> material so it uses our new shader, which will turn it white, if it weren't already.</p>
+						
+						<figure>
+							<img src="custom-unlit-shader/unlit-opaque-material.png" width="320" height="100">
+							<figcaption>Unlit opaque material with custom shader.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>HLSL</h3>
+						
+						<p>To write our own shader, we have to put a program inside its <code>Pass</code> block. Unity supports either GLSL or HLSL programs. While GLSL is used in the default shader and also in <a href="https://catlikecoding.com/unity/tutorials/rendering/part-2/">Rendering 2, Shader Fundamentals</a>, Unity's new rendering pipeline shaders use HLSL, so we'll use that for our pipeline too. That means that we have to put all our code in between an <code>HLSLPROGRAM</code> and an <code>ENDHLSL</code> statement.</p>
+						
+						<pre translate="no">		Pass {
+			<ins>HLSLPROGRAM</ins>
+			
+			<ins>ENDHLSL</ins>
+		}</pre>
+						
+						<aside>
+							<h3>What's the difference between GLSL and HLSL programs?</h3>
+							<div>
+								<p>In practice, Unity uses virtually the same syntax for both and takes care of converting to the appropriate shader code per build target. The biggest difference is that GLSL programs include some code by default. HLSL programs don't do anything implicitly, requiring us to include anything that we need explicitly. That's fine, because the old GLSL include files are weighed down by old and obsolete code. We'll rely on newer HLSL include files instead.</p>
+							</div>
+						</aside>
+						
+						<p>At minimum, a Unity shader requires a vertex program and a fragment program function, each defined with a pragma compiler directive. We'll use <code>UnlitPassVertex</code> for the vertex function and <code>UnlitPassFragment</code> for the other. But we won't put the code for these functions in the shader file directly. Instead, we'll put the HLSL code in a separate include file, which we'll also name <em translate="no">Unlit</em>, but with the <em translate="no">hlsl</em> extension. Put it in the same folder as <em translate="no">Unlit.shader</em> and then include it the HLSL program, after the pragma directives.</p>
+						
+						<pre translate="no">			HLSLPROGRAM
+			
+			<ins>#pragma vertex UnlitPassVertex</ins>
+			<ins>#pragma fragment UnlitPassFragment</ins>
+			
+			<ins>#include "Unlit.hlsl"</ins>
+			
+			ENDHLSL</pre>
+						
+						<p>Unfortunately, Unity doesn't have a convenient menu item for the creation of an HLSL include file asset. You'll have to create it yourself, for example by duplicating the <em translate="no">Unlit.shader</em> file, changing its file extension to <em translate="no">hlsl</em> and removing the shader code from it.</p>
+						
+						<figure>
+							<img src="custom-unlit-shader/unlit-hlsl.png" width="160" height="98">
+							<figcaption>Unlit HLSL include file asset.</figcaption>
+						</figure>
+						
+						<p>Inside the include file, begin with an include guard to prevent duplicating code in case the files gets included more that once. While that should never happen, it's good practice to always do this for every include file.</p>
+						
+						<pre translate="no"><ins>#ifndef MYRP_UNLIT_INCLUDED</ins>
+<ins>#define MYRP_UNLIT_INCLUDED</ins>
+
+<ins>#endif // MYRP_UNLIT_INCLUDED</ins></pre>
+						
+						<p>At minimum, we have to know the vertex position in the vertex program, which has to output a homogeneous clip-space position. So we'll define an input and an output structure for the vertex program, both with a single <code>float4</code> position.</p>
+						
+						
+						<pre translate="no">#ifndef MYRP_UNLIT_INCLUDED
+#define MYRP_UNLIT_INCLUDED
+
+<ins>struct VertexInput {</ins>
+	<ins>float4 pos : POSITION;</ins>
+<ins>};</ins>
+
+<ins>struct VertexOutput {</ins>
+	<ins>float4 clipPos : SV_POSITION;</ins>
+<ins>};</ins>
+
+#endif // MYRP_UNLIT_INCLUDED</pre>
+						
+						<p>Next, we'll define the vertex program function, <code>UnlitPassVertex</code>. For now, we'll directly use the object-space vertex position as the clip-space position. That is incorrect, but is the quickest way to get a compiling shader. We'll add the correct space conversion later.</p>
+						
+						<pre translate="no">struct VertexOutput {
+	float4 clipPos : SV_POSITION;
+};
+
+<ins>VertexOutput UnlitPassVertex (VertexInput input) {</ins>
+	<ins>VertexOutput output;</ins>
+	<ins>output.clipPos = input.pos;</ins>
+	<ins>return output;</ins>
+<ins>}</ins>
+
+#endif // MYRP_UNLIT_INCLUDED</pre>
+						
+						<p>We keep the default white color for now, so our fragment program function can simply return 1 as a <code>float4</code>. It receives the interpolated vertex output as its input, so add that as a parameter, even though we don't use it yet.</p>
+						
+						<pre translate="no">VertexOutput UnlitPassVertex (VertexInput input) {
+	VertexOutput output;
+	output.clipPos = input.pos;
+	return output;
+}
+
+<ins>float4 UnlitPassFragment (VertexOutput input) : SV_TARGET {</ins>
+	<ins>return 1;</ins>
+<ins>}</ins>
+
+#endif // MYRP_UNLIT_INCLUDED</pre>
+						
+						<aside>
+							<h3>Should we use <code>half</code> or <code>float</code>?</h3>
+							<div>
+								<p>Most mobile GPUs support both precision types, <code>half</code> being more efficient. So if you're optimizing for mobiles it makes sense to use <code>half</code> as much as possible. The rule is to use <code>float</code> for positions and texture coordinate only and <code>half</code> for everything else, provided that the results are acceptable.</p>
+								
+								<p>When not targeting mobile platforms, precision isn't an issue because the GPU always uses <code>float</code>, even if we write <code>half</code>. I'll consistently use <code>float</code> in this tutorial series.</p>
+								
+								<p>There's also the <code>fixed</code> type, but it's only really supported by old hardware that you wouldn't target for modern apps. It's usually equivalent to <code>half</code>.</p>
+							</div>
+						</aside>
+					</section>
+					
+					<section>
+						<h3>Transformation Matrices</h3>
+						
+						<p>At this point we have a compiling shader, although it doesn't produce sensible results yet. The next step is to convert the vertex position to the correct space. If we had a model-view-projection matrix then we could convert directly from object space to clip space, but Unity doesn't create such a matrix for us. It does make the model matrix available, which we can use to convert from object space to world space. Unity expects our shader to have a <code>float4x4 unity_ObjectToWorld</code> variable to store the matrix. As we're working with HLSL, we have to define that variable ourselves. Then use it to convert to world space in the vertex function and use that for its output.</p>
+						
+						<pre translate="no"><ins>float4x4 unity_ObjectToWorld;</ins>
+
+struct VertexInput {
+	float4 pos : POSITION;
+};
+
+struct VertexOutput {
+	float4 clipPos : SV_POSITION;
+};
+
+VertexOutput UnlitPassVertex (VertexInput input) {
+	VertexOutput output;
+	<ins>float4 worldPos = mul(unity_ObjectToWorld, input.pos);</ins>
+	output.clipPos = <ins>worldPos</ins>;
+	return output;
+}</pre>
+						
+						<p>Next, we need to convert from world space to clip space. That's done with a view-projection matrix, which Unity makes available via a <code>float4x4 unity_MatrixVP</code> variable. Add it and then complete the conversion.
+						
+						<pre translate="no"><ins>float4x4 unity_MatrixVP;</ins>
+float4x4 unity_ObjectToWorld;
+
+&hellip;
+
+VertexOutput UnlitPassVertex (VertexInput input) {
+	VertexOutput output;
+	float4 worldPos = mul(unity_ObjectToWorld, input.pos);
+	output.clipPos = <ins>mul(unity_MatrixVP,</ins> worldPos<ins>)</ins>;
+	return output;
+}</pre>
+						
+						<aside>
+							<h3>I changed the code, but it's still not working?</h3>
+							<div>
+								<p>When editing include files, Unity doesn't always respond to a change and fails to refresh the shaders. When that happens, try again by saving the file once more, if necessary with a small change that you can later undo.</p>
+							</div>
+						</aside>
+						
+						<p>Our shader now works correctly. All objects that use the unlit material are once again visible, fully white. But our conversion isn't as efficient as it could be, because it's performing a full matrix multiplication with a 4D position vector. The fourth component of the position is always 1. By making that explicit we make it possible for the compiler to optimize the computation.</p>
+						
+						<pre translate="no">	float4 worldPos = mul(unity_ObjectToWorld, <ins>float4(</ins>input.pos<ins>.xyz, 1.0)</ins>);</pre>
+						
+						<aside>
+							<h3>Is the optimization meaningful?</h3>
+							<div>
+								<p>It's an optimization that Unity does itself and was pretty keen on upgrading all shaders of everyone to use it. It's the difference between a mad and an add instruction. Whether that is a noticeable difference depends on the platform. In any case, it can only be faster, never slower. Here's the generated D3D11 code for the space conversion without the optimization:</p>
+								
+								<pre translate="no">   0: mul r0.xyzw, v0.yyyy, cb1[1].xyzw
+   1: mad r0.xyzw, cb1[0].xyzw, v0.xxxx, r0.xyzw
+   2: mad r0.xyzw, cb1[2].xyzw, v0.zzzz, r0.xyzw
+   3: mad r0.xyzw, cb1[3].xyzw, v0.wwww, r0.xyzw
+   4: mul r1.xyzw, r0.yyyy, cb0[1].xyzw
+   5: mad r1.xyzw, cb0[0].xyzw, r0.xxxx, r1.xyzw
+   6: mad r1.xyzw, cb0[2].xyzw, r0.zzzz, r1.xyzw
+   7: mad o0.xyzw, cb0[3].xyzw, r0.wwww, r1.xyzw</pre>
+								
+								<p>And here is the conversion with the optimization:</p>
+								
+								<pre translate="no">   0: mul r0.xyzw, v0.yyyy, cb1[1].xyzw
+   1: mad r0.xyzw, cb1[0].xyzw, v0.xxxx, r0.xyzw
+   2: mad r0.xyzw, cb1[2].xyzw, v0.zzzz, r0.xyzw
+   3: add r0.xyzw, r0.xyzw, cb1[3].xyzw
+   4: mul r1.xyzw, r0.yyyy, cb0[1].xyzw
+   5: mad r1.xyzw, cb0[0].xyzw, r0.xxxx, r1.xyzw
+   6: mad r1.xyzw, cb0[2].xyzw, r0.zzzz, r1.xyzw
+   7: mad o0.xyzw, cb0[3].xyzw, r0.wwww, r1.xyzw</pre>
+   							</div>
+						</aside>
+					</section>
+					
+					<section>
+						<h3>Constant Buffers</h3>
+						
+						<p>Unity doesn't provide us with a model-view-projection matrix, because that way a matrix multiplication of the M and VP matrices can be avoided. Besides that, the VP matrix can be reused for everything that gets drawn with the same camera during a frame. Unity's shaders takes advantage of that fact and put the matrices in different constant buffers. Although we define them as variables, their data remains constant during the drawing of a single shape, and often longer than that. The VP matrix gets put in a per-frame buffer, while the M matrix gets put in a per-draw buffer.</p>
+						
+						<p>While it is not strictly required to put shader variables in constant buffers, doing so makes it possible for all data in the same buffer to be changed more efficiently. At least, that's the case when it is supported by the graphics API. OpenGL doesn't.</p>
+						
+						<p>To be as efficient as possible, we'll also make use of constant buffers. Unity puts the VP matrix in a <code>UnityPerFrame</code> buffer and the M matrix in a <code>UnityPerDraw</code> buffer. There's more data that gets put in these buffers, but we don't need it yet so there is no need to include it. A constant buffer is defined like a struct, except with the <code>cbuffer</code> keyword and the variables remain accessible as before.</p>
+						
+						<pre translate="no"><ins>cbuffer UnityPerFrame {</ins>
+	float4x4 unity_MatrixVP;
+<ins>};</ins>
+
+<ins>cbuffer UnityPerDraw {</ins>
+	float4x4 unity_ObjectToWorld;
+<ins>}</ins></pre>
+					</section>
+					
+					<section>
+						<h3>Core Library</h3>
+						
+						<p>Because constant buffers don't benefit all platforms, Unity's shaders rely on macros to only use them when needed. The <code>CBUFFER_START</code> macro with a name parameter is used instead of directly writing <code>cbuffer</code> and an accompanying <code>CBUFFER_END</code> macro replaces the end of the buffer. Let's use that approach as well.</p>
+						
+						<pre translate="no"><ins>CBUFFER_START(UnityPerFrame)</ins>
+	float4x4 unity_MatrixVP;
+<ins>CBUFFER_END</ins>
+
+<ins>CBUFFER_START(UnityPerDraw)</ins>
+	float4x4 unity_ObjectToWorld;
+<ins>CBUFFER_END</ins></pre>
+						
+						<p>That results in a compiler error, because those two macros are not defined. Rather than figure out when it is appropriate to use constant buffers and define the macros ourselves, we'll make use of Unity's core library for render pipelines. It can be added to our project via the package manager window. Switch to the <em translate="no">All Packages</em> list and enable <em translate="no">Show preview packages</em> under <em translate="no">Advanced</em>, then select <em translate="no">Render-pipelines.core</em>, and install it. I'm using version 4.6.0-preview, the highest version that works in Unity 2018.3.</p>
+						
+						<figure>
+							<img src="custom-unlit-shader/core-package.png" width="160" height="164">
+							<figcaption>Render Pipeline Core Library installed.</figcaption>
+						</figure>
+						
+						<p>Now we can include the common library functionality, which we can access via <em translate="no">Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl</em>. It defines multiple useful functions and macros, along with the constant buffer macros, so include it before using them.</p>
+						
+						<pre translate="no"><ins>#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"</ins>
+
+CBUFFER_START(UnityPerFrame)
+float4x4 unity_MatrixVP;
+CBUFFER_END</pre>
+						
+						<aside>
+							<h3>How do those macros work, exactly?</h3>
+							<div>
+								<p>You can see that by opening the <em translate="no">Common.hlsl</em> file in the core library package. It ends up including an API-specific include file from its <em translate="no">API</em> subfolder, which defines the macros.</p>
+							</div>
+						</aside>
+					</section>
+					
+					<section>
+						<h3>Compilation Target Level</h3>
+						
+						<p>Our shader works again, at least for most platforms. After including the library, our shader fails to compile for OpenGL ES 2. That happens because by default Unity uses a shader compiler for OpenGL ES 2 that doesn't work with the core library. We can fix that by adding <code>#pragma prefer_hlslcc gles</code> to our shader, which is what Unity does for its shaders in the Lightweight render pipeline. However, instead of doing that we simply won't support OpenGL ES 2 at all, as it's only relevant when targeting old mobile devices. We do that by using the <code>#pragma target</code> directive to target shader level 3.5 instead of the default level, which is 2.5.</p>
+						
+						<pre translate="no">			<ins>#pragma target 3.5</ins>
+			
+			#pragma vertex UnlitPassVertex
+			#pragma fragment UnlitPassFragment</pre>
+					</section>
+					
+					<section>
+						<h3>Folder Structure</h3>
+						
+						<p>Note that all the HLSL include files of the core library are located <em translate="no">ShaderLibrary</em> folder. Let's do that too, so put <em translate="no">Unlit.hlsl</em> in a new <em translate="no">ShaderLibrary</em> folder inside <em translate="no">My Pipeline</em>. Put the shader in a separate <em translate="no">Shader</em> folder too.</p>
+						
+						<figure>
+							<img src="custom-unlit-shader/folder-structure.png" width="150" height="130">
+							<figcaption>My Pipeline folder structure.</figcaption>
+						</figure>
+						
+						<p>To keep our shader intact while still relying on relative include paths, we'll have to change our include statement from <em translate="no">Unlit.hlsl</em> to <em translate="no">../ShaderLibrary/Unlit.hlsl</em>.</p>
+						
+						<pre translate="no">			#include "<ins>../ShaderLibrary/</ins>Unlit.hlsl"</pre>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Dynamic Batching</h2>
+					
+					<p>Now that we have a minimal custom shader we can use it to further investigate how our pipeline renders things. A big question is how efficient it can render. We'll test that by filling the scene with a bunch of spheres that use our unlit material. You could use thousands, but a few dozen also gets the message across. They can have different transformations, but keep their scales uniform, meaning that each scale's X, Y, and Z components are always equal.</p>
+					
+					<figure>
+						<img src="dynamic-batching/spheres.png" width="300" height="210">
+						<figcaption>A bunch of white spheres.</figcaption>
+					</figure>
+					
+					<p>When investigating how the scene is drawn via the frame debugger, you'll notice that every sphere requires its own separate draw call. That isn't very efficient, as each draw call introduces overhead as the CPU and GPU need to communicate. Ideally, multiple spheres get drawn together with a single call. While that's possible, it currently doesn't happen. The frame debugger gives us a hint about it when you select one of the draw calls.</p>
+					
+					<figure>
+						<img src="dynamic-batching/no-batching.png" width="336" height="70">
+						<figcaption>No dynamic batching.</figcaption>
+					</figure>
+					
+					<section>
+						<h3>Enabling Batching</h3>
+						
+						<p>The frame debugger tells us that dynamic batching isn't used, because it's either turned off or because depth sorting interferes with it. If you check the player settings, then you'll see that indeed the <em translate="no">Dynamic Batching</em> option is disabled. However, enabling it has no effect. That's because the player setting applies to Unity's default pipeline, not our custom one.</p>
+						
+						<p>To enable dynamic batching for our pipeline, we have to indicate that it is allowed when drawing in <code class="csharp">MyPipeline.Render</code>. The draw settings contain a <code>flags</code> field that we have to set to <code class="csharp">DrawRendererFlags.EnableDynamicBatching</code>.</p>
+						
+						<pre class="shader" translate="no">		var drawSettings = new DrawRendererSettings(
+			camera, new ShaderPassName("SRPDefaultUnlit")
+		);
+		<ins>drawSettings.flags = DrawRendererFlags.EnableDynamicBatching;</ins>
+		drawSettings.sorting.flags = SortFlags.CommonOpaque;</pre>
+						
+						<p>After that change we still don't get dynamic batching, but the reason has changed. Dynamic batching means that Unity merges objects together in a single mesh before they are drawn. That requires CPU time each frame and to keep that in check it's limited to small meshes only.</p>
+						
+						<figure>
+							<img src="dynamic-batching/too-many-vertices.png" width="336" height="54">
+							<figcaption>Too many vertices to batch.</figcaption>
+						</figure>
+						
+						<p>The sphere mesh is too big, but cubes are small and will work. So adjust all objects to use the cube mesh instead. You can select them all and adjust their mesh filter in one go.</p>
+						
+						<figure>
+							<img src="dynamic-batching/cubes.png" width="320" height="230" alt="scene"><br>
+							<img src="dynamic-batching/batched.png" width="300" height="100" alt="frame debugger">
+							<figcaption>Cubes drawn in a single dynamic batch.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Colors</h3>
+						
+						<p>Dynamic batching works for small meshes that are all drawn with the same material. But when multiple materials are involved things get more complicated. To illustrate this, we'll make it possible to change the color of our unlit shader. Add a color property to its <code>Properties</code> block named <code>_Color</code>, with <em translate="no">Color</em> as its label, using white as the default.</p>
+						
+						<pre translate="no">	Properties {
+		<ins>_Color ("Color", Color) = (1, 1, 1, 1)</ins>
+	}</pre>
+						
+						<figure>
+							<img src="dynamic-batching/material-with-color.png" width="320" height="120">
+							<figcaption>Material with adjusted color.</figcaption>
+						</figure>
+						
+						<p>Now we can adjust the color of our material, but it doesn't affect what gets drawn yet. Add a <code>float4 _Color</code> variable to our include file and return that instead of the fixed value in <code>UnlitPassFragment</code>. The color is defined per material, so can be put in a constant buffer that only needs to change when materials are switched. We'll name the buffer <code>UnityPerMaterial</code>, just like Unity does.</p>
+						
+						<pre translate="no">CBUFFER_START(UnityPerDraw)
+	float4x4 unity_ObjectToWorld;
+CBUFFER_END
+
+<ins>CBUFFER_START(UnityPerMaterial)</ins>
+	<ins>float4 _Color;</ins>
+<ins>CBUFFER_END</ins>
+
+struct VertexInput {
+	float4 pos : POSITION;
+};
+
+&hellip;
+
+float4 UnlitPassFragment (VertexOutput input) : SV_TARGET {
+	return <ins>_Color</ins>;
+}</pre>
+						
+						<p>Duplicate our material and set both to use different colors, so we can distinguish them. Select a few objects and have them use the new material, so you end up with a mix.</p>
+						
+						<figure>
+							<img src="dynamic-batching/two-materials.png" width="320" height="230" alt="scene"><br>
+							<img src="dynamic-batching/four-batches.png" width="300" height="130" alt="frame debugger">
+							<figcaption>Two materials, four batches.</figcaption>
+						</figure>
+						
+						<p>Dynamic batching still happens, but we end up with multiple batches. There will be at least one batch per material, because each requires different per-material data. But there'll often be more batches because Unity prefers to group objects spatially to reduce overdraw.</p>
+						
+						<figure>
+							<img src="dynamic-batching/different-materials.png" width="336" height="42">
+							<figcaption>No batching because of different materials.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Optional Batching</h3>
+						
+						<p>Dynamic batching can be a benefit, but it can also end up not making much of a difference, or even slow things down. If your scene doesn't contain lots of small meshes that share the same material, it might make sense to disable dynamic batching so Unity doesn't have to figure out whether to use it or not each frame. So we'll add an option to enable dynamic batching to our pipeline. We cannot rely on the player settings. Instead, we add a toggle configuration option to <code class="csharp">MyPipelineAsset</code>, so we can configure it via our pipeline asset in the editor.</p>
+						
+						<pre class="shader" translate="no">	<ins>[SerializeField]</ins>
+	<ins>bool dynamicBatching;</ins></pre>
+						
+						<figure>
+							<img src="dynamic-batching/dynamic-batching-enabled.png" width="336" height="42">
+							<figcaption>Dynamic batching enabled.</figcaption>
+						</figure>
+						
+						<p>When the <code class="csharp">MyPipeline</code> instance is created, we have to tell it whether to use dynamic batching or not. We'll provide this information as an argument when invoking its constructor.</p>
+						
+						<pre class="shader" translate="no">	protected override IRenderPipeline InternalCreatePipeline () {
+		return new MyPipeline(<ins>dynamicBatching</ins>);
+	}</pre>
+						
+						<p>To make that work, we can no longer rely on the default constructor of <code class="csharp">MyPipeline</code>. Give it a public constructor method, with a boolean parameter to control dynamic batching. We'll setup the drawn flags once in the constructor and keep track of them in a field.</p>
+						
+						<pre class="shader" translate="no">	<ins>DrawRendererFlags drawFlags;</ins>
+
+	<ins>public MyPipeline (bool dynamicBatching) {</ins>
+		<ins>if (dynamicBatching) {</ins>
+			<ins>drawFlags = DrawRendererFlags.EnableDynamicBatching;</ins>
+		<ins>}</ins>
+	<ins>}</ins></pre>
+						
+						<p>Copy the flags to the draw settings in <code class="csharp">Render</code>.</p>
+					
+						<pre translate="no">		drawSettings.flags = <ins>drawFlags</ins>;</pre>
+					
+						<p>Note that when we toggle the <em translate="no">Dynamic Batching</em> option of our asset in the editor, the batching behavior of Unity immediately changes. Each time we adjust the asset a new pipeline instance gets created.</p>
+					</section>
+				</section>
+				
+				<section>
+					<h2>GPU Instancing</h2>
+					
+					<p>Dynamic batching is not the only way in which we can reduce the number of draw calls per frame. Another approach is to use GPU instancing. In the case of instancing, the CPU tells the GPU to draw a specific mesh-material combination more than once via a single draw call. That makes it possible to group objects that use the same mesh and material without having to construct a new mesh. That also removes the limit on the mesh size.</p>
+					
+					<section>
+						<h3>Optional Instancing</h3>
+						
+						<p>GPU instancing is enabled by default, but we overrode that with our custom draw flags. Let's make GPU instancing optional too, which makes it easy to compare the results with and without it. Add another toggle to <code class="csharp">MyPipelineAsset</code> and pass it to the constructor invocation.</p>
+						
+						<pre class="shader" translate="no">	<ins>[SerializeField]</ins>
+	<ins>bool instancing;</ins>
+	
+	protected override IRenderPipeline InternalCreatePipeline () {
+		return new MyPipeline(dynamicBatching<ins>, instancing</ins>);
+	}</pre>
+						
+						<p>In the <code class="csharp">MyPipeline</code> constructor method, also set the flags for instancing after doing so for dynamic batching. In this case the flags value is <code class="csharp">DrawRendererFlags.EnableInstancing</code> and we boolean-OR it into the flags, so both dynamic batching and instancing can be enabled at the same time. When they're both enabled Unity prefers instancing over batching.</p>
+						
+						<pre class="shader" translate="no">	public MyPipeline (bool dynamicBatching<ins>, bool instancing</ins>) {
+		if (dynamicBatching) {
+			drawFlags = DrawRendererFlags.EnableDynamicBatching;
+		}
+		<ins>if (instancing) {</ins>
+			<ins>drawFlags |= DrawRendererFlags.EnableInstancing;</ins>
+		<ins>}</ins>
+	}</pre>
+						<figure>
+							<img src="gpu-instancing/instancing-enabled.png" width="320" height="106">
+							<figcaption>Instancing enabled, dynamic batching disabled.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Material Support</h3>
+						
+						<p>That GPU instancing is enabled for our pipeline doesn't mean that objects are automatically instanced. It has to be supported by the material that they're using. Because instancing isn't always needed, it is optional, which requires two shader variants: one that supports instancing and one that doesn't. We can create all required variants by adding the <code>#pragma multi_compile_instancing</code> directive to our shader. In our case, that produces two shader variants, one with and one without the <code>INSTANCING_ON</code> keyword defined.</p>
+						
+						<pre translate="no">			#pragma target 3.5
+			
+			<ins>#pragma multi_compile_instancing</ins>
+			
+			#pragma vertex UnlitPassVertex
+			#pragma fragment UnlitPassFragment</pre>
+						
+						<p>That change also makes a new material configuration option appear for our material: <em translate="no">Enable GPU Instancing</em>.
+						
+						<figure>
+							<img src="gpu-instancing/material-instancing-enabled.png" width="320" height="140">
+							<figcaption>Material with instancing enabled.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Shader Support</h3>
+						
+						<p>When instancing is enabled, the GPU is told to draw the same mesh multiple times with the same constant data. But the M matrix is part of that data. That means that we end up with the same mesh rendered multiple times the exact same way. To get around that problem, an array containing the M matrices of all objects has to be put in a constant buffer. Each instance gets drawn with its own index, which can be used to retrieve the correct M matrix from the array.</p>
+						
+						<p>We must now either use <code>unity_ObjectToWorld</code> when not instancing, or a matrix array when we are instancing. To keep the code in <code>UnlitPassVertex</code> the same for both cases, we'll define a macro for the matrix, specifically <code>UNITY_MATRIX_M</code>. We use that macro name, because the core library has an include file that defines macros to support instancing for us, and it also redefines <code>UNITY_MATRIX_M</code> to use the matrix array when needed.</p>
+						
+						<pre translate="no">CBUFFER_START(UnityPerDraw)
+	float4x4 unity_ObjectToWorld;
+CBUFFER_END
+
+<ins>#define UNITY_MATRIX_M unity_ObjectToWorld</ins>
+
+&hellip;
+
+VertexOutput UnlitPassVertex (VertexInput input) {
+	VertexOutput output;
+	float4 worldPos = mul(<ins>UNITY_MATRIX_M</ins>, float4(input.pos.xyz, 1.0));
+	output.clipPos = mul(unity_MatrixVP, worldPos);
+	return output;
+}</pre>
+						
+						<p>The include file is <em translate="no">UnityInstancing.hlsl</em>, and because it might redefine <code>UNITY_MATRIX_M</code> we have to include it after defining that macro ourselves.</p>
+						
+						<pre translate="no">#define UNITY_MATRIX_M unity_ObjectToWorld
+
+<ins>#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"</ins></pre>
+						
+						<p>When using instancing, the index of the object that's currently being drawn is added it its vertex data by the GPU. The <code>UNITY_MATRIX_M</code> relies on the index, so we have to add it to the <code>VertexInput</code> structure. We can use the <code>UNITY_VERTEX_INPUT_INSTANCE_ID</code> macro for that.</p>
+						
+						<pre translate="no">struct VertexInput {
+	float4 pos : POSITION;
+	<ins>UNITY_VERTEX_INPUT_INSTANCE_ID</ins>
+};</pre>
+						
+						<p>Finally, we have to make the index available before using <code>UNITY_MATRIX_M</code> in <code>UnlitPassVertex</code>, via the <code>UNITY_SETUP_INSTANCE_ID</code> macro, providing the input as an argument.</p>
+						
+						<pre translate="no">VertexOutput UnlitPassVertex (VertexInput input) {
+	VertexOutput output;
+	<ins>UNITY_SETUP_INSTANCE_ID(input);</ins>
+	float4 worldPos = mul(UNITY_MATRIX_M, float4(input.pos.xyz, 1.0));
+	output.clipPos = mul(unity_MatrixVP, worldPos);
+	return output;
+}</pre>
+						
+						<p>Our cubes now get instanced. Just like with dynamic batching, we end up with multiple batches because we're using different materials. Make sure that all materials used have GPU instancing enabled.</p>
+						
+						<figure>
+							<img src="gpu-instancing/instanced.png" width="300" height="130">
+							<figcaption>Four instanced draw calls.</figcaption>
+						</figure>
+						
+						<p>Besides the object-to-world matrices, by default world-to-object matrices are put in the instancing buffer too. Those are the inverse of the M matrices, which are needed for normal vectors when using non-uniform scales. But we're only using uniform scales, so we don't need those additional matrices. We can inform Unity about that, by adding the <code>#pragma instancing_options assumeuniformscaling</code> directive to our shader.</p>
+						
+						<pre translate="no">			#pragma multi_compile_instancing
+			<ins>#pragma instancing_options assumeuniformscaling</ins></pre>
+						
+						<p>If you do need to support non-uniform scaling, then you'll have to use a shader that doesn't have this option enabled.</p>
+					</section>
+					
+					<section>
+						<h3>Many Colors</h3>
+						
+						<p>If we wanted to include more colors in our scene we would need to make more materials, which means we end up with more batches. But if the matrices can be put in arrays, is should be possible to do the same for colors. Then we could combine objects with different colors in a single batch. With a little work, that can indeed be done.</p>
+						
+						<p>The first step of support a unique color per object is to make it possible to set the color for each individually. We cannot do that via the material, because that's an asset that the objects all share. Let's create a component for it, naming it <code>InstancedColor</code>, giving it a single configurable color field. As it's not specific to our pipeline, keep its script file outside the <em translate="no">My Pipeline</em> folder.</p>
+						
+						<pre class="shader" translate="no"><ins>using UnityEngine;</ins>
+
+<ins>public class InstancedColor : MonoBehaviour {</ins>
+
+	<ins>[SerializeField]</ins>
+	<ins>Color color = Color.white;</ins>
+<ins>}</ins></pre>
+						
+						<p>To override the material's color, we have to provide the object's renderer component with a material property block. Do that by creating a new <code class="csharp">MaterialPropertyBlock</code> object instance, give it a <em translate="no">_Color</em> property via its <code>SetColor</code> method, then pass it to the object's <code class="csharp">MeshRenderer</code> component, by invoking its <code>SetPropertyBlock</code> method. We assume that the colors remain constant while in play mode, so do this in the <code>Awake</code> method of our class.</p>
+						
+						<pre class="shader" translate="no">	<ins>void Awake () {</ins>
+		<ins>var propertyBlock = new MaterialPropertyBlock();</ins>
+		<ins>propertyBlock.SetColor("_Color", color);</ins>
+		<ins>GetComponent&lt;MeshRenderer>().SetPropertyBlock(propertyBlock);</ins>
+	<ins>}</ins></pre>
+						
+						<p>Add our component to one of the objects in the scene. You'll see that its color changes, but only after we enter play mode.</p>
+						
+						<figure>
+							<img src="gpu-instancing/instanced-color-component.png" width="320" height="210">
+							<figcaption>Cube with color component.</figcaption>
+						</figure>
+						
+						<p>To immediately see the color changes in the scene while in edit mode, move the code that sets the color to an <code>OnValidate</code> method. The <code>Awake</code> method can then simply invoke <code>OnValidate</code> so we don't need to duplicate code.</p>
+						
+						<pre translate="no">	void Awake () {
+		<ins>OnValidate();</ins>
+	<ins>}</ins>
+
+	<ins>void OnValidate () {</ins>
+		var propertyBlock = new MaterialPropertyBlock();
+		propertyBlock.SetColor("_Color", color);
+		GetComponent&lt;MeshRenderer>().SetPropertyBlock(propertyBlock);
+	}</pre>
+						
+						<aside>
+							<h3>When is <code>OnValidate</code> invoked?</h3>
+							<div>
+								<p><code>OnValidate</code> is a special Unity message method. It gets invoked while in edit mode, when the component is loaded or changed. So each time the scene is loaded and when we edit the component. Thus, the individual colors appear immediately.</p>
+							</div>
+						</aside>
+						
+						<p>Add the component to all shapes, by selecting them all and adding it once, but make sure not to add it a second time to the object that already has one. Also have them all use the same material. Alternative materials can be removed, because we configure the color per object.</p>
+						
+						<figure>
+							<img src="gpu-instancing/many-colors.png" width="320" height="230">
+							<figcaption>Many colors, one material.</figcaption>
+						</figure>
+						
+						<p>Note that we're creating a new <code class="csharp">MaterialPropertyBlock</code> instance each time we set a color override. That isn't necessary, because each mesh renderer internally keeps track of the overridden properties, copying them from the property block. That means that we can reuse it, so keep track of a single static block, creating it only when needed.</p>
+						
+						<pre class="shader" translate="no">	<ins>static MaterialPropertyBlock propertyBlock;</ins>
+
+	&hellip;
+
+	void OnValidate () {
+		<ins>if (propertyBlock == null) {</ins>
+			<ins>propertyBlock = new MaterialPropertyBlock();</ins>
+		<ins>}</ins>
+		propertyBlock.SetColor("_Color", color);
+		GetComponent&lt;MeshRenderer>().SetPropertyBlock(propertyBlock);
+	}</pre>
+						
+						<p>Also, we can slightly speed up the matching of the color property by prefetching its property ID via the <code>Shader.PropertyToID</code> method. Each shader property name gets a global identifier integer. These identifiers are subject to change, but always remain constant during a single session, meaning between plays and compilation. So we fetch it once, which can be done as the default value for a static field.</p>
+						
+						<pre class="shader" translate="no">	<ins>static int colorID = Shader.PropertyToID("_Color");</ins>
+
+	&hellip;
+	
+	void OnValidate () {
+		if (propertyBlock == null) {
+			propertyBlock = new MaterialPropertyBlock();
+		}
+		propertyBlock.SetColor(<ins>colorID</ins>, color);
+		GetComponent&lt;MeshRenderer>().SetPropertyBlock(propertyBlock);
+	}</pre>
+					</section>
+					
+					<section>
+						<h3>Per-Instance Colors</h3>
+						
+						<p>Overriding the color per object caused GPU instancing to break. Although we're using a single material, what matters is the data used for rendering. As we've overridden the color per object, we have forced them to be drawn separately.</p>
+						
+						<figure>
+							<img src="gpu-instancing/not-instanced.png" width="336" height="42">
+							<figcaption>Not instanced because of color differences.</figcaption>
+						</figure>
+						
+						<p>The idea was to put the color data in an array, which will make instancing work again. Our <code>_Color</code> property has to be given the same treatment as the M matrix. In this case we have to be explicit, as the core library doesn't redefine a macro for arbitrary properties. Instead, we manually create a constant buffer for the purpose of instancing, via the <code>UNITY_INSTANCING_BUFFER_START</code> and accompanying ending macro, naming it <code>PerInstance</code> to keep our naming scheme consistent. Inside the buffer, we define the color as <code>UNITY_DEFINE_INSTANCED_PROP(float4, _Color)</code>. When instancing isn't used that ends up equal to <code>float4 _Color</code>, but otherwise we end up with an array of instance data.</p>
+						
+						<pre translate="no"><del>//CBUFFER_START(UnityPerMaterial)</del>
+	<del>//float4 _Color;</del>
+<del>//CBUFFER_END</del>
+
+<ins>UNITY_INSTANCING_BUFFER_START(PerInstance)</ins>
+	<ins>UNITY_DEFINE_INSTANCED_PROP(float4, _Color)</ins>
+<ins>UNITY_INSTANCING_BUFFER_END(PerInstance)</ins></pre>
+						
+						<p>To deal with the two possible ways in which the color can now be defined, we have to access it via the <code>UNITY_ACCESS_INSTANCED_PROP</code> macro, passing it our buffer and the name of the property.</p>
+						
+						<pre translate="no">float4 UnlitPassFragment (VertexOutput input) : SV_TARGET {
+	return <ins>UNITY_ACCESS_INSTANCED_PROP(PerInstance,</ins> _Color<ins>)</ins>;
+}</pre>
+						
+						<p>Now the instance index must also be made available in <code>UnlitPassFragment</code>. So add <code>UNITY_VERTEX_INPUT_INSTANCE_ID</code> to <code>VertexOutput</code>, then use <code>UNITY_SETUP_INSTANCE_ID</code> in <code>UnlitPassFragment</code> like we did in <code>UnlitPassVertex</code>. To make that work, we have to copy the index from the vertex input to the vertex output, for which we can use the <code>UNITY_TRANSFER_INSTANCE_ID</code> macro.</p>
+						
+						<pre translate="no">struct VertexInput {
+	float4 pos : POSITION;
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+struct VertexOutput {
+	float4 clipPos : SV_POSITION;
+	<ins>UNITY_VERTEX_INPUT_INSTANCE_ID</ins>
+};
+
+VertexOutput UnlitPassVertex (VertexInput input) {
+	VertexOutput output;
+	UNITY_SETUP_INSTANCE_ID(input);
+	<ins>UNITY_TRANSFER_INSTANCE_ID(input, output);</ins>
+	float4 worldPos = mul(UNITY_MATRIX_M, float4(input.pos.xyz, 1.0));
+	output.clipPos = mul(unity_MatrixVP, worldPos);
+	return output;
+}
+
+float4 UnlitPassFragment (VertexOutput input) : SV_TARGET {
+	<ins>UNITY_SETUP_INSTANCE_ID(input);</ins>
+	return UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color);
+}</pre>
+						
+						<figure>
+							<img src="gpu-instancing/instanced-colors.png" width="300" height="82">
+							<figcaption>Many colors, one draw.</figcaption>
+						</figure>
+						
+						<p>All object now end up combined in a single draw call, even if they all use a different color. However, there is a limit to how much data can be put in the constant buffers. The maximum instance batch size depends on how much data we vary per instance. Besides that, the buffer maximum varies per platform. And we're still limited to using the same mesh and material. For example, mixing cubes and spheres will split up the batches.</p>
+						
+						<figure>
+							<img src="gpu-instancing/cubes-spheres.png" width="310" height="210" alt="scene"><br>
+							<img src="gpu-instancing/cubes-spheres-separate-draws.png" width="310" height="130" alt="profiler">
+							<figcaption>Both cubes and spheres.</figcaption>
+						</figure>
+						
+						<p>At this point we have a minimal shader that can be used to drawn many objects as efficiently as possible. In the future, we'll build on this foundation to create more advanced shaders.</p>
+						
+						<p>The next tutorial is <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/lights/">Lights</a>.</p>
+					</section>
+					
+					<a href="https://bitbucket.org/catlikecodingunitytutorials/scriptable-render-pipeline-02-custom-shaders/" class="repository">repository</a>
+					<a href="Custom-Shaders.pdf" download rel="nofollow">PDF</a>
+				</section>
+				
+			</article>
+		</main>
+
+		<footer>
+			<p>Enjoying the <a href="https://catlikecoding.com/unity/tutorials/">tutorials</a>? Are they useful? Want more?</p>
+			<p><b><a href="https://www.patreon.com/catlikecoding">Please support me on Patreon!</a></b></p>
+			<p><a href="https://www.patreon.com/catlikecoding"><img src="https://catlikecoding.com/unity/tutorials/become-a-patron.png" alt="Become my patron!" width="217" height="51"></a></p>
+			<p><b><a href="https://catlikecoding.com/unity/tutorials/donating.html">Or make a direct donation</a>!</b></p>
+			<p>made by <a href="https://catlikecoding.com/jasper-flick/" rel="author">Jasper Flick</a></p>
+		</footer>
+		
+		<script src="../../tutorials.js"></script>
+	</body>
+</html>

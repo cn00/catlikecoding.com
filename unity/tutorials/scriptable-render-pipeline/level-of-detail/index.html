@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/level-of-detail/">
+		<meta property="og:type" content="article">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/level-of-detail/tutorial-image.jpg">
+		<meta property="og:title" content="Level of Detail">
+		<meta property="og:description" content="A Unity Scriptable Render Pipeline tutorial about supporting crossfading LOD groups and shader variant stripping.">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta name="viewport" content="width=768">
+		<title>Level of Detail</title>
+		<link href="../../tutorials.css" rel="stylesheet">
+		<link rel="manifest" href="https://catlikecoding.com/site.webmanifest">
+		<link rel="mask-icon" href="https://catlikecoding.com/safari-pinned-tab.svg" color="#aa0000">
+
+		<script type="application/ld+json">{
+			"@context": "http://schema.org",
+			"@type": "WebPage",
+			"mainEntity": {
+				"@type": "TechArticle",
+				"@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/level-of-detail/#article",
+				"headline": "Level of Detail",
+				"alternativeHeadline": "Cross-Fading Geometry",
+				"datePublished": "2019-07-27",
+				"author": { "@type": "Person", "name": "Jasper Flick", "@id": "https://catlikecoding.com/jasper-flick/#person" },
+				"publisher": { "@type": "Organization", "name": "Catlike Coding", "@id": "https://catlikecoding.com/#organization" },
+				"description": "A Unity Scriptable Render Pipeline tutorial about supporting crossfading LOD groups and shader variant stripping.",
+				"image": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/level-of-detail/tutorial-image.jpg",
+				"dependencies": "Unity 2018.4.4f1",
+				"proficiencyLevel": "Expert"
+			},
+			"breadcrumb": {
+				"@type": "BreadcrumbList",
+				"itemListElement": [
+					{ "@type": "ListItem", "position": 1, "item": { "@id": "https://catlikecoding.com/unity/", "name": "Unity" }},
+					{ "@type": "ListItem", "position": 2, "item": { "@id": "https://catlikecoding.com/unity/tutorials/", "name": "Tutorials" }},
+					{ "@type": "ListItem", "position": 3, "item": { "@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/", "name": "Scriptable Render Pipeline" }}
+				]
+			}
+		}</script>
+		<script>
+			var customTypes = {
+				ClipMode: 1,
+				DoubleSidedMeshMenuItem: 1,
+				InstancedMaterialProperties: 1,
+				LitShaderGUI: 1,
+				LitSurface: 1,
+				MyPipeline: 1,
+				MyPipelineAsset: 1,
+				MyPipelineAssetEditor: 1,
+				MyPipelineShaderPreprocessor: 1,
+				ShadowCascades: 1,
+				ShadowMapSize: 1
+			};
+			
+			var defaultCodeClass = "shader";
+		</script>
+	</head>
+	<body>
+		<header>
+			<a href="https://catlikecoding.com"><img src="https://catlikecoding.com/catlike-coding-logo.svg" alt="Catlike Coding" width="45" height="45"></a>
+			<nav>
+				<ol>
+					<li><a href="https://catlikecoding.com">Catlike Coding</a></li>
+					<li><a href="https://catlikecoding.com/unity/">Unity</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/">Tutorials</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">Scriptable Render Pipeline</a></li>
+				</ol>
+			</nav>
+		</header>
+		
+		<main>
+			<article>
+				<header>
+					<h1>Level of Detail</h1>
+					<p>Cross-Fading Geometry</p>
+					<ul>
+						<li>Design regular and additive LOD groups.</li>
+						<li>Cross-fade LOD levels.</li>
+						<li>Apply screen-space dithering.</li>
+						<li>Use an animated dither pattern.</li>
+						<li>Strip unused shader variants.</li>
+					</ul>
+				</header>
+				
+				<p>This is the tenth installment of a tutorial series covering Unity's <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">scriptable render pipeline</a>. It adds support for cross-fading LOD groups and shader variant stripping.</p>
+				
+				<p>This tutorial is made with Unity 2018.4.4f1.</p>
+				
+				<figure>
+					<img src="tutorial-image.jpg" width="512" height="256">
+					<figcaption>Dithered removal of details.</figcaption>
+				</figure>
+				
+				<section>
+					<h2>Culling Details</h2>
+					
+					<p>Ideally, we render as little as possible. The fewer gets rendered, the less strain there is on the GPU, which means that we can get a higher frame rate and require less energy to render the scene. If something becomes so visually small that it is no longer visible&mdash;smaller than a single pixel&mdash;then we can skip rendering it. It is also possible to skip things when they would still be visible, but small enough that their absense would go mostly unnoticed. Thus, we can control the level of detail of our scene.</p>
+					
+					<section>
+						<h3>LOD Groups</h3>
+						
+						<p>The typical approach to create a level-of-detail object is to use a root object with a child object for each detail level. The most detailed or complete visualization level is known as LOD 0. As an example, let's create a prefab that has a single sphere child. As always, we use our own material, and also use an <code class="csharp">InstancedMaterialProperties</code> component to give it an obvious color, like red.</p>
+						
+						<figure>
+							<img src="culling-details/lod-sphere.png" width="226" height="58" alt="hierarchy"><br>
+							<img src="culling-details/spheres.jpg" width="400" height="230" alt="scene">
+							<figcaption>Scene with LOD sphere instances of various sizes.</figcaption>
+						</figure>
+						
+						<p>The visual level of detail of an object can be controlled by adding a <em translate="no">LOD Group</em> component to a game object's root. It has three LOD levels by default. The displayed percentages correspond to the estimated visual size of the object, expressed as how much of the viewport it covers, vertically. As long as that stays above 60% then LOD 0 is used, otherwise it switches to a lower LOD level, until the object gets culled completely below 10%. Drag the sphere child onto the LOD 0 box, so its rendered gets used for the LOD 0 visualization.</p>
+						
+						<figure>
+							<img src="culling-details/lod-group.png" width="320" height="208" alt="inspector">
+							<figcaption>LOD sphere prefab, with LOD 0 box selected.</figcaption>
+						</figure>
+						
+						<p>You can adjust the thresholds by dragging them and can also add or remove levels via a popup menu by right-clicking them. As we only have a single LOD level, remove the other two. This means that we always show the sphere, until its visual size drops below 10%. At least, that's the case when there is no LOD bias. There is a global LOD bias that can be used to adjust all LOD thresholds. It can be set via code and via the <em translate="no">Quality</em> panel of the project settings. For example setting <em translate="no">Lod Bias</em> to 1.5 means that the visual size of objects are overestimated by the same factor, so that our spheres only get culled when they drop below 6.7%. The inspector of the LOD group will indicate that a bias is in effect.</p>
+						
+						<figure>
+							<img src="culling-details/culled-at-10.png" width="320" height="176" alt="inspector"><br>
+							<img src="culling-details/culled-spheres.jpg" width="400" height="230" alt="scene">
+							<figcaption>Culled at 10% with LOD bias 1.5.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Multiple LOD Levels</h3>
+						
+						<p>Typically an object has multiple LOD levels, each using a progressively simpler mesh. To clearly see different LOD levels being used, duplicate the sphere child twice to create LOD levels 1 and 2, and give each a different color. Then add them to the LOD group, for example at the 15% and 10% thresholds, shifting complete culling to 5%.</p>
+						
+						<figure>
+							<img src="culling-details/three-lod-spheres.png" width="226" height="92" alt="hierarchy"><br>
+							<img src="culling-details/three-lod-levels.png" width="320" height="66" alt="inspector"><br>
+							<img src="culling-details/multicolored-spheres.jpg" width="400" height="230" alt="scene">
+							<figcaption>Three LOD sphere levels.</figcaption>
+						</figure>
+						
+						<p>You can now see the LOD selection in action, either by moving the camera or adjusting the LOD bias.</p>
+						
+						<figure>
+							<div class="vid" style="width: 400px; height:230px;"><iframe src='https://gfycat.com/ifr/babyishlonelyadmiralbutterfly'></iframe></div>
+							<figcaption>Adjusting LOD bias.</figcaption>
+						</figure>
+						
+						<aside>
+							<h3>Do LOD groups work with lightmapping?</h3>
+							<div>
+								<p>Yes. When you mark a LOD group as static it still switches between LOD levels, so static batching doesn't apply to it. But it does get included for lightmapping purposes. LOD 0 is used for lightmapping as expected, and besides that all other LOD levels get baked lighting as well. At least, that is the case when the progressive lightmapper is used. Enlighten has more trouble with the other LOD levels, requiring light probes. This also means that only static LOD 0 works with dynamic global illumination. If dynamic GI is important then you should make sure that other LOD levels aren't static, so they receive GI via light probes.</p>
+							</div>
+						</aside>
+					</section>
+					
+					<section>
+						<h3>Additive LOD</h3>
+						
+						<p>Another way to create a LOD group it to add details to a base visualization. As an example, I created an abstract tree from cubes and spheres. The core of the tree is added to all three LOD levels. Smaller branches, leaves, and bark are added to the first two levels. And the smallest leaves and bark details are added only to LOD 0.</p>
+						
+						<figure>
+							<img src="culling-details/tree-lod-0.jpg" width="180" height="250" alt="LOD 0">
+							<img src="culling-details/tree-lod-1.jpg" width="180" height="250" alt="LOD 1">
+							<img src="culling-details/tree-lod-2.jpg" width="180" height="250" alt="LOD 2">
+							<figcaption>Tree LOD 0, 1, and 2.</figcaption>
+						</figure>
+						
+						<p>This works the same as using separate child hierarchies per LOD level, except that some objects are part of for multiple levels.</p>
+						
+						<figure>
+							<img src="culling-details/forest.jpg" width="400" height="250">
+							<figcaption>A LOD tree forest.</figcaption>
+						</figure>
+					</section>
+				</section>
+				
+				<section>
+					<h2>LOD Blending</h2>
+					
+					<p>When an object switches from one LOD level to another there is a sudden swap or removal of renderers, which can be visually obvious and jarring. The transition can be made more gradual by blending between adjacent LOD levels.</p>
+					
+					<section>
+						<h3>Cross-Fading</h3>
+						
+						<p>LOD blending is controller per LOD group and individual LOD level. First, set the group's <em translate="no">Fade Mode</em> to <em translate="no">Cross Fade</em>. That will make an <em translate="no">Animate Cross-fading</em> toggle option appear, which allows you to choose between fading based on percentage or time. When enabled, a timed transition will happen when a LOD change should occur, which will last only a short while even if the object's visual size no longer changes. The transition duration can be globally set via <code class="csharp">LODGroup.crossFadeAnimationDuration</code> and is half a second by default. When disabled the cross-fade is based on the visual percentage and the exact range can be configured per LOD level, via their <em translate="no">Fade Transition Width</em> slider. When set to 1 the cross-fade will cover the entire range of the LOD level. That will make the transition most gradual but also means that transitions are used all the time. It's better to avoid that, because during a transition both LOD levels need to be rendered.</p>
+						
+						<figure>
+							<img src="lod-blending/cross-fading.png" width="320" height="182">
+							<figcaption>Cross-fading across entire LOD range.</figcaption>
+						</figure>
+						
+						<aside>
+							<h3>What about the <em translate="no">Speed Tree</em> fade mode option?</h3>
+							<div>
+								<p>That mode is specifically for SpeedTree trees, which uses its own LOD system to collapse trees and transition between 3D models and billboard representations.</p>
+							</div>
+						</aside>
+						
+						<p>When cross-fading is being used Unity will select a shader variant with the <em translate="no">LOD_FADE_CROSSFADE</em> keyword, so add a multi-compile directive for it to the normal pass of our shader.</p>
+						
+						<pre translate="no">			<ins>#pragma multi_compile _ LOD_FADE_CROSSFADE</ins></pre>
+						
+						<p>To check whether fading is indeed used, make all fading fragments solid black in <em translate="no">Lit.hlsl</em>.</p>
+						
+						<pre translate="no">float4 LitPassFragment (
+	VertexOutput input, FRONT_FACE_TYPE isFrontFace : FRONT_FACE_SEMANTIC
+) : SV_TARGET {
+	UNITY_SETUP_INSTANCE_ID(input);
+	
+	<ins>#if defined(LOD_FADE_CROSSFADE)</ins>
+		<ins>return 0;</ins>
+	<ins>#endif</ins>
+	
+	&hellip;
+}</pre>
+						
+						<figure>
+							<img src="lod-blending/black-spheres.png" width="400" height="230">
+							<figcaption>Black spheres.</figcaption>
+						</figure>
+						
+						<p>When all fade ranges are set to 1, this will make every sphere solid black, except those that end up visually larger than the viewport. In contrast, the trees that use additive LOD levels are only partially black with the same settings. Objects that are part of both LOD levels aren't included in the cross-fade and are rendered as normal.</p>
+						
+						<figure>
+							<img src="lod-blending/black-trees.jpg" width="400" height="250">
+							<figcaption>Partially black trees.</figcaption>
+						</figure>
+						
+						<p>How much an object should be faded is made available via the first component of the <code>unity_LODFade</code> vector, which is part of the <code>UnityPerDraw</code> buffer.</p>
+						
+						<pre translate="no">CBUFFER_START(UnityPerDraw)
+	float4x4 unity_ObjectToWorld, unity_WorldToObject;
+	<ins>float4 unity_LODFade;</ins>
+	&hellip;
+CBUFFER_END</pre>
+						
+						<p>Returning that instead of solid black allows us to see the blend factor being used, although we can only see one of the two being used per fragment, due to overdraw. Transitions from the lowest LOD level to being clipped involve only a single object, so there is no overdraw in that case.</p>
+						
+						<pre translate="no">	#if defined(LOD_FADE_CROSSFADE)
+		return <ins>unity_LODFade.x</ins>;
+	#endif</pre>
+						
+						<figure>
+							<img src="lod-blending/blend-factors.png" width="400" height="230">
+							<figcaption>Blend factors.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Screen-Space Position</h3>
+						
+						<p>In case of transparent geometry we could use the blend factor to fade out, but that isn't possible for opaque geometry. What we can do instead is clip a portion of the fragments based on the blend factor, just like cutout rendering. That works for both opaque and transparent geometry. But the fade factor is the same for all fragments rendered for an object, so only using that as a threshold for clipping would still produce a sudden transition. So we have to add variety to the clip threshold per fragment.</p>
+						
+						<p>The simplest way to add variety per fragment is to base it on the fragment's screen-space position. Begin by directly using its XY components as the result of <code>LitPassFragment</code>.</p>
+						
+						<pre translate="no">float4 LitPassFragment (
+	VertexOutput input, FRONT_FACE_TYPE isFrontFace : FRONT_FACE_SEMANTIC
+) : SV_TARGET {
+	UNITY_SETUP_INSTANCE_ID(input);
+	
+	<ins>#if defined(LOD_FADE_CROSSFADE)</ins>
+		<ins>return float4(input.clipPos.xy, 0, 0);</ins>
+	<ins>#endif</ins>
+	
+	&hellip;
+</pre>
+						
+						<p>The XY coordinates are provided as fragment indices, so that will make everything white. To get a sensible result, take some modulo of the screen-space position and divide that by the same value. Let's use 64.</p>
+						
+						<pre translate="no">	#if defined(LOD_FADE_CROSSFADE)
+		return float4(<ins>(</ins>input.clipPos.xy<ins> % 64) / 64</ins>, 0, 0);
+	#endif</pre>
+						
+						<figure>
+							<img src="lod-blending/screen-space-uv.jpg" width="400" height="230">
+							<figcaption>Screen-space UV coordinates.</figcaption>
+						</figure>
+						
+						<p>The result is a grid filled with red-green gradient squares that repeat every 64 pixels. As it is relative to the screen, the pattern is always the same, even if the spheres visually change. We can use these coordinates to perform screen-space texture sampling.</p>
+						
+					</section>
+					
+					<section>
+						<h3>Clipping</h3>
+						
+						<p>Let's create a separate method to clip based on LOD cross-fading. In it, clip just like for alpha-clipping, except based on the fade factor minus a bias instead of alpha minus the cutoff. Initially, use a 16-pixel vertical gradient for the bias.</p>
+						
+						<pre translate="no"><ins>void LODCrossFadeClip (float4 clipPos) {</ins>
+	<ins>float lodClipBias = (clipPos.y % 16) / 16;</ins>
+	<ins>clip(unity_LODFade.x - lodClipBias);</ins>
+<ins>}</ins>
+
+float4 LitPassFragment (
+	VertexOutput input, FRONT_FACE_TYPE isFrontFace : FRONT_FACE_SEMANTIC
+) : SV_TARGET {
+	UNITY_SETUP_INSTANCE_ID(input);
+	
+	#if defined(LOD_FADE_CROSSFADE)
+		<del>//return float4((input.clipPos.xy % 64) / 64, 0, 0);</del>
+		<ins>LODCrossFadeClip(input.clipPos);</ins>
+	#endif
+	
+	&hellip;
+}</pre>
+						
+						<figure>
+							<img src="lod-blending/clipping.jpg" width="400" height="230">
+							<figcaption>Clipping based on a tiled gradient.</figcaption>
+						</figure>
+						
+						<p>We end up cutting horizontal bars out of our spheres. In some cases we can see part of both LOD levels, but even then parts are missing. That happens because when one LOD level clips, the other shouldn't, but right now they're independent. We have to make the bias symmetrical, which we can do by flipping it when the fade factor drops below 0.5.</p>
+						
+						<pre translate="no">	float lodClipBias = (clipPos.y % 16) / 16;
+	<ins>if (unity_LODFade.x &lt; 0.5) {</ins>
+		<ins>lodClipBias = 1.0 - lodClipBias;</ins>
+	<ins>}</ins>
+	clip(unity_LODFade.x - lodClipBias);</pre>
+						
+						<figure>
+							<img src="lod-blending/symmetrical-bias.jpg" width="400" height="230">
+							<figcaption>Symmetrical bias.</figcaption>
+						</figure>
+						
+						<p>A downside of flipping the bias is that there is now an obvious visual change at the halfway point. This can also cause pattern interference when separate but visually overlapping objects flip at different times. In case of objects transitioning to getting culled, their visual intersection could become fully opaque.</p>
+						
+						<figure>
+							<img src="lod-blending/flipped.jpg" width="150" height="120">
+							<figcaption>Inconsistent pattern due to flipping.</figcaption>
+						</figure>
+						
+						<p>We cannot avoid this until Unity provides additional data to the shader that allows us to identify which of the LOD levels is being rendered. Then we could always flip one side instead of doing it halfway for both sides. One way to do this is by always making one of the two fade factors negative, which might be done in a future version of Unity 2019.</p>
+					</section>
+					
+					<section>
+						<h3>Dithering</h3>
+						
+						<p>Using an obvious pattern for the bias is not a good idea. Instead, let's use a mostly uniform noise texture to perform dithering, which you can find <a href="lod-blending/dither-pattern.png">here</a>.
+						
+						<figure>
+							<img src="lod-blending/dither-pattern.png" width="128" height="128">
+							<figcaption>64&times;64 blue noise.</figcaption>
+						</figure>
+						
+						<aside>
+							<h3>Where did you get that texture?</h3>
+							<div>
+								<p>It's a blue noise pattern made by Christoph Peters. See his <a href="http://momentsingraphics.de/?p=127">Free blue noise textures</a> blog post for more details.</p>
+							</div>
+						</aside>
+						
+						<p>All four channels of the texture contain the same data. Import it as an uncompressed single-channel texture, set to alpha. Also set its <em translate="no">Filter Mode</em> to <em translate="no">Point</em>, because we use the exact pixel values and don't need any interpolation. Thus it also doesn't need mip maps.</p>
+						
+						<figure>
+							<img src="lod-blending/dither-inspector.png" width="320" height="372">
+							<figcaption>Texture import settings.</figcaption>
+						</figure>
+						
+						<p>Add a texture field to <code class="csharp">MyPipelineAsset</code> so we can assing the dither pattern to our asset.</p>
+						
+						<pre class="csharp" translate="no">	<ins>[SerializeField]</ins>
+	<ins>Texture2D ditherTexture = null;</ins></pre>
+						
+						<figure>
+							<img src="lod-blending/pipeline-with-dither-texture.png" width="320" height="72">
+							<figcaption>Pipeline with dither texture.</figcaption>
+						</figure>
+						
+						<p>Then pass it to the constructor invocation of <code class="csharp">MyPipeline</code>.</p>
+						
+						<pre class="csharp" translate="no">		return new MyPipeline(
+			dynamicBatching, instancing,
+			<ins>ditherTexture,</ins>
+			(int)shadowMapSize, shadowDistance, shadowFadeRange,
+			(int)shadowCascades, shadowCascadeSplit
+		);</pre>
+						
+						<p>In <code class="csharp">MyPipeline</code>, keep track of the texture.</p>
+						
+						<pre class="csharp" translate="no">	<ins>Texture2D ditherTexture;</ins>
+
+	public MyPipeline (
+		bool dynamicBatching, bool instancing,
+		<ins>Texture2D ditherTexture,</ins>
+		int shadowMapSize, float shadowDistance, float shadowFadeRange,
+		int shadowCascades, Vector3 shadowCascasdeSplit
+	) {
+		&hellip;
+
+		<ins>this.ditherTexture = ditherTexture;</ins>
+
+		this.shadowMapSize = shadowMapSize;
+		&hellip;
+	}</pre>
+						
+						<p>Configure the dither pattern before rendering the cameras. This means setting the texture, and we'll also set its scale-transform data globally. We assume it is a 64&times;64 texture, so the UV scale becomes one divided by 64. We can use the camera buffer to do this.</p>
+						
+						<pre class="csharp" translate="no">	<ins>static int ditherTextureId = Shader.PropertyToID("_DitherTexture");</ins>
+	<ins>static int ditherTextureSTId = Shader.PropertyToID("_DitherTexture_ST");</ins>
+
+	&hellip;
+
+	public override void Render (
+		ScriptableRenderContext renderContext, Camera[] cameras
+	) {
+		base.Render(renderContext, cameras);
+
+		<ins>ConfigureDitherPattern(renderContext);</ins>
+
+		foreach (var camera in cameras) {
+			Render(renderContext, camera);
+		}
+	}
+	
+	<ins>void ConfigureDitherPattern (ScriptableRenderContext context) {</ins>
+		<ins>cameraBuffer.SetGlobalTexture(ditherTextureId, ditherTexture);</ins>
+		<ins>cameraBuffer.SetGlobalVector(</ins>
+			<ins>ditherTextureSTId, new Vector4(1f / 64f, 1f / 64f, 0f, 0f)</ins>
+		<ins>);</ins>
+		<ins>context.ExecuteCommandBuffer(cameraBuffer);</ins>
+		<ins>cameraBuffer.Clear();</ins>
+	<ins>}</ins></pre>
+						
+						<p>On the shader side, we'll simply add the scale-transform to the <code>UnityPerFrame</code> buffer. Also define the texture and sample it with the transformed screen position to determine the clip bias used for cross-fading.</p>
+						
+						<pre translate="no">CBUFFER_START(UnityPerFrame)
+	float4x4 unity_MatrixVP;
+	<ins>float4 _DitherTexture_ST;</ins>
+CBUFFER_END
+
+&hellip;
+
+<ins>TEXTURE2D(_DitherTexture);</ins>
+<ins>SAMPLER(sampler_DitherTexture);</ins>
+
+&hellip;
+
+void LODCrossFadeClip (float4 clipPos) {
+	<ins>float2 ditherUV = TRANSFORM_TEX(clipPos.xy, _DitherTexture);</ins>
+	float lodClipBias =
+		<ins>SAMPLE_TEXTURE2D(_DitherTexture, sampler_DitherTexture, ditherUV).a</ins>;
+	if (unity_LODFade.x &lt; 0.5) {
+		lodClipBias = 1.0 - lodClipBias;
+	}
+	clip(unity_LODFade.x - lodClipBias);
+}</pre>
+						
+						<figure>
+							<img src="lod-blending/dithered-cross-fading-spheres.png" width="400" height="230" alt="spheres">
+							<img src="lod-blending/dithered-cross-fading-forest.png" width="400" height="240" alt="forest">
+							<figcaption>Dithered cross-fading.</figcaption>
+						</figure>
+						
+						<p>Because the dither pattern is sampled at the window's resolution it might be hard to see on high-resolution displays and screenshots. You can scale up the game game view to get a better look at it.</p>
+						
+						<figure>
+							<img src="lod-blending/dithering-x4.png" width="330" height="210">
+							<figcaption>Dithering zoomed &times;4.</figcaption>
+						</figure>
+						
+						<aside>
+							<h3>Why use a texture instead of <code>LODDitheringTransition</code>?</h3>
+							<div>
+								<p>The Core library contains the <code>LODDitheringTransition</code> function, which clips based on a 3D seed value and fade factor. It uses the seed to generate a hash value which is then used for clipping. While a hash-based approach can work, I have found this particular implementation unreliable, which manifests as pixel-sized holes and unstable results in some cases, at least for the Metal API. The HDRP pipeline bases the seed on the view direction, which has precision issues that aggravate this problem, but changing it to use the screen-space position doesn't solve all issues. In contrast, using a screen-space texture always works.</p>
+							</div>
+						</aside>
+					</section>
+					
+					<section>
+						<h3>Cross-Fading Shadows</h3>
+						
+						<p>We can apply the same technique to shadows. The LOD is chosen during culling, so the LOD of objects and their shadows match. First, also add the multi-compile directive for <em translate="no">LOD_FADE_CROSSFADE</em> to the shadow caster pass.</p>
+						
+						<pre translate="no">			#pragma shader_feature _CLIPPING_OFF
+			
+			<ins>#pragma multi_compile _ LOD_FADE_CROSSFADE</ins></pre>
+						
+						<p>Then add the required data to <em translate="no">ShadowCaster.hlsl</em>.</p>
+						
+						<pre translate="no">CBUFFER_START(UnityPerFrame)
+	float4x4 unity_MatrixVP;
+	<ins>float4 _DitherTexture_ST;</ins>
+CBUFFER_END
+
+CBUFFER_START(UnityPerDraw)
+	float4x4 unity_ObjectToWorld;
+	<ins>float4 unity_LODFade;</ins>
+CBUFFER_END
+
+&hellip;
+
+<ins>TEXTURE2D(_DitherTexture);</ins>
+<ins>SAMPLER(sampler_DitherTexture);</ins></pre>
+						
+						<p>Then copy <code>LODCrossFadeClip</code> and invoke it when appropriate in <code>ShadowCasterPassFragment</code>.</p>
+						
+						<pre translate="no"><ins>void LODCrossFadeClip (float4 clipPos) {</ins>
+	<ins>&hellip;</ins>
+<ins>}</ins>
+
+float4 ShadowCasterPassFragment (VertexOutput input) : SV_TARGET {
+	UNITY_SETUP_INSTANCE_ID(input);
+	
+	<ins>#if defined(LOD_FADE_CROSSFADE)</ins>
+		<ins>LODCrossFadeClip(input.clipPos);</ins>
+	<ins>#endif</ins>
+	
+	&hellip;
+}</pre>
+						
+						<figure>
+							<img src="lod-blending/dithered-cross-fading-shadows.png" width="400" height="230">
+							<figcaption>Dithered cross-fading shadows.</figcaption>
+						</figure>
+						
+						<p>In the case of shadows the dithering is aligned with the shadow camera. Thus the dither pattern used for directional shadows moves differently than the one for the regular camera. The pattern for spotlight shadows only changes when the spotlight itself moves or rotates. But due to shadow filtering the pattern can get smudged.</p>
+					</section>
+					
+					<section>
+						<h3>Animated Dither Pattern</h3>
+						
+						<p>The dither pattern can be very obvious in our example scene, because of the high contract and large fade range. In general the contrast of a scene is much lower and smaller fade ranges are used, which makes the dithering less noticeable. But when it is obvious it can be distracting especially when part of the scene is moving, because the pattern remains visually fixed. It is possible to obfuscate this fact by animating the dither pattern, effectively scrambling it in time so it becomes noise that is easier to ignore.</p>
+						
+						<p>The straightforward way to animate the pattern is to use a new one each frame. However, this can produce perceptive flickering when the frame rate isn't stable and can also aggravate visual tearing when vsync isn't used in combination with very high frame rates. We can try to mitigate this by using a fixed animation speed for the dither pattern. Add a slider option for that to <code class="csharp">MyPipelineAsset</code>, with a 0&ndash;120 range and a default of 30 frames per second. This also makes it possible to slow the animation down so we can get a better look at it.</p>
+						
+						<pre class="csharp" translate="no">	<ins>[SerializeField, Range(0f, 120f)]</ins>
+	<ins>float ditherAnimationSpeed = 30f;</ins></pre>
+						
+						<figure>
+							<img src="lod-blending/dither-animation-speed.png" width="320" height="40">
+							<figcaption>Dither animation speed.</figcaption>
+						</figure>
+						
+						<p>Add the speed to the constructor invocation.</p>
+						
+						<pre class="csharp" translate="no">		return new MyPipeline(
+			dynamicBatching, instancing,
+			ditherTexture, <ins>ditherAnimationSpeed,</ins>
+			(int)shadowMapSize, shadowDistance, shadowFadeRange,
+			(int)shadowCascades, shadowCascadeSplit
+		);</pre>
+						
+						<p>Instead of directly keeping track of the speed in <code class="csharp">MyPipeline</code>, we only need to remember the frame duration, which is the inverse of the speed. Set it in the constructor, unless the speed is zero, in which case the duration remains zero as well. That way dither animation can be turned off completely, in case you don't like it or want to get exact results, which is useful for image-comparison purposes.</p>
+						
+						<pre class="csharp" translate="no">	<ins>float ditherAnimationFrameDuration;</ins>
+
+	public MyPipeline (
+		bool dynamicBatching, bool instancing,
+		Texture2D ditherTexture, <ins>float ditherAnimationSpeed,</ins>
+		int shadowMapSize, float shadowDistance, float shadowFadeRange,
+		int shadowCascades, Vector3 shadowCascasdeSplit
+	) {
+		&hellip;
+
+		this.ditherTexture = ditherTexture;
+		<ins>if (ditherAnimationSpeed > 0f) {</ins>
+			<ins>ConfigureDitherAnimation(ditherAnimationSpeed);</ins>
+		<ins>}</ins>
+
+		&hellip;
+	}
+	
+	<ins>void ConfigureDitherAnimation (float ditherAnimationSpeed) {</ins>
+		<ins>ditherAnimationFrameDuration = 1f / ditherAnimationSpeed;</ins>
+	<ins>}</ins></pre>
+						
+						<p>The dither pattern can be animated by adding more textures and looping through them. But we can also make do with a single texture and adjust its scale-transform instead. That doesn't produce a high-quality animation, but can be enough for our purposes. If there is a positive speed, fill an array of sixteen ST vectors, which should produce enough unique frames.</p>
+						
+						<p>We'll create unique frames by flipping the pattern horizontally every other frame and vertically every two frames. Then we offset the pattern by half every four frames horizontally, and vertically every eight frames.</p>
+						
+						<pre class="csharp" translate="no">	<ins>Vector4[] ditherSTs;</ins>
+
+	&hellip;
+
+	void ConfigureDitherAnimation (float ditherAnimationSpeed) {
+		ditherAnimationFrameDuration = 1f / ditherAnimationSpeed;
+		<ins>ditherSTs = new Vector4[16];</ins>
+		<ins>for (int i = 0; i &lt; ditherSTs.Length; i++) {</ins>
+			<ins>ditherSTs[i] = new Vector4(</ins>
+				<ins>(i &amp; 1) == 0 ? (1f / 64f) : (-1f / 64f),</ins>
+				<ins>(i &amp; 2) == 0 ? (1f / 64f) : (-1f / 64f),</ins>
+				<ins>(i &amp; 4) == 0 ? 0f : 0.5f,</ins>
+				<ins>(i &amp; 8) == 0 ? 0f : 0.5f</ins>
+			<ins>);</ins>
+		<ins>}</ins>
+	}</pre>
+						
+						<p>Although that produces sixteen unique configurations, the adjustments are regular and there is a lot of symmetry. We can break that up a bit by using a random offset per frame instead. To always use the same frames we first initialize the random state. Let's just use zero for the seed. Afterwards, we restore the old random state so our pipeline doesn't mess with the rest of the game's random state.</p>
+						
+						<pre class="csharp" translate="no">		<ins>Random.State state = Random.state;</ins>
+		<ins>Random.InitState(0);</ins>
+		for (int i = 0; i &lt; ditherSTs.Length; i++) {
+			ditherSTs[i] = new Vector4(
+				(i & 1) == 0 ? (1f / 64f) : (-1f / 64f),
+				(i & 2) == 0 ? (1f / 64f) : (-1f / 64f),
+				<ins>Random.value</ins>, <ins>Random.value</ins>
+			);
+		}
+		<ins>Random.state = state;</ins></pre>
+						
+						<aside>
+							<h3>Don't we have to quantize the offsets?</h3>
+							<div>
+								<p>It isn't needed to make the offsets exact multiples of 1/64 because we use point filtering when sampling the texture.</p>
+							</div>
+						</aside>
+						
+						<p>We don't need to synchronize the pattern animation with the game time, so we base it on the unscaled time. Also, we don't care about the animation's timing exact, only that a different pattern frame appears at a roughly fixed frequency. If one frame takes very long then we just go to the next pattern, we don't need to skip any to keep the animation synchronized with the time. Thus we only have to keep track of how much time has passes since the last pattern change. If it's been too long, move on to the next ST index.</p>
+						
+						<pre class="csharp" translate="no">	<ins>float lastDitherTime;</ins>
+	<ins>int ditherSTIndex = 0;</ins>
+	
+	&hellip;
+	
+	void ConfigureDitherPattern (ScriptableRenderContext context) {
+		&hellip;
+		<ins>if (ditherAnimationFrameDuration > 0f) {</ins>
+			<ins>float currentTime = Time.unscaledTime;</ins>
+			<ins>if (currentTime - lastDitherTime >= ditherAnimationFrameDuration) {</ins>
+				<ins>lastDitherTime = currentTime;</ins>
+				<ins>ditherSTIndex = ditherSTIndex &lt; 15 ? ditherSTIndex + 1 : 0;</ins>
+				<ins>cameraBuffer.SetGlobalVector(</ins>
+					<ins>ditherTextureSTId, ditherSTs[ditherSTIndex]</ins>
+				<ins>);</ins>
+			<ins>}</ins>
+			<ins>context.ExecuteCommandBuffer(cameraBuffer);</ins>
+			<ins>cameraBuffer.Clear();</ins>
+		<ins>}</ins>
+	}</pre>
+						
+						<p>But we only need to do this if we have a positive animation frame duration. And we also only have to initialize the texture once. We can achieve that by initially setting the ST index to &minus;1 and based on that set things up once for both cases.</p>
+						
+						<pre translate="no">	int ditherSTIndex = <ins>-1</ins>;
+	
+	&hellip;
+	
+	void ConfigureDitherPattern (ScriptableRenderContext context) {
+		<ins>if (ditherSTIndex &lt; 0) {</ins>
+			<ins>ditherSTIndex = 0;</ins>
+			<ins>lastDitherTime = Time.unscaledTime;</ins>
+			cameraBuffer.SetGlobalTexture(ditherTextureId, ditherTexture);
+			cameraBuffer.SetGlobalVector(
+				ditherTextureSTId, new Vector4(1f / 64f, 1f / 64f, 0f, 0f)
+			);
+			context.ExecuteCommandBuffer(cameraBuffer);
+			cameraBuffer.Clear();
+		<ins>}</ins>
+		<ins>else</ins> if (ditherAnimationFrameDuration > 0f) {
+			&hellip;
+		}</pre>
+						
+						<figure>
+							<div class="vid" style="width: 340px; height:200px;"><iframe src='https://gfycat.com/ifr/courageousharmlessarrowana'></iframe></div>
+							<figcaption>Animated dithering, speed 4.</figcaption>
+						</figure>
+						
+						<p>Combining an animated dither pattern with enabling <em translate="no">Animate Cross-fading</em> for LOD groups should make the transitions as smooth as possible, especially when visual contrast isn't too high. But when working in the editor while not in play mode new frames are only rendered when something changes. This means that the dither pattern stays the same while we do nothing, but suddenly changes when we perform an action, which is distracting. So let's only animate it while in play mode. That can be done by checking <code class="csharp">Application.isPlaying</code> before configuring the animation in the constructor.</p>
+						
+						<pre class="csharp" translate="no">		if (ditherAnimationSpeed > 0f <ins>&amp;&amp; Application.isPlaying</ins>) {
+			ConfigureDitherAnimation(ditherAnimationSpeed);
+		}</pre>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Shader Variant Stripping</h2>
+					
+					<p>The downside of adding all these features to our shader is that we end up generating many shader variants. This is manageable when using the shader-feature compiler directive, because only keywords that have been enabled for used materials get included in builds. But multi-compile directives aren't limited this way.</p>
+					
+					<p>Unity is able to strip some keywords from builds automatically, based on what's used in scenes that are included in the build. In our case the affected keywords are <em translate="no">LIGHTMAP_ON</em>, <em translate="no">DYNAMICLIGHTMAP_ON</em>, and <em translate="no">INSTANCING_ON</em>. That still leaves a lot of keywords, some of which might not be needed in every build. Fortunately, Unity provides a way for us to strip shader variants from builds ourselves.</p>
+					
+					<section>
+						<h3>Preprocessing Shaders</h3>
+						
+						<p>When a build is made, the Unity editor will look for any class that implements the <code class="csharp">IPreprocessShaders</code> interface, defined in the <code class="csharp">UnityEditor.Build</code> namespace. It will create an instance of the class and will then provide it with shader variants to strip. Create a definition for such a class in an <em translate="no">Editor</em> folder.</p>
+						
+						<pre class="csharp" translate="no"><ins>using UnityEditor.Build;</ins>
+
+<ins>public class MyPipelineShaderPreprocessor : IPreprocessShaders { }</ins></pre>
+						
+						<p>The interface requires us to implement two things. First, a <code class="csharp">callbackOrder</code> getter property that returns an integer. It is used to determine the order in which the preprocessors are invoked, in case there are multiple. We can simply return zero.</p>
+						
+						<pre class="csharp" translate="no">	<ins>public int callbackOrder {</ins>
+		<ins>get {</ins>
+			<ins>return 0;</ins>
+		<ins>}</ins>
+	<ins>}</ins></pre>
+						
+						<p>Second, an <code class="csharp">OnProcessShader</code> method that is passed a shader, shader snippet data, and a list of compiler data that contain information about a set of shader variants. Let's initially have it log the name of the shader.</p>
+						
+						<pre class="csharp" translate="no"><ins>using System.Collections.Generic;</ins>
+using UnityEditor.Build;
+<ins>using UnityEditor.Rendering;</ins>
+using UnityEngine;
+
+public class MyPipelineShaderPreprocessor : IPreprocessShaders {
+
+	&hellip;
+
+	<ins>public void OnProcessShader (</ins>
+		<ins>Shader shader, ShaderSnippetData snippet, IList&lt;ShaderCompilerData> data</ins>
+	<ins>) {</ins>
+		<ins>Debug.Log(shader.name);</ins>
+	<ins>}</ins>
+}</pre>
+						
+						<p>Now when we build the project a lot of shader names get logged. These include our shaders, but also a lot that get included by default, some of which you can manage via the <em translate="no">Graphics</em> panel of the project settings. There will also be a lot of duplicates due to the way the shader compilation process breaks up shader variants, but we don't need to worry about the exact order and grouping.</p>
+					</section>
+					
+					<section>
+						<h3>Only Preprocessing Our Pipeline</h3>
+						
+						<p>All preprocessors that have been defined will get used for every build. So if our preprocessor is in a project it will always get used, even if the project doesn't use our custom pipeline. To make sure that we don't meddle with other pipelines we need to verify that the current pipeline is indeed ours. We can do that by retrieving the asset of the pipeline currently in use via <code class="csharp">GraphicsSettings.renderPipelineAsset</code> and checking whether its type is <code class="csharp">MyPipelineAsset</code>.</p>
+						
+						<pre class="csharp" translate="no">&hellip;
+<ins>using UnityEngine.Rendering;</ins>
+
+public class MyPipelineShaderPreprocessor : IPreprocessShaders {
+	
+	&hellip;
+
+	public void OnProcessShader (
+		Shader shader, ShaderSnippetData snippet, IList&hellip;ShaderCompilerData> data
+	) {
+		<ins>if (!(GraphicsSettings.renderPipelineAsset is MyPipelineAsset)) {</ins>
+			<ins>return;</ins>
+		<ins>}</ins>
+		Debug.Log(shader.name);
+	}
+}</pre>
+						
+						<p>Having access to the pipeline asset will be useful later, so let's keep track of it with a field that we initialize once in the constructor method.</p>
+						
+						<pre class="csharp" translate="no">	<ins>MyPipelineAsset pipelineAsset;</ins>
+
+	<ins>public MyPipelineShaderPreprocessor () {</ins>
+		<ins>pipelineAsset = GraphicsSettings.renderPipelineAsset as MyPipelineAsset;</ins>
+	<ins>}</ins>
+
+	public void OnProcessShader (
+		Shader shader, ShaderSnippetData snippet, IList&hellip;ShaderCompilerData> data
+	) {
+		if (<ins>pipelineAsset == null</ins>) {
+			return;
+		}
+		Debug.Log(shader.name);
+	}</pre>
+					</section>
+					
+					<section>
+						<h3>Counting Shader Variants</h3>
+						
+						<p>Before we start stripping variants, let's first find out how many there are. Each entry in the shader compiler data list represents one variant, so we have to sum them across all invocations of <code class="csharp">OnProcessShader</code>.</p>
+						
+						<pre class="csharp" translate="no">	<ins>int shaderVariantCount;</ins>
+
+	&hellip;
+
+	public void OnProcessShader (
+		Shader shader, ShaderSnippetData snippet, IList&lt;ShaderCompilerData> data
+	) {
+		&hellip;
+		<del>//Debug.Log(shader.name);</del>
+		<ins>shaderVariantCount += data.Count;</ins>
+	}</pre>
+						
+						<p>To only log once per build, we can add a method with the <code class="csharp">PostProcessBuild</code> attribute, from the <code class="csharp">UnityEditor.Callbacks</code> namespace. It has an argument to set its callback order, for which we'll again use zero. The method must have a <code class="csharp">UnityEditor.BuildTarget</code> parameter along with a string for the path where the build is stored. Unity will invoke all such methods after the build process has been completed.</p>
+						
+						<pre class="csharp" translate="no">using System.Collections.Generic;
+<ins>using UnityEditor;</ins>
+using UnityEditor.Build;
+<ins>using UnityEditor.Callbacks;</ins>
+&hellip;
+
+public class MyPipelineShaderPreprocessor : IPreprocessShaders {
+
+	&hellip;
+
+	<ins>[PostProcessBuild(0)]</ins>
+	<ins>void LogVariantCount (BuildTarget target, string path) {</ins>
+		<ins>if (pipelineAsset == null) {</ins>
+			<ins>return;</ins>
+		<ins>}</ins>
+		<ins>Debug.Log("Included " + shaderVariantCount + " shader variants.");</ins>
+	<ins>}</ins>
+}</pre>
+						
+						<p>The method must be static, so let's keep track of a static instance of our preprocessor as well, so we can retrieve the count. We can get rid of the instance after logging.</p>
+						
+						<pre class="csharp" translate="no">	<ins>static MyPipelineShaderPreprocessor instance;</ins>
+
+	&hellip;
+
+	public MyPipelineShaderPreprocessor () {
+		<ins>instance = this;</ins>
+		pipelineAsset = GraphicsSettings.renderPipelineAsset as MyPipelineAsset;
+	}
+
+	&hellip;
+
+	[PostProcessBuild(0)]
+	<ins>static</ins> void LogVariantCount (BuildTarget target, string path) {
+		<ins>instance.LogVariantCount();</ins>
+		<ins>instance = null;</ins>
+	<ins>}</ins>
+
+	<ins>void LogVariantCount () {</ins>
+		if (pipelineAsset == null) {
+			return;
+		}
+		Debug.Log("Included " + shaderVariantCount + " shader variants.");
+	}</pre>
+						
+						<aside>
+							<h3>Why not only make the count static?</h3>
+							<div>
+								<p>That is also possible, but we'll need to keep track of some more data later. Doing it this way keeps everything bundled in a single object instance, which we can get rid of with a single statement.</p>
+							</div>
+						</aside>
+						
+						<p>We can now see how many shader variants got included in a build. How many there are depends on what scenes got included. In my case, I got a log entry that read <em translate="no">"Included 3054 shader variants."</em> followed by the final build log that indicated a successful build.</p>
+					</section>
+					
+					<section>
+						<h3>Stripping Cascaded Shadows</h3>
+						
+						<p>An example of shader variants that we can safely strip are those for cascaded shadows. If we set <em translate="no">Shadow Cascades</em> of our pipeline asset to <em translate="no">Zero</em> then they are never used, so don't need to be included in builds.</p>
+						
+						<p>First, we must make it possible for the preprocessor to check whether the pipeline has shadow cascades enabled. We can do that by adding a public boolean getter property to <code class="csharp">MyPipelineAsset</code> that returns whether the shadow cascades aren't zero.</p>
+						
+						<pre class="csharp" translate="no">	<ins>public bool HasShadowCascades {</ins>
+		<ins>get {</ins>
+			<ins>return shadowCascades != ShadowCascades.Zero;</ins>
+		<ins>}</ins>
+	}</pre>
+						
+						<p>Have the preprocessor use the property to determine whether it should strip cascaded shadow variants. We can do this once in the constructor and keep track of the decision.</p>
+						
+						<pre class="csharp" translate="no">	<ins>bool stripCascadedShadows;</ins>
+
+	public MyPipelineShaderPreprocessor () {
+		instance = this;
+		pipelineAsset = GraphicsSettings.renderPipelineAsset as MyPipelineAsset;
+		<ins>if (pipelineAsset == null) {</ins>
+			<ins>return;</ins>
+		<ins>}</ins>
+		<ins>stripCascadedShadows = !pipelineAsset.HasShadowCascades;</ins>
+	}</pre>
+						
+						<p>To check whether a keyword is used by a variant, we need to create <code class="csharp">ShaderKeyword</code> structs for them. Do this once for the two cascaded shadows keywords and store them in static fields.</p>
+						
+						<pre class="csharp" translate="no">	<ins>static ShaderKeyword cascadedShadowsHardKeyword =</ins>
+		<ins>new ShaderKeyword("_CASCADED_SHADOWS_HARD");</ins>
+	<ins>static ShaderKeyword cascadedShadowsSoftKeyword =</ins>
+		<ins>new ShaderKeyword("_CASCADED_SHADOWS_SOFT");</ins></pre>
+						
+						<p>Next, create a <code class="csharp">Strip</code> method that takes a simple shader compiler data set as input and returns whether that variant should be stripped. This is the case when cascaded shadows should be stripped and one of the two relevant keywords is enabled. That can be checked by invoking <code class="csharp">IsEnabled</code> on the data's shader keyword set.</p>
+						
+						<pre class="csharp" translate="no">	<ins>bool Strip (ShaderCompilerData data) {</ins>
+		<ins>return</ins>
+			<ins>stripCascadedShadows &amp;&amp; (</ins>
+				<ins>data.shaderKeywordSet.IsEnabled(cascadedShadowsHardKeyword) ||</ins>
+				<ins>data.shaderKeywordSet.IsEnabled(cascadedShadowsSoftKeyword)</ins>
+			<ins>);</ins>
+	<ins>}</ins></pre>
+						
+						<p>Now we can loop through all data sets in <code class="csharp">OnProcessShader</code> and remove those that should be stripped. Do this after increasing the shader variant count so that we keep track of the original count.</p>
+						
+						<pre class="csharp" translate="no">	public void OnProcessShader (
+		Shader shader, ShaderSnippetData snippet, IList&lt;ShaderCompilerData> data
+	) {
+		if (pipelineAsset == null) {
+			return;
+		}
+		shaderVariantCount += data.Count;
+		<ins>for (int i = 0; i &lt; data.Count; i++) {</ins>
+			<ins>if (Strip(data[i])) {</ins>
+				<ins>data.RemoveAt(i--);</ins>
+			<ins>}</ins>
+		<ins>}</ins>
+	}</pre>
+					</section>
+					
+					<section>
+						<h3>Reporting Stripped Variants</h3>
+						
+						<p>Support for cascaded shadows can now get stripped from builds, but we don't get any feedback about this yet. The only clue that it happens is that the build time and size has decreased. To make it clear exactly how many shader variants got included in the build, also keep track of how many were stripped. We can do that by simply increasing the stripped count each time a variant gets stripped.
+						
+						<pre class="csharp" translate="no">	int shaderVariantCount<ins>, strippedCount</ins>;
+
+	&hellip;
+
+	public void OnProcessShader (
+		Shader shader, ShaderSnippetData snippet, IList&lt;ShaderCompilerData> data
+	) {
+		&hellip;
+		for (int i = 0; i &lt; data.Count; i++) {
+			if (Strip(data[i])) {
+				data.RemoveAt(i--);
+				<ins>strippedCount += 1;</ins>
+			}
+		}
+	}</pre>
+					
+					<p>When logging, mention both the final and original variant count. As a nice touch, let's also log the percentage of the included variants.</p>
+					
+					<pre class="csharp" translate="no">	void LogVariantCount () {
+		if (pipelineAsset == null) {
+			return;
+		}
+		<ins>int finalCount = shaderVariantCount - strippedCount;</ins>
+		<ins>int percentage =</ins>
+			<ins>Mathf.RoundToInt(100f * finalCount / shaderVariantCount);</ins>
+		Debug.Log(
+			"Included " + <ins>finalCount + " shader variants out of " +</ins>
+			<ins>shaderVariantCount + " (" + percentage + "%)."</ins>
+		);
+	}</pre>
+						
+						<p>In my case, with shadow cascades disabled I got <em translate="no">"Included 1518 shader variants out of 3054 (50%)."</em> which is a significant reduction. Note that we decide to strip cascaded shadows purely based on whether they have been disabled by the asset. This means that if they are enabled but not used in any scene, the variants still get included in builds. So you have to match the pipeline's configuration with what's really needed in a build.</p>
+					</section>
+					
+					<section>
+						<h3>Stripping Cross-Fading</h3>
+						
+						<p>As another example, let's make it possible to strip LOD cross-fading from builds. This is a feature that isn't directly controlled by our pipeline. It simply gets used when a LOD group needs it. But we can still add a toggle option to <code class="csharp">MyPipelineAsset</code> to indicate whether it should be supported, with an accompanying public getter property.</p>
+						
+						<pre class="csharp" translate="no">	<ins>public bool HasLODCrossFading {</ins>
+		<ins>get {</ins>
+			<ins>return supportLODCrossFading;</ins>
+		<ins>}</ins>
+	<ins>}</ins>
+
+	&hellip;
+
+	<ins>[SerializeField]</ins>
+	<ins>bool supportLODCrossFading = true;</ins></pre>
+						
+						<figure>
+							<img src="shader-variant-stripping/lod-cross-fading-support.png" width="320" height="56">
+							<figcaption>Support option for LOD cross-fading.</figcaption>
+						</figure>
+						
+						<p>Stripping variants for cross-fading works exactly like stripping those for cascaded shadows, except that it relies on the <em translate="no">LOD_FADE_CROSSFADE</em> keyword and a different property. Add the required code to our preprocessor. The <code class="csharp">Strip</code> method has to return <code class="csharp">true</code> when either shadow-stripping or cross-fade-stripping applies.</p>
+						
+						<pre class="csharp" translate="no">	<ins>static ShaderKeyword lodCrossFadeKeyword =</ins>
+		<ins>new ShaderKeyword("LOD_FADE_CROSSFADE");</ins>
+
+	&hellip;
+
+	bool stripCascadedShadows<ins>, stripLODCrossFading</ins>;
+
+	public MyPipelineShaderPreprocessor () {
+		&hellip;
+		stripCascadedShadows = !pipelineAsset.HasShadowCascades;
+		<ins>stripLODCrossFading = !pipelineAsset.HasLODCrossFading;</ins>
+	}
+
+	&hellip;
+
+	bool Strip (ShaderCompilerData data) {
+		return
+			stripCascadedShadows && (
+				data.shaderKeywordSet.IsEnabled(cascadedShadowsHardKeyword) ||
+				data.shaderKeywordSet.IsEnabled(cascadedShadowsSoftKeyword)
+			) <ins>||</ins>
+			<ins>stripLODCrossFading &&</ins>
+			<ins>data.shaderKeywordSet.IsEnabled(lodCrossFadeKeyword)</ins>;
+	}</pre>
+						
+						<p>In my case, disabling LOD cross-fading reduces the shader variants to 1878 (61%). And when cascaded shadows are also disabled this is reduced further to 1110 (36%).</p>
+						
+						<p>Note that disabling support for LOD cross-fading only affects which shader variants get stripped. Cross-fading still works in the editor, but won't in builds. So only disable it when you're sure that it doesn't get used.</p>
+						
+						<p>It is also possible to strip specific keyword combinations, individual passes, or even entire shaders. Stripping individual keywords based on what's needed is the most straightforward, but that alone can already significantly reduce what gets included in a build.</p>
+						
+						<p>The next tutorial is <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/post-processing/">Post-Processing</a>.</p>
+					</section>
+					
+					<a href="https://bitbucket.org/catlikecodingunitytutorials/scriptable-render-pipeline-10-level-of-detail/" class="repository">repository</a>
+					<a href="Level-of-Detail.pdf" download rel="nofollow">PDF</a>
+				</section>
+				
+			</article>
+		</main>
+
+		<footer>
+			<p>Enjoying the <a href="https://catlikecoding.com/unity/tutorials/">tutorials</a>? Are they useful? Want more?</p>
+			<p><b><a href="https://www.patreon.com/catlikecoding">Please support me on Patreon!</a></b></p>
+			<p><a href="https://www.patreon.com/catlikecoding"><img src="https://catlikecoding.com/unity/tutorials/become-a-patron.png" alt="Become my patron!" width="217" height="51"></a></p>
+			<p><b><a href="https://catlikecoding.com/unity/tutorials/donating.html">Or make a direct donation</a>!</b></p>
+			<p>made by <a href="https://catlikecoding.com/jasper-flick/" rel="author">Jasper Flick</a></p>
+		</footer>
+		
+		<script src="../../tutorials.js"></script>
+	</body>
+</html>

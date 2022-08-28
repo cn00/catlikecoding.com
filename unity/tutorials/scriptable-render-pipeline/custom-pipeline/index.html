@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/custom-pipeline/">
+		<meta property="og:type" content="article">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/custom-pipeline/tutorial-image.jpg">
+		<meta property="og:title" content="Custom Pipeline">
+		<meta property="og:description" content="A Unity Scriptable Render Pipeline tutorial about creating a custom pipeline.">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta name="viewport" content="width=768">
+		<title>Custom Pipeline</title>
+		<link href="../../tutorials.css" rel="stylesheet">
+
+				<link rel="manifest" href="https://catlikecoding.com/site.webmanifest">
+		<link rel="mask-icon" href="https://catlikecoding.com/safari-pinned-tab.svg" color="#aa0000">
+
+		<script type="application/ld+json">{
+			"@context": "http://schema.org",
+			"@type": "WebPage",
+			"mainEntity": {
+				"@type": "TechArticle",
+				"@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/custom-pipeline/#article",
+				"headline": "Custom Pipeline",
+				"alternativeHeadline": "Taking Control of Rendering",
+				"datePublished": "2018-09-30",
+				"dateModified": "2019-01-09",
+				"author": { "@type": "Person", "name": "Jasper Flick", "@id": "https://catlikecoding.com/jasper-flick/#person" },
+				"publisher": { "@type": "Organization", "name": "Catlike Coding", "@id": "https://catlikecoding.com/#organization" },
+				"description": "A Unity Scriptable Render Pipeline tutorial about creating a custom pipeline.",
+				"image": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/custom-pipeline/tutorial-image.jpg",
+				"dependencies": "Unity 2018.3.0f2",
+				"proficiencyLevel": "Expert"
+			},
+			"breadcrumb": {
+				"@type": "BreadcrumbList",
+				"itemListElement": [
+					{ "@type": "ListItem", "position": 1, "item": { "@id": "https://catlikecoding.com/unity/", "name": "Unity" }},
+					{ "@type": "ListItem", "position": 2, "item": { "@id": "https://catlikecoding.com/unity/tutorials/", "name": "Tutorials" }},
+					{ "@type": "ListItem", "position": 3, "item": { "@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/", "name": "Scriptable Render Pipeline" }}
+				]
+			}
+		}</script>
+		<script>
+			var customTypes = {
+				MyPipeline: 1,
+				MyPipelineAsset: 1
+			};
+		</script>
+	</head>
+	<body>
+		<header>
+			<a href="https://catlikecoding.com"><img src="https://catlikecoding.com/catlike-coding-logo.svg" alt="Catlike Coding" width="45" height="45"></a>
+			<nav>
+				<ol>
+					<li><a href="https://catlikecoding.com">Catlike Coding</a></li>
+					<li><a href="https://catlikecoding.com/unity/">Unity</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/">Tutorials</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">Scriptable Render Pipeline</a></li>
+				</ol>
+			</nav>
+		</header>
+		
+		<main>
+			<article>
+				<header>
+					<h1>Custom Pipeline</h1>
+					<p>Taking Control of Rendering</p>
+					<ul>
+						<li>Create a pipeline asset and instance.</li>
+						<li>Cull, filter, sort, render.</li>
+						<li>Keep memory clean.</li>
+						<li>Provide a good editing experience.</li>
+					</ul>
+				</header>
+				
+				<p>This is the first installment of a tutorial series covering Unity's <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">scriptable render pipeline</a>. This tutorial assumes you've gone through the <a href="https://catlikecoding.com/unity/tutorials/basics/">Basics</a> series first, and the <a href="https://catlikecoding.com/unity/tutorials/procedural-grid/">Procedural Grid</a> tutorial. The first few parts of the <a href="https://catlikecoding.com/unity/tutorials/rendering/">Rendering</a> series are also useful.
+				
+				<p>This tutorial is made with Unity 2018.3.0f2.</p>
+				
+				<aside>
+					<h3>What about the other SRP series?</h3>
+					<div>
+						<p>I have <a href="https://catlikecoding.com/unity/tutorials/custom-srp/">another tutorial series</a> covering the scriptable render pipeline. It is made for Unity 2019 and later, while this one uses the experimental SRP API which only works with Unity 2018. The other series takes a different and more modern approach but will cover at lot of the same topics. It's still useful to work through this series if you don't want to wait until the new one has caught up with it.</p>
+					</div>
+				</aside>
+				
+				<figure>
+					<img src="tutorial-image.jpg" width="512" height="256">
+					<figcaption>The birth of a new render pipeline.</figcaption>
+				</figure>
+				
+				<section>
+					<h2>Creating a Pipeline</h2>
+					
+					<p>To render anything, Unity has to determine what shapes have to be drawn, where, when, and with what settings. This can get very complex, depending on how many effects are involved. Lights, shadows, transparency, image effects, volumetric effects, and so on all have to be dealt with in the correct order to arrive at the final image. This process is known as a render pipeline.</p>
+					
+					<p>Unity 2017 supports two predefined render pipelines, one for forward rendering and one for deferred rendering. It also still supports an older deferred rendering approach introduced in Unity 5. These pipelines are fixed. You are able to enable, disable, or override certain parts of the pipelines, but it's not possible to drastically deviate from their design.</p>
+					
+					<p>Unity 2018 added support for scriptable render pipelines, making it possible to design pipelines from scratch, though you still have to rely on Unity for many individual steps, like culling. Unity 2018 introduced two new pipelines made with this new approach, the lightweight pipeline and the high-definition pipeline. Both pipelines are still in the preview stage and the scriptable render pipeline API is still marked as experimental technology. But at this point it is stable enough for us to go ahead and create our own pipeline.</p>
+					
+					<p>In this tutorial we will setup a minimal render pipeline that draws unlit shapes. Once that's working, we can extend our pipeline in later tutorials, adding lighting, shadows, and more advanced features.</p>
+					
+					<section>
+						<h3>Project Setup</h3>
+						
+						<p>Open Unity 2018 and create a new project. I'm using Unity 2018.2.9f1, but any 2018.2 version or higher should also work. Create a standard 3D project, with analytics disabled. We'll create our own pipeline, so don't select one of the pipeline options.</p>
+						
+						<p>Once the project is open, go the package manager via <em translate="no">Window / Package Manager</em> and remove all the packages that were included by default, as we won't need them. Only keep the <em translate="no">Package Manager UI</em>, which cannot be removed.</p>
+						
+						<figure>
+							<img src="creating-a-pipeline/project-start.png" width="200" height="88">
+							<figcaption>Starting project.</figcaption>
+						</figure>
+						
+						<p>We're going to work in linear color space, but Unity 2018 still uses gamma space as the default. So go to the player settings via <em translate="no">Edit / Project Settings / Player</em> and switch <em translate="no">Color Space</em> in the <em translate="no">Other Settings</em> section to <em translate="no">Linear</em>.</p>
+						
+						<figure>
+							<img src="creating-a-pipeline/linear-color-space.png" width="315" height="68">
+							<figcaption>Linear color space.</figcaption>
+						</figure>
+						
+						<p>We'll need a few simple materials to test our pipeline. I've created four materials. First, a default standard opaque material with a red albedo. Second, the same material but with <em translate="no">Rendering Mode</em> set to <em translate="no">Transparent</em> and a blue albedo with decreased alpha. Third, a material using the <em translate="no">Unlit/Color</em> shader with its color set to yellow. And finally a material using the <em translate="no">Unlit/Transparent</em> shader without any changes, so it appears solid white.</p>
+						
+						<figure>
+							<img src="creating-a-pipeline/materials.png" width="200" height="100">
+							<figcaption>Test materials.</figcaption>
+						</figure>
+						
+						<p>Fill the scene with a few objects, making use of all four materials.</p>
+						
+						<figure>
+							<img src="creating-a-pipeline/scene.jpg" width="360" height="140">
+							<figcaption>Scene displaying four materials.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Pipeline Asset</h3>
+						
+						<p>Currently, Unity uses the default forward rendering pipeline. To use a custom pipeline, we have to select one in the graphics settings, which can be found via <em translate="no">Edit / Project Settings / Graphics</em>.</p>
+						
+						<figure>
+							<img src="creating-a-pipeline/default-pipeline.png" width="320" height="98">
+							<figcaption>Using the default pipeline.</figcaption>
+						</figure>
+						
+						<p>To setup our own pipeline, we have to assign a pipeline asset to the <em translate="no">Scriptable Render Pipeline Settings</em> field. Such assets have to extend <code>RenderPipelineAsset</code>, which is a <code>ScriptableObject</code> type.</p>
+						
+						<p>Create a new script for our custom pipeline asset. We'll simply name our pipeline <em translate="no">My Pipeline</em>. Its asset type will thus be <code>MyPipelineAsset</code> and it has to extend <code>RenderPipelineAsset</code>, which is defined in the <code>UnityEngine.Experimental.Rendering</code> namespace.</p>
+						
+						<pre translate="no"><ins>using UnityEngine;</ins>
+<ins>using UnityEngine.Experimental.Rendering;</ins>
+
+<ins>public class MyPipelineAsset : RenderPipelineAsset {}</ins></pre>
+						
+						<aside>
+							<h3>Will it always be in the experimental namespace?</h3>
+							<div>
+								<p>It will move out of the experimental namespace at some point, either to <code>UnityEngine.Rendering</code> or to another namespace. When that happens, it's just a matter of updating the <code>using</code> statement, unless the API also gets changed.</p>
+							</div>
+						</aside>
+						
+						<p>The main purpose of the pipeline asset is to give Unity a way to get a hold of a pipeline object instance that is responsible for rendering. The asset itself is just a handle and a place to store pipeline settings. We don't have any settings yet, so all we have to do is give Unity a way to get our pipeline object instance. This is done by overriding the <code>InternalCreatePipeline</code> method. But we haven't defined our pipeline object type yet, so at this point we'll just return <code>null</code>.</p>
+						
+						<p>The return type of <code>InternalCreatePipeline</code> is <code>IRenderPipeline</code>. The <em translate="no">I</em> prefix of the type name indicates that it is an interface type.</p>
+						
+						<pre translate="no">public class MyPipelineAsset : RenderPipelineAsset {
+
+	<ins>protected override IRenderPipeline InternalCreatePipeline () {</ins>
+		<ins>return null;</ins>
+	<ins>}</ins>
+}</pre>
+						
+						<aside>
+							<h3>What's an interface?</h3>
+							<div>
+								<p>An interface is like a class, except that it defines a functionality contract without providing an implementation of it. It only defines properties, events, indexers, and method signatures, which are all public by definition. Any type that extends an interface is required to contain implementations of what the interface defines. The convention is to prefix interface types names with an I.</p>
+								
+								<p>Because interfaces do not contain concrete implementations, it is possible for classes and even structs to extend more than one interface. If multiple interfaces happen to defined the same thing, they just agree that the functionality should be there. This is not possible with classes&mdash;even when abstract&mdash;because that could lead to conflicting implementations.</p>
+							</div>
+						</aside>
+						
+						<p>Now we need to add an asset of this type to our project. To make that possible, add a <code>CreateAssetMenu</code> attribute to <code>MyPipelineAsset</code>.</p>
+						
+						<pre translate="no"><ins>[CreateAssetMenu]</ins>
+public class MyPipelineAsset : RenderPipelineAsset {}</pre>
+						
+						<p>That puts an entry in the <em translate="no">Asset / Create</em> menu. Let's be tidy and put it in a <em translate="no">Rendering</em> submenu. We do this by setting the <code>menuName</code> property of the attribute to <em translate="no">Rendering/My Pipeline</em>. The property can be set directly after the attribute type, within round brackets.</p>
+						
+						<pre translate="no">[CreateAssetMenu<ins>(menuName = "Rendering/My Pipeline")</ins>]
+public class MyPipelineAsset : RenderPipelineAsset {}</pre>
+						
+						<p>Use the new menu item to add the asset to the project, naming it <em translate="no">My Pipeline</em>.</p>
+						
+						<figure>
+							<img src="creating-a-pipeline/pipeline-asset.png" width="200" height="86">
+							<figcaption>Pipeline asset and its script.</figcaption>
+						</figure>
+						
+						<p>Then assign it to <em translate="no">Scriptable Render Pipeline Settings</em>.</p>
+						
+						<figure>
+							<img src="creating-a-pipeline/asset-in-use.png" width="320" height="90">
+							<figcaption>Asset in use.</figcaption>
+						</figure>
+						
+						<p>We have now replaced the default pipeline, which changes a few things. First, a lot of options have disappeared from the graphics settings, which Unity also mentions in an info panel. Second, as we've bypassed the default pipeline without providing a valid replacement, nothing gets rendered anymore. The game window, scene window, and material previews are no longer functional, although the scene window still shows the skybox. If you open the frame debugger&mdash;via <em translate="no">Window / Analysis / Frame Debugger</em>&mdash;and enable it, you will see that indeed nothing gets drawn in the game window.</p>
+					</section>
+					
+					<section>
+						<h3>Pipeline Instance</h3>
+						
+						<p>To create a valid pipeline, we have to provide an object instance that implements <code>IRenderPipeline</code> and is responsible for the rendering process. So create a class for that, naming it <code>MyPipeline</code>.</p>
+						
+						<pre translate="no"><ins>using UnityEngine;</ins>
+<ins>using UnityEngine.Experimental.Rendering;</ins>
+
+<ins>public class MyPipeline : IRenderPipeline {}</ins></pre>
+						
+						<p>Although we can implement <code>IRenderPipeline</code> ourselves, it is more convenient to extend the abstract <code>RenderPipeline</code> class instead. That type already provides a basic implementation of <code>IRenderPipeline</code> that we can build on.</p>
+						
+						<pre translate="no">public class MyPipeline : <ins>RenderPipeline</ins> {}</pre>
+						
+						<p>Now we can return a new instance of <code>MyPipeline</code> in <code>InternalCreatePipeline</code>. This means that we technically have a valid pipeline, although it still doesn't render anything.</p>
+						
+						<pre translate="no">	protected override IRenderPipeline InternalCreatePipeline () {
+		return <ins>new MyPipeline()</ins>;
+	}</pre>
+					</section>
+					
+					<a href="creating-a-pipeline/creating-a-pipeline.unitypackage" download rel="nofollow">unitypackage</a>
+				</section>
+				
+				<section>
+					<h2>Rendering</h2>
+					
+					<p>The pipeline object takes care of rendering each frame. All Unity does is invoke the pipeline's <code>Render</code> method with a context and the cameras that are active. This is done for the game window, but also for the scene window and material previews in the editor. It is up to us to configure things appropriately, figure out what needs to be rendered, and do everything in the correct order.</p>
+					
+					<section>
+						<h3>Context</h3>
+						
+						<p><code>RenderPipeline</code> contains an implementation of the <code>Render</code> method defined in the <code>IRenderPipeline</code> interface. Its first argument is the render context, which is a <code>ScriptableRenderContext</code> struct, acting as a facade for native code. Its second argument is an array containing all cameras that need to be rendered.</p>
+						<p><code>RenderPipeline.Render</code> doesn't draw anything, but checks whether the pipeline object is valid to use for rendering. If not, it will raise an exception. We will override this method and invoke the base implementation, to keep this check.</p>
+						
+						<pre translate="no">public class MyPipeline : RenderPipeline {
+
+	<ins>public override void Render (</ins>
+		<ins>ScriptableRenderContext renderContext, Camera[] cameras</ins>
+	<ins>) {</ins>
+		<ins>base.Render(renderContext, cameras);</ins>
+	<ins>}</ins>
+}</pre>
+						
+						<p>It is through the render context that we issue commands to the Unity engine to render things and control render state. One of the simplest examples is drawing the skybox, which can be done by invoking the <code>DrawSkyBox</code> method.</p>
+						
+						<pre translate="no">		base.Render(renderContext, cameras);
+
+		<ins>renderContext.DrawSkybox();</ins></pre>
+						
+						<p><code>DrawSkybox</code> requires a camera as a argument. We'll simply use the first element of <code>cameras</code>.</p>
+						
+						<pre translate="no">		renderContext.DrawSkybox(<ins>cameras[0]</ins>);</pre>
+						
+						<p>We still don't see the skybox appear in the game window. That's because the commands that we issue to the context are buffered. The actual works happens after we submit it for execution, via the <code>Submit</code> method.</p>
+						
+						<pre translate="no">		renderContext.DrawSkybox(cameras[0]);
+
+		<ins>renderContext.Submit();</ins></pre>
+						
+						<p>The skybox finally appears in the game window, and you can also see it appear in the frame debugger.</p>
+						
+						<figure>
+							<img src="rendering/frame-debugger-skybox.png" width="208" height="34">
+							<figcaption>Frame debugger showing skybox gets drawn.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Cameras</h3>
+						
+						<p>We are supplied with an array of cameras, because there can exist multiple in the scene that all have to be rendered. Example uses for multiple-camera setups are split-screen multiplayer, mini maps, and rear-view mirrors. Each camera needs to be handled separately.</p>
+						
+						<p>We won't worry about multi-camera support for our pipeline at this point. We'll simply create an alternative <code>Render</code> method that acts on a single camera. Have it draw the skybox and then submit. So we submit per camera.</p>
+						
+						<pre translate="no">	<ins>void Render (ScriptableRenderContext context, Camera camera) {</ins>
+		<ins>context.DrawSkybox(camera);</ins>
+
+		<ins>context.Submit();</ins>
+	<ins>}</ins></pre>
+						
+						<p>Invoke the new method for each element of the <code>cameras</code> array. I use a <code>foreach</code> loop in this case, as Unity's pipelines also use this approach to loop through the cameras.</p>
+						
+						<pre translate="no">	public override void Render (
+		ScriptableRenderContext renderContext, Camera[] cameras
+	) {
+		base.Render(renderContext, cameras);
+
+		<del>//renderContext.DrawSkybox(cameras[0]);</del>
+
+		<del>//renderContext.Submit();</del>
+
+		<ins>foreach (var camera in cameras) {</ins>
+			<ins>Render(renderContext, camera);</ins>
+		<ins>}</ins>
+	}</pre>
+						
+						<aside>
+							<h3>How does <code>foreach</code> work?</h3>
+							<div>
+								<p><code>foreach (var e in a) { &hellip; }</code> works like <code>for (int i = 0; i &lt; a.Length; a++) { var e = a[i]; &hellip; }</code> assuming that <code>a</code> is an array. The only functional difference is that we do not have access to the iterator variable <code>i</code>.</p>
+								
+								<p>When <code>a</code> isn't an array but something else that is enumerable, then iterators come into play and you might end up with temporary object creation, which is best avoided. But using <code>foreach</code> with arrays is safe.</p>
+								
+								<p>The use of <code>var</code> to define the element variable is common, so I use it as well. Its type is the element type of <code>a</code>.</p>
+							</div>
+						</aside>
+						
+						<p>Note that the orientation of the camera currently doesn't affect how the skybox gets rendered. We pass the camera to <code>DrawSkybox</code>, but that's only used to determine whether the skybox should be drawn at all, which is controlled via the camera clear flags.</p>
+						
+						<p>To correctly render the skybox&mdash;and the entire scene&mdash;we have to setup the view-projection matrix. This transformation matrix combines the camera's position and orientation&mdash;the view matrix&mdash; with the camera's perspective or orthographic projection&mdash;the projection matrix. You can see this matrix in the frame debugger. It is <em translate="no">unity_MatrixVP</em>, one of the shader properties used when something is drawn.</p>
+						
+						<p>At the moment, the <em translate="no">unity_MatrixVP</em> matrix is always the same. We have to apply the camera's properties to the context, via the <code>SetupCameraProperties</code> method. That sets up the matrix as well as some other properties.</p>
+						
+						<pre translate="no">	void Render (ScriptableRenderContext context, Camera camera) {
+		<ins>context.SetupCameraProperties(camera);</ins>
+
+		context.DrawSkybox(camera);
+
+		context.Submit();
+	}</pre>
+						
+						<p>Now the skybox gets rendered correctly, taking the camera properties into account, both in the game window and in the scene window.</p>
+					</section>
+					
+					<section>
+						<h3>Command Buffers</h3>
+						
+						<p>The context delays the actual rendering until we submit it. Before that, we configure it and add commands to it for later execution. Some tasks&mdash;like drawing the skybox&mdash;can be issued via a dedicated method, but other commands have to be issued indirectly, via a separate command buffer.</p>
+						
+						<p>A command buffer can be created by instantiating a new <code>CommandBuffer</code> object, which is defined in the <code>UnityEngine.Rendering</code> namespace. Command buffers already existed before the scriptable rendering pipeline was added, so they aren't experimental. Create such a buffer before we draw the skybox.</p>
+						
+						<pre translate="no">using UnityEngine;
+<ins>using UnityEngine.Rendering;</ins>
+using UnityEngine.Experimental.Rendering;
+
+public class MyPipeline : RenderPipeline {
+
+	&hellip;
+
+	void Render (ScriptableRenderContext context, Camera camera) {
+		context.SetupCameraProperties(camera);
+
+		<ins>var buffer = new CommandBuffer();</ins>
+
+		context.DrawSkybox(camera);
+
+		context.Submit();
+	}
+}</pre>
+						
+						<p>We can instruct the context to execute the buffer via its <code>ExecuteCommandBuffer</code> method. Once again, this doesn't immediately execute the commands, but copies them to the internal buffer of the context.</p>
+						
+						<pre translate="no">		var buffer = new CommandBuffer();
+		<ins>context.ExecuteCommandBuffer(buffer);</ins></pre>
+						
+						<p>Command buffers claim resources to store their commands at the native level of the Unity engine. If we no longer need these resources, it is best to release them immediately. This can be done by invoking the buffer's <code>Release</code> method, directly after invoking <code>ExecuteCommandBuffer</code>.</p>
+						
+						<pre translate="no">		var buffer = new CommandBuffer();
+		context.ExecuteCommandBuffer(buffer);
+		<ins>buffer.Release();</ins></pre>
+						
+						<p>Executing an empty command buffer does nothing. We added it so that we can clear the render target, to make sure that rendering isn't influenced by what was drawn earlier. This is possible via a command buffer, but not directly via the context.</p>
+						
+						<p>A clear command can be added to the buffer by invoking <code>ClearRenderTarget</code>. It requires three arguments: two booleans and a color. The first argument controls whether the depth information is cleared, the second whether the color is cleared, and the third is the clear color, if used. For example, let's clear the depth data, ignore color data, and use <code>Color.clear</code> as the clear color.</p>
+						
+						<pre translate="no">		var buffer = new CommandBuffer();
+		<ins>buffer.ClearRenderTarget(true, false, Color.clear);</ins>
+		context.ExecuteCommandBuffer(buffer);
+		buffer.Release();</pre>
+						
+						<p>The frame debugger will now show us that a command buffer get executed, which clears the render target. In this case, it indicated that Z and stencil get cleared. Z refers to the depth buffer, and the stencil buffer always gets cleared.</p>
+						
+						<figure>
+							<img src="rendering/frame-debugger-clear-command.png" width="208" height="52">
+							<figcaption>Clearing the depth and stencil buffers.</figcaption>
+						</figure>
+						
+						<p>What gets cleared is configured per camera, via its clear flags and background color. We can use those instead of hard-coding how we clear the render target.</p>
+						
+						<pre translate="no">		<ins>CameraClearFlags clearFlags = camera.clearFlags;</ins>
+		buffer.ClearRenderTarget(
+			<ins>(clearFlags &amp; CameraClearFlags.Depth) != 0</ins>,
+			<ins>(clearFlags &amp; CameraClearFlags.Color) != 0</ins>,
+			<ins>camera.backgroundColor</ins>
+		);</pre>
+						
+						<aside>
+							<h3>How do the clear flags work?</h3>
+							<div>
+								<p><code>CameraClearFlags</code> is an enumeration that can be used as a set of bit flags. Each bit of the value is used to indicate whether a certain feature is enabled or not.</p>
+								
+								<p>To extract a bit flag from the entire value, combine the value with the desired flag using the bitwise AND operator <code>&amp;</code>. If the result is not zero, then the flag is set.</p>
+							</div>
+						</aside>
+						
+						<p>Because we haven't given the command buffer a name, the debugger displays the default name, which is <em translate="no">Unnamed command buffer</em>. Let's use the camera's name instead, by assigning it to the buffer's <code>name</code> property. We'll use object initializer syntax to do this.</p>
+						
+						<pre translate="no">		var buffer = new CommandBuffer <ins>{</ins>
+			<ins>name = camera.name</ins>
+		<ins>}</ins>;</pre>
+						
+						<figure>
+							<img src="rendering/frame-debugger-camera-name.png" width="208" height="52">
+							<figcaption>Using camera name for the command buffer.</figcaption>
+						</figure>
+						
+						<aside>
+							<h3>How does object initializer syntax work?</h3>
+							<div>
+								<p>We could've also written <code>buffer.name = camera.name;</code> as a separate statement after invoking the constructor. But when creating a new object, you can append a code block to the constructor's invocation. Then you can set the object's fields and properties in the block, without having to reference the object instance explicitly. Also, it makes explicit that the instances should only be used after those fields and properties have been set. Besides that, it makes initialization possible where only a single statement is allowed, without requiring constructors with many parameter variants.</p>
+								
+								<p>Note that we omitted the empty parameter list of the constructor invocation, which is allowed when object initializer syntax is used.</p>
+							</div>
+						</aside>
+					</section>
+					
+					<section>
+						<h3>Culling</h3>
+						
+						<p>We're able to render the skybox, but not yet any of the objects that we put in the scene. Rather than rendering every object, we're only going to render those that the camera can see. We do that by starting with all renderers in the scene and then culling those that fall outside of the view frustum of the camera.</p>
+						
+						<aside>
+							<h3>What are renderers?</h3>
+							<div>
+								<p>They are components attached to game objects that turn them into something that can be rendered. Typically, a <code>MeshRenderer</code> component.</p>
+							</div>
+						</aside>
+						
+						<p>Figuring out what can be culled requires us to keep track of multiple camera settings and matrices, for which we can use the <code>ScriptableCullingParameters</code> struct. Instead of filling it ourselves, we can delegate that work to the static <code>CullResults.GetCullingParameters</code> method. It takes a camera as input and produces the culling parameters as output. However, it doesn't return the parameters struct. Instead, we have to supply it as a second output parameter, writing <code>out</code> in front of it.</p>
+						
+						<pre translate="no">	void Render (ScriptableRenderContext context, Camera camera) {
+		<ins>ScriptableCullingParameters cullingParameters;</ins>
+		<ins>CullResults.GetCullingParameters(camera, out cullingParameters);</ins>
+
+		&hellip;
+	}</pre>
+						
+						<aside>
+							<h3>Why do we have to write <code>out</code>?</h3>
+							<div>
+								<p>Structs are value types, so they're treated like simple values. They aren't objects with an identity, with variables and fields only holding references to their location in memory. So passing the struct as an argument provides a method with a copy of that value. The method can change the copy, but that has no effect on the value that was copied.</p>
+								
+								<p>When a struct parameter is defined as an output parameter, it acts like an object reference, but pointing to the place on the memory stack where the argument resides. When the method changes that argument, it affects that value, not a copy.</p>
+								
+								<p>The <code>out</code> keyword tells us that the method is responsible for correctly setting the parameter, replacing the previous value.</p>
+							</div>
+						</aside>
+						
+						<p>Besides the output parameter, <code>GetCullingParameters</code> also returns whether it was able to create valid parameters. Not all camera settings are valid, resulting in degenerate results that cannot be used for culling. So if it fails, we have nothing to render and can exit from <code>Render</code>.</p>
+						
+						<pre translate="no">		<ins>if (!</ins>CullResults.GetCullingParameters(camera, out cullingParameters)<ins>) {</ins>
+			<ins>return;</ins>
+		<ins>}</ins></pre>
+						
+						<p>Once we have the culling parameters, we can use them to cull. This is done by invoking the static <code>CullResults.Cull</code> method with both the culling parameters and the context as arguments. The result is a <code>CullResults</code> struct, which contains information about what is visible.</p>
+						
+						<p>In this case, we have to supply the culling parameters as a reference parameter, by writing <code>ref</code> in front of it.</p>
+						
+						<pre translate="no">		if (!CullResults.GetCullingParameters(camera, out cullingParameters)) {
+			return;
+		}
+
+		<ins>CullResults cull = CullResults.Cull(ref cullingParameters, context);</ins></pre>
+						
+						<aside>
+							<h3>Why do we have to write <code>ref</code>?</h3>
+							<div>
+								<p>It works just like <code>out</code>, except in this case the method is not required to assign something to the value. And whoever invokes the method is responsible for properly initializing the value first. So it can be used for input, and optionally for output.</p>
+							</div>
+						</aside>
+						
+						
+						<aside>
+							<h3>Why is <code>ScriptableCullingParameters</code> a struct?</h3>
+							<div>
+								<p>It's probably an optimization attempt, the idea being that you can create multiple parameter structs without having to worry about memory allocations. However, <code>ScriptableCullingParameters</code> is very large for a struct, which is why a reference parameter is used here, again for performance reasons. Maybe it started small but grew into a huge struct over time. Reusable object instances might be a better approach now, but we have to work with whatever Unity Technologies decides to use.</p>
+							</div>
+						</aside>
+					</section>
+					
+					<section>
+						<h3>Drawing</h3>
+						
+						<p>Once we know what is visible, we can move on to rendering those shapes. This is done by invoking <code>DrawRenderers</code> on the context, with <code>cull.visibleRenderers</code> as an argument, telling it which renderers to use. Besides that, we have to supply draw settings and filter settings. Both are structs&mdash;<code>DrawRendererSettings</code> and <code>FilterRenderersSettings</code>&mdash;for which we'll initially use their default values. The draw settings have to be passed as a reference.</p>
+						
+						<pre translate="no">		buffer.Release();
+
+		<ins>var drawSettings = new DrawRendererSettings();</ins>
+
+		<ins>var filterSettings = new FilterRenderersSettings();</ins>
+
+		<ins>context.DrawRenderers(</ins>
+			<ins>cull.visibleRenderers, ref drawSettings, filterSettings</ins>
+		<ins>);</ins>
+
+		context.DrawSkybox(camera);</pre>
+						
+						<aside>
+							<h3>Why <code>FilterRenderersSettings</code> and not <code>FilterRendererSettings</code>?</h3>
+							<div>
+								<p>No idea. Maybe it's a typo.</p>
+							</div>
+						</aside>
+						
+						<p>We're not seeing any objects yet, because the default filter settings include nothing. We can instead include everything by providing <code>true</code> as an argument for the <code>FilterRenderersSettings</code> constructor. This tells it to initialize itself so it includes everything.</p>
+						
+						<pre translate="no">		var filterSettings = new FilterRenderersSettings(<ins>true</ins>);</pre>
+						
+						<p>Also, we have to configure the draw settings by providing its constructor with the camera and a shader pass as arguments. The camera is used to setup sorting and culling layers, while the pass controls which shader pass is used for rendering.</p>
+						
+						<p>The shader pass is identified via a string, which has to be wrapped in a <code>ShaderPassName</code> struct. As we're only supporting unlit materials in our pipeline, we'll use Unity's default unlit pass, identified with <em translate="no">SRPDefaultUnlit</em>.</p>
+						
+						<pre translate="no">		var drawSettings = new DrawRendererSettings(
+			<ins>camera, new ShaderPassName("SRPDefaultUnlit")</ins>
+		);</pre>
+						
+						<figure>
+							<img src="rendering/opaque-only.jpg" width="250" height="90">
+							<figcaption>Opaque spheres are visible.</figcaption>
+						</figure>
+						
+						<p>We see the opaque unlit shapes appear, but not the transparent ones. However, the frame debugger indicates that the unlit shapes get drawn too.</p>
+						
+						<figure>
+							<img src="rendering/frame-debugger-draw.png" width="250" height="130">
+							<figcaption>All unlit renderers are drawn.</figcaption>
+						</figure>
+						
+						<p>They do get drawn, but because the transparent shader pass does not write to the depth buffer they end up getting drawn over by the skybox. The solution is to delay drawing transparent renderers until after the skybox.</p>
+						
+						<p>First, limit the draw before the skybox to only the opaque renderers. This is done by setting the <code>renderQueueRange</code> of the filter settings to <code>RenderQueueRange.opaque</code>, which covers the render queues from 0 up to and including 2500.</p>
+						
+						<pre translate="no">		var filterSettings = new FilterRenderersSettings(true) <ins>{</ins>
+			<ins>renderQueueRange = RenderQueueRange.opaque</ins>
+		<ins>}</ins>;</pre>
+						
+						<figure>
+							<img src="rendering/frame-debugger-opaque.png" width="250" height="98">
+							<figcaption>Only opaque renderers are drawn.</figcaption>
+						</figure>
+						
+						<p>Next, change the queue range to <code>RenderQueueRange.transparent</code>&mdash;from 2501 up to and including 5000&mdash;after rendering the skybox, and render again.</p>
+						
+						<pre translate="no">		var filterSettings = new FilterRenderersSettings(true) {
+			renderQueueRange = RenderQueueRange.opaque
+		};
+
+		context.DrawRenderers(
+			cull.visibleRenderers, ref drawSettings, filterSettings
+		);
+
+		context.DrawSkybox(camera);
+
+		<ins>filterSettings.renderQueueRange = RenderQueueRange.transparent;</ins>
+		<ins>context.DrawRenderers(</ins>
+			<ins>cull.visibleRenderers, ref drawSettings, filterSettings</ins>
+		<ins>);</ins></pre>
+						
+						<figure>
+							<img src="rendering/opaque-then-transparent.jpg" width="250" height="100" alt="scene"><br>
+							<img src="rendering/frame-debugger-transparent.png" width="250" height="146" alt="frame debugger">
+							<figcaption>Opaque, skybox, then transparent.</figcaption>
+						</figure>
+						
+						<p>We draw the opaque renderers before the skybox to prevent overdraw. As the shapes will always be in front of the skybox, we avoid work by drawing them first. That's because the opaque shader pass writes to the depth buffer, which is used to skip anything that's drawn later that ends up further away.</p>
+						
+						<p>Besides covering parts of the sky, opaque renderers can also end up obscuring each other. Ideally, only the one closest to the camera is drawn for each fragment of the frame buffer. So to reduce overdraw as much as possible, we should draw the nearest shapes first. That can be done by sorting the renderers before drawing, which is controlled via sorting flags.</p>
+						
+						<p>The draw settings contain a <code>sorting</code> struct of type <code>DrawRendererSortSettings</code>, which contains the sort flags. Set it to <code>SortFlags.CommonOpaque</code> before drawing the opaque shapes. This instructs Unity to sort the renderers by distance, from front to back, plus a few other criteria.</p>
+						
+						<pre translate="no">		var drawSettings = new DrawRendererSettings(
+			camera, new ShaderPassName("SRPDefaultUnlit")
+		);
+		<ins>drawSettings.sorting.flags = SortFlags.CommonOpaque;</ins></pre>
+						
+						<p>However, transparent rendering works differently. It combines the color of what's being drawn with what has been drawn before, so the result appears transparent. That requires the reverse draw order, from back to front. We can use <code>SortFlags.CommonTransparent</code> for that.</p>
+						
+						<pre translate="no">		context.DrawSkybox(camera);
+
+		<ins>drawSettings.sorting.flags = SortFlags.CommonTransparent;</ins>
+		filterSettings.renderQueueRange = RenderQueueRange.transparent;
+		context.DrawRenderers(
+			cull.visibleRenderers, ref drawSettings, filterSettings
+		);</pre>
+						
+						<p>Our pipeline is now able to render both opaque and transparent unlit objects correctly.</p>
+					</section>
+					
+					<a href="rendering/rendering.unitypackage" download rel="nofollow">unitypackage</a>
+				</section>
+				
+				<section>
+					<h2>Polishing</h2>
+					
+					<p>Being able to render correctly is only part of having a functional pipeline. There are other things to consider, such as whether it is fast enough, doesn't allocate unneeded temporary objects, and integrates well with the Unity editor.</p>
+					
+					<section>
+						<h3>Memory Allocations</h3>
+						
+						<p>Let's check whether our pipeline behaves well in terms of memory management, or if it allocates memory every frame, which will trigger frequent memory garbage collection runs. This is done by opening the profiler via <em translate="no">Window / Analysis / Profiler</em> and inspecting the <em translate="no">CPU Usage</em> data in <em translate="no">Hierarchy</em> mode. While you can do this in play mode in the editor, it is also a good idea to profile a build, by making sure you create a development build and having it attach to the profiler automatically, although deep profiling isn't possible in that case.</p>
+						
+						<p>Sort by <em translate="no">GC Alloc</em> and you'll see that memory indeed gets allocated each frame. Some of it is out of our control, but quite a few bytes are allocated inside our pipeline's <code>Render</code> method.</p>
+						
+						<p>It turns out that culling allocates the most memory. The reason for this is that although <code>CullResults</code> is a struct, it contains three lists, which are objects. Each time we ask for a new cull result, we end up allocating memory for new lists. So there isn't much benefit to <code>CullResults</code> being a struct.</p>
+						
+						<p>Fortunately, <code>CullResults</code> has an alternative <code>Cull</code> method that accepts a struct as a reference parameter, instead of returning a new one. That makes it possible to reuse the lists. All we have to do is turn <code>cull</code> into a field and provide it as an additional argument to <code>CullResults.Cull</code>, instead of assigning to it.</p>
+						
+						<pre translate="no">	<ins>CullResults cull;</ins>
+
+	&hellip;
+
+	void Render (ScriptableRenderContext context, Camera camera) {
+		&hellip;
+
+		<del>//CullResults cull = CullResults.Cull(ref cullingParameters, context);</del>
+		<ins>CullResults.Cull(ref cullingParameters, context, ref cull);</ins>
+		
+		&hellip;
+	}</pre>
+						
+						<p>Another source of continuous memory allocation is our use of the camera's name property. Each time we get its value, it fetches the name data from native code, which necessitates the creation of a new string, which is an object. So let's always name our command buffer <em translate="no">Render Camera</em> instead.</p>
+						
+						<pre translate="no">		var buffer = new CommandBuffer() {
+			name = <ins>"Render Camera"</ins>
+		};</pre>
+						
+						<figure>
+							<img src="polishing/constant-buffer-name.png" width="250" height="82">
+							<figcaption>Using a constant buffer name.</figcaption>
+						</figure>
+						
+						<p>Finally, the command buffer itself is an object too. Fortunately, we can create a command buffer once and reuse it. Replace the local variable with a <code>cameraBuffer</code> field. Thanks to the object initialization syntax, we can create a named command buffer as its default value. The only other change is that we have to clear the command buffer instead of releasing it, for which we can use its <code>Clear</code> method.</p>
+						
+						<pre translate="no">	<ins>CommandBuffer cameraBuffer = new CommandBuffer {</ins>
+		<ins>name = "Render Camera"</ins>
+	<ins>};</ins>
+
+	&hellip;
+
+	void Render (ScriptableRenderContext context, Camera camera) {
+		&hellip;
+
+		<del>//var buffer = new CommandBuffer() {</del>
+		<del>//	name = "Render Camera"</del>
+		<del>//};</del>
+		<ins>cameraBuffer</ins>.ClearRenderTarget(true, false, Color.clear);
+		context.ExecuteCommandBuffer(<ins>cameraBuffer</ins>);
+		<del>//buffer.Release();</del>
+		<ins>cameraBuffer.Clear();</ins>
+
+		&hellip;
+	}</pre>
+						
+						<p>After these changes our pipeline no longer creates temporary objects every frame.</p>
+					</section>
+					
+					<section>
+						<h3>Frame Debugger Sampling</h3>
+						
+						<p>Another thing that we can do is improve the data shown by the frame debugger. Unity's pipelines display a nested hierarchy of events, but ours are all at the root level. We can build a hierarchy by using our command buffer to begin and end profiler samples.</p>
+						
+						<p>Let's start by invoking <code>BeginSample</code> right before <code>ClearRenderTarget</code>, immediately followed by an invocation of <code>EndSample</code>. Each sample must have both a begin and an end, and both must be provided with the exact same name. Besides that, I have found that it is best to use the same name as the command buffer that defines the sampling. The command buffer's name often gets used anyway.</p>
+						
+						<pre translate="no">		<ins>cameraBuffer.BeginSample("Render Camera");</ins>
+		cameraBuffer.ClearRenderTarget(true, false, Color.clear);
+		<ins>cameraBuffer.EndSample("Render Camera");</ins>
+		context.ExecuteCommandBuffer(cameraBuffer);
+		cameraBuffer.Clear();</pre>
+						
+						<figure>
+							<img src="polishing/sampling.png" width="250" height="98">
+							<figcaption>Sampling creates a hierarchy.</figcaption>
+						</figure>
+						
+						<p>We now see a <em translate="no">Render Camera</em> level nested inside the original <em translate="no">Render Camera</em> of the command buffer, which in turn contains the clear operation. But it is possible to go a step further, nesting all other actions related to the camera inside it as well. This requires us to delay the ending of the sample until right before we submit the context. So we have to insert an additional <code>ExecuteCommandBuffer</code> at that point, only containing the instruction to end the sample. Use the same command buffer for this, again clearing it after we are done.</p>
+						
+						<pre translate="no">		cameraBuffer.BeginSample("Render Camera");
+		cameraBuffer.ClearRenderTarget(true, false, Color.clear);
+		<del>//cameraBuffer.EndSample("Render Camera");</del>
+		context.ExecuteCommandBuffer(cameraBuffer);
+		cameraBuffer.Clear();
+
+		&hellip;
+
+		<ins>cameraBuffer.EndSample("Render Camera");</ins>
+		<ins>context.ExecuteCommandBuffer(cameraBuffer);</ins>
+		<ins>cameraBuffer.Clear();</ins>
+
+		context.Submit();</pre>
+						
+						<figure>
+							<img src="polishing/nested-sampling.png" width="250" height="98">
+							<figcaption>Nested sampling.</figcaption>
+						</figure>
+						
+						<p>This looks good, except that the clear action gets nested inside a redundant <em translate="no">Render Camera</em> level, while all other actions are directly below the root level. I'm not sure why this happens, but it can be avoided by beginning the sample after clearing.</p>
+						
+						<pre translate="no">		<del>//cameraBuffer.BeginSample("Render Camera");</del>
+		cameraBuffer.ClearRenderTarget(true, false, Color.clear);
+		<ins>cameraBuffer.BeginSample("Render Camera");</ins>
+		context.ExecuteCommandBuffer(cameraBuffer);
+		cameraBuffer.Clear();</pre>
+						
+						<figure>
+							<img src="polishing/without-redundancy.png" width="250" height="84">
+							<figcaption>No redundant nesting.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Rendering the Default Pipeline</h3>
+						
+						<p>Because our pipeline only supports unlit shaders, objects that use different shaders are not rendered, making them invisible. While this is correct, it hides the fact that some objects use the wrong shader. It would be nice if we visualized those objects with Unity's error shader, so they show up as obviously incorrect magenta shapes. Let's add a dedicated <code>DrawDefaultPipeline</code> method for this, with a context and a camera parameter. We'll invoke it at the end, after drawing the transparent shapes.</p>
+						
+						<pre translate="no">	void Render (ScriptableRenderContext context, Camera camera) {
+		&hellip;
+
+		drawSettings.sorting.flags = SortFlags.CommonTransparent;
+		filterSettings.renderQueueRange = RenderQueueRange.transparent;
+		context.DrawRenderers(
+			cull.visibleRenderers, ref drawSettings, filterSettings
+		);
+
+		<ins>DrawDefaultPipeline(context, camera);</ins>
+
+		cameraBuffer.EndSample("Render Camera");
+		context.ExecuteCommandBuffer(cameraBuffer);
+		cameraBuffer.Clear();
+
+		context.Submit();
+	}
+
+	<ins>void DrawDefaultPipeline(ScriptableRenderContext context, Camera camera) {}</ins></pre>
+						
+						<p>Unity's default surface shader has a <em translate="no">ForwardBase</em> pass that is used as the first forward rendering pass. We can use this to identify objects that have a material that works with the default pipeline. Select that pass via new draw settings and use that for rendering, together with new default filter settings. We don't care about sorting or separating opaque and transparent renderers, because they're invalid anyway.</p>
+						
+						<pre translate="no">	void DrawDefaultPipeline(ScriptableRenderContext context, Camera camera) {
+		<ins>var drawSettings = new DrawRendererSettings(</ins>
+			<ins>camera, new ShaderPassName("ForwardBase")</ins>
+		<ins>);</ins>
+		
+		<ins>var filterSettings = new FilterRenderersSettings(true);</ins>
+		
+		<ins>context.DrawRenderers(</ins>
+			<ins>cull.visibleRenderers, ref drawSettings, filterSettings</ins>
+		<ins>);</ins>
+	}</pre>
+						
+						<figure>
+							<img src="polishing/forward-base-pass.jpg" width="250" height="98">
+							<figcaption>Rendering forward base pass.</figcaption>
+						</figure>
+						
+						<p>The objects that use the default shader now show up. They're also visible in the frame debugger.</p>
+						
+						<figure>
+							<img src="polishing/frame-debugger-forward-base.png" width="288" height="210">
+							<figcaption>Everything gets drawn.</figcaption>
+						</figure>
+						
+						<p>Because our pipeline does not support a forward base pass they do not get rendered correctly. The necessary data isn't setup, so everything that depends on lighting ends up as black. Instead, we should render them with an error shader. To do this, we need an error material. Add a field for that. Then, at the start of <code>DrawDefaultPipeline</code>, create the error material if it doesn't already exist. This is done by retrieving the <em translate="no">Hidden/InternalErrorShader</em> via <code>Shader.Find</code>, then creating a new material with that shader. Also, set the material's hide flags to <code>HideFlags.HideAndDontSave</code> so it doesn't show up in the project window and doesn't get saved along with all other assets.</p>
+						
+						<pre translate="no">	<ins>Material errorMaterial;</ins>
+
+	&hellip;
+
+	void DrawDefaultPipeline(ScriptableRenderContext context, Camera camera) {
+		<ins>if (errorMaterial == null) {</ins>
+			<ins>Shader errorShader = Shader.Find("Hidden/InternalErrorShader");</ins>
+			<ins>errorMaterial = new Material(errorShader) {</ins>
+				<ins>hideFlags = HideFlags.HideAndDontSave</ins>
+			<ins>};</ins>
+		<ins>}</ins>
+		
+		&hellip;
+	}</pre>
+						
+						<p>One option of the draw settings is to override the material used when rendering, by invoking <code>SetOverrideMaterial</code>. Its first parameter is the material to use. Its second parameter is the index of the pass of the material's shader to be used for rendering. As the error shader only has a single pass, use zero.</p>
+						
+						<pre translate="no">		var drawSettings = new DrawRendererSettings(
+			camera, new ShaderPassName("ForwardBase")
+		);
+		<ins>drawSettings.SetOverrideMaterial(errorMaterial, 0);</ins></pre>
+						
+						<figure>
+							<img src="polishing/error-material.jpg" width="250" height="98">
+							<figcaption>Using the error shader.</figcaption>
+						</figure>
+						
+						<p>Objects that use an unsupported material now clearly show up as incorrect. But this is only true for materials of Unity's default pipeline, whose shaders have a <code>ForwardBase</code> pass. There are other built-in shaders that we can identify with different passes, specifically <em translate="no">PrepassBase</em>, <em translate="no">Always</em>, <em translate="no">Vertex</em>, <em translate="no">VertexLMRGBM</em>, and <em translate="no">VertexLM</em>.</p>
+						
+						<p>Fortunately, it is possible to add multiple passes to the draw settings, by invoking <code>SetShaderPassName</code>. The name is the second parameter of this method. Its first parameter is an index that controls the order in which the passes are drawn. We don't care about that, so any order is fine. The pass provided via the constructor always has index zero, just increment the index for additional passes.</p>
+						
+						<pre translate="no">		var drawSettings = new DrawRendererSettings(
+			camera, new ShaderPassName("ForwardBase")
+		);
+		<ins>drawSettings.SetShaderPassName(1, new ShaderPassName("PrepassBase"));</ins>
+		<ins>drawSettings.SetShaderPassName(2, new ShaderPassName("Always"));</ins>
+		<ins>drawSettings.SetShaderPassName(3, new ShaderPassName("Vertex"));</ins>
+		<ins>drawSettings.SetShaderPassName(4, new ShaderPassName("VertexLMRGBM"));</ins>
+		<ins>drawSettings.SetShaderPassName(5, new ShaderPassName("VertexLM"));</ins>
+		drawSettings.SetOverrideMaterial(errorMaterial, 0);</pre>
+						
+						<p>That covers all shaders provided by Unity up to this point, which should be sufficient to help point out the use of incorrect materials when creating a scene. But we only need to bother doing this during development, not in a build. So let's only invoke <code>DrawDefaultPipeline</code> in the editor. One way to do this is by adding a <code>Conditional</code> attribute to the method.</p>
+					</section>
+					
+					<section>
+						<h3>Conditional Code Execution</h3>
+						
+						<p>The <code>Conditional</code> attribute is defined in the <code>System.Diagnostics</code> namespace. We can use that namespace, but it unfortunately also contains a <code>Debug</code> type, which conflicts with <code>UnityEngine.Debug</code>. As we only need the attribute, we can avoid the conflict by using an alias. Instead of using the entire namespace, we use a specific type and assign it to a valid type name. In this case, we'll define <code>Conditional</code> as an alias for <code>System.Diagnostics.ConditionalAttribute</code>.</p>
+						
+						<pre translate="no">using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Experimental.Rendering;
+<ins>using Conditional = System.Diagnostics.ConditionalAttribute;</ins></pre>
+						
+						<p>Add the attribute to our method. It requires a string argument that specifies a symbol. If the symbol is defined during compilation, then the method invocation gets included as normal. But if the symbol is not defined, then the invocation of this method&mdash;including all its arguments&mdash;are omitted. It would be as if the <code>DrawDefaultPipeline(context, camera);</code> code didn't exist during compilation.</p>
+						
+						<p>To only include the invocation when compiling for the Unity editor, we have to rely on the <em translate="no">UNITY_EDITOR</em> symbol.</p>
+						
+						<pre translate="no">	<ins>[Conditional("UNITY_EDITOR")]</ins>
+	void DrawDefaultPipeline(ScriptableRenderContext context, Camera camera) {
+		&hellip;
+	}</pre>
+						
+						<p>We can go a step further and also include the invocation in development builds, only excluding it from release builds. To do so, add an additional conditional with the <em translate="no">DEVELOPMENT_BUILD</em> symbol.</p>
+						
+						<pre translate="no">	[<ins>Conditional("DEVELOPMENT_BUILD"),</ins> Conditional("UNITY_EDITOR")]
+	void DrawDefaultPipeline(ScriptableRenderContext context, Camera camera) {
+		&hellip;
+	}</pre>
+					</section>
+					
+					<section>
+						<h3>UI in Scene Window</h3>
+						
+						<p>One thing that we haven't considered up to this point is Unity's in-game UI. To test it, add a UI element to the scene, for example a single button, via <em translate="no">GameObject / UI / Button</em>. That creates a canvas with a button it it, plus an event system.</p>
+						
+						<p>It turns out that the UI gets rendered in the game window, without us having to do anything. Unity takes care of it for us. The frame debugger shows that the UI gets rendered separately, as an overlay.</p>
+						
+						<figure>
+							<img src="polishing/frame-debugger-ui-screen.png" width="250" height="162">
+							<figcaption>UI gets drawn in screen space.</figcaption>
+						</figure>
+						
+						<p>At least, that's the case when the canvas is set to render in screen space. When set to render in world space, the UI gets rendered along with the other transparent objects.</p>
+						
+						<figure>
+							<img src="polishing/frame-debugger-ui-world.png" width="286" height="260">
+							<figcaption>UI in world space.</figcaption>
+						</figure>
+						
+						<p>Although the UI works in the game window, it doesn't show up the scene window. The UI always exists in world space in the scene window, but we have to manually inject it into the scene. Adding the UI is done by invoking the static <code>ScriptableRenderContext.EmitWorldGeometryForSceneView</code> method, with the current camera as an argument. This must be done before culling.</p>
+						
+						<pre translate="no">		if (!CullResults.GetCullingParameters(camera, out cullingParameters)) {
+			return;
+		}
+
+		<ins>ScriptableRenderContext.EmitWorldGeometryForSceneView(camera);</ins>
+
+		CullResults.Cull(ref cullingParameters, context, ref cull);</pre>
+						
+						<p>But this also adds the UI a second time in the game window. To prevent that, we must only emit the UI geometry when rendering the scene window. This is the case when the <code>cameraType</code> of the camera is equal to <code>CameraType.SceneView</code>.</p>
+						
+						<pre translate="no">		<ins>if (camera.cameraType == CameraType.SceneView) {</ins>
+			ScriptableRenderContext.EmitWorldGeometryForSceneView(camera);
+		<ins>}</ins></pre>
+						
+						<p>This works, but only in the editor. Conditional compilation makes sure that the <code>EmitWorldGeometryForSceneView</code> doesn't exist when compiling for a build, which means that we now get a compiler error when trying to build. To make it work again, we have to make the code that invokes <code>EmitWorldGeometryForSceneView</code> conditional as well. That is done by putting the code in between <code>#if</code> and <code>#endif</code> statements. The <code>#if</code> statement requires a symbol, just like the <code>Conditional</code> attribute. By using <em translate="no">UNITY_EDITOR</em>, the code to only get included when compiling for the editor.</p>
+						
+						<pre translate="no">	void Render (ScriptableRenderContext context, Camera camera) {
+		ScriptableCullingParameters cullingParameters;
+		if (!CullResults.GetCullingParameters(camera, out cullingParameters)) {
+			return;
+		}
+
+<ins>#if UNITY_EDITOR</ins>
+		if (camera.cameraType == CameraType.SceneView) {
+			ScriptableRenderContext.EmitWorldGeometryForSceneView(camera);
+		}
+<ins>#endif</ins>
+
+		CullResults.Cull(ref cullingParameters, context, ref cull);
+
+		&hellip;
+	}</pre>
+						
+						<p>The next tutorial is <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/custom-shaders/">Custom Shaders</a>.</p>
+					</section>
+					
+					<a href="https://bitbucket.org/catlikecodingunitytutorials/scriptable-render-pipeline-01-custom-pipeline/" class="repository">repository</a>
+					<a href="Custom-Pipeline.pdf" download rel="nofollow">PDF</a>
+				</section>
+			</article>
+		</main>
+
+		<footer>
+			<p>Enjoying the <a href="https://catlikecoding.com/unity/tutorials/">tutorials</a>? Are they useful? Want more?</p>
+			<p><b><a href="https://www.patreon.com/catlikecoding">Please support me on Patreon!</a></b></p>
+			<p><a href="https://www.patreon.com/catlikecoding"><img src="https://catlikecoding.com/unity/tutorials/become-a-patron.png" alt="Become my patron!" width="217" height="51"></a></p>
+			<p><b><a href="https://catlikecoding.com/unity/tutorials/donating.html">Or make a direct donation</a>!</b></p>
+			<p>made by <a href="https://catlikecoding.com/jasper-flick/" rel="author">Jasper Flick</a></p>
+		</footer>
+		
+		<script src="../../tutorials.js"></script>
+	</body>
+</html>

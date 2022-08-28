@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html>
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/constructing-a-fractal/">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/constructing-a-fractal/tutorial-image.jpg">
+		<meta property="og:image:width" content="750">
+		<meta property="og:image:height" content="750">
+		<meta property="og:description" content="A Unity C# scripting tutorial about creating a fractal with recursive logic, coroutines, and randomness.">
+		<meta name="description" content="A Unity C# scripting tutorial about creating a fractal with recursive logic, coroutines, and randomness.">
+		<meta property="og:title" content="Constructing a Fractal, a Unity C# Tutorial">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Constructing a Fractal, a Unity C# Tutorial</title>
+		<link href="../tutorials.css" rel="stylesheet">
+		<link rel="manifest" href="../../../site.webmanifest">
+		<link rel="mask-icon" href="../../../safari-pinned-tab.svg" color="#aa0000">
+		<script>
+			var customTypes = {
+				Fractal: 1
+			};
+		</script>
+	</head>
+	<body>
+		<header>
+			<a href="../../../index.html"><img src="../../../catlike-coding-logo.svg" alt="Catlike Coding" width="45" height="45"></a>
+			<p><a href="../../../index.html">Catlike Coding</a></p>
+			<p class="category"><a href="../../tutorials">Unity C# Tutorials</a></p>
+		</header>
+		
+		<main>
+			<article itemscope itemtype="http://schema.org/TechArticle">
+				<header>
+					<h1 itemprop="name headline">Constructing a Fractal</h1>
+					<p>Details Through Recursion</p>
+					<ul>
+						<li>Instantiate game objects.</li>
+						<li>Work with recursion.</li>
+						<li>Use coroutines.</li>
+						<li>Add randomness.</li>
+					</ul>
+				</header>
+				
+				<p><em>This tutorial is deprecated.</em></p>
+				
+				<p itemprop="about description">Fractals are intriguing and often beautiful. In this tutorial we'll write a small C# script that manifests some fractal-like behavior.</p>
+
+				<p itemprop="dependencies">You're assumed to know your way around Unity's editor and know the basics of creating C# scripts. If you've completed the <a href="../clock/index.html">Clock tutorial</a> then you're good to go.</p>
+				
+				<p>This is an old tutorial and will be upgraded, but it's still fun to do. Mentions of diffuse and specular materials no longer apply to Unity 2017, so you can ignore that.</p>
+
+				<figure>
+					<img src="tutorial-image.jpg" width="375" height="375" itemprop="image">
+					<figcaption>You'll create randomized 3D fractals.</figcaption>
+				</figure>
+				
+				<section>
+					<h2>How to Make a Fractal</h2>
+
+					<p>We are going to create a 3D <a href="http://en.wikipedia.org/wiki/Fractal">fractal</a>. We use the concept that the details of a fractal can look exactly like the whole thing. We can apply this to an object hierarchy in Unity. Start with some root object, then add children to it that are smaller but otherwise identical. Doing this by hand would be cumbersome, so we'll create a script to do it for us.</p>
+					
+					<p>Start with a new project and a new scene. I put a directional light in there and moved the camera to a more interesting angle, but you can set it up as you please. I also went ahead and created a material to use for the fractal later. It simply uses the specular shader with default settings, which is just a bit more pleasing to look at than the default diffuse one.</p>
+					
+					<p>Create a new empty game object and place it at the origin. This will be the base of our fractal. Then create a new C# script named <i>Fractal</i> and add it to the object.</p>
+					
+					<pre translate="no"><mark>using UnityEngine;</mark>
+<mark>using System.Collections;</mark>
+
+<mark>public class Fractal : MonoBehaviour {</mark>
+
+<mark>}</mark></pre>
+
+					<figure>
+						<img src="01-project-setup.png" width="786" height="160">
+						<figcaption>Project setup.</figcaption>
+					</figure>
+					
+					<a href="fractal-01-how-to-make-a-fractal.unitypackage" download rel="nofollow">unitypackage</a>
+				</section>
+				
+				<section>
+					<h2>Showing Something</h2>
+					
+					<p>What will our fractal look like? Let's make it configurable by adding a public mesh and material variable to our <code>Fractal</code> component script. We then insert a <code>Start</code> method in which we add a new <code>MeshFilter</code> component and a new <code>MeshRenderer</code> component. At the same time, we directly assign our mesh and material to them.</p>
+					
+					<pre translate="no">using UnityEngine;
+using System.Collections;
+
+public class Fractal : MonoBehaviour {
+	
+	<mark>public Mesh mesh;</mark>
+	<mark>public Material material;</mark>
+
+	<mark>private void Start () {</mark>
+		<mark>gameObject.AddComponent&lt;MeshFilter>().mesh = mesh;</mark>
+		<mark>gameObject.AddComponent&lt;MeshRenderer>().material = material;</mark>
+	<mark>}</mark>
+}</pre>
+					
+					<aside>
+						<h3>What's a mesh?</h3>
+						
+						<div>
+							<p>Mechanically, a <code>Mesh</code> is a construct used by the graphics hardware to draw complex stuff. It's a 3D object that's either imported into Unity, one of Unity's default shapes, or generated by code.</p>
+							
+							<p>A mesh contains at least a collection of points in 3D space plus a set of triangles – the most basic 2D shapes – defined by these points. The triangles constitute the surface of whatever the mesh represents. Often, you won't realize that you're looking at a bunch of triangles instead of a real object.</p>
+						</div>
+					</aside>
+					
+					<aside>
+						<h3>What's a material?</h3>
+						
+						<div>
+							<p>Materials are used to define the visual properties of objects. They can range from very simple, like a constant color, to very complex.</p>
+							<p>Materials consist of a shader and whatever data the shader needs. Shaders are basically scripts that tell the graphics card how an object's polygons should be drawn.</p>
+							<p>The standard diffuse shader uses a single color and optionally a texture, along with the light sources in the scene, to determine the appearance of polygons. I'm using the slightly more complex specular shader here, which simulates a highlight as well.</p>
+						</div>
+					</aside>
+					
+					<aside>
+						<h3>When is <code>Start</code> invoked?</h3>
+						
+						<div>
+							<p>The <code>Start</code> method is called by Unity after the component is created, once it's active, and just before the first time its <code>Update</code> method would be called, if it had one. It's only called once.</p>
+						</div>
+					</aside>
+					
+					<aside>
+						<h3>How does <code>AddComponent</code> work?</h3>
+						
+						<div>
+							<p>The <code>AddComponent</code> method creates a new component of a certain type, attaches it to the game object, and returns a reference to it. That's why we can immediately access the component's values. You could also use an intermediate variable.</p>
+							
+							<pre translate="no">		MeshFilter filter = gameObject.AddComponent&lt;MeshFilter>();
+		filter.mesh = mesh;</pre>
+							
+							<p>The special syntax is because it's a generic method. It's effectively a method template that can work with a range of types. You tell it what type to use by mentioning it between angle brackets.</p>
+						</div>
+					</aside>
+			
+					<p>Now we can assign our custom material to the fractal component. Also assign a mesh by clicking on the dot next to the property and selecting Unity's default cube from the popup. After doing so, a cube will show up when we enter play mode.</p>
+					
+					<p>Of course we could have also added the components manually, but we're creating a fractal here.</p>
+			
+					<figure>
+						<img alt="inspector in edit mode" src="02-mesh-material.png" width="320" height="76">
+						<img alt="inspector in play mode" src="02-added-components.png" width="320" height="290">
+						<img alt="cube in play mode" src="02-cube.png" width="200" height="200">
+						<figcaption>Components appear in play mode.</figcaption>
+					</figure>
+					
+					<a href="fractal-02-showing-something.unitypackage" download rel="nofollow">unitypackage</a>
+				</section>
+			
+				<section>
+					<h2>Making Children</h2>
+					
+					<p>How do we create the children of this fractal? The easiest way is to just go ahead and make one in <code>Start</code> by creating a new game object and adding a <code>Fractal</code> component to it. Try it, hit play, and quickly exit play mode again.</p>
+			
+					<pre translate="no">	private void Start () {
+		gameObject.AddComponent&lt;MeshFilter>().mesh = mesh;
+		gameObject.AddComponent&lt;MeshRenderer>().material = material;
+		<mark>new GameObject("Fractal Child").AddComponent&lt;Fractal>();</mark>
+	}</pre>
+					
+					<aside>
+						<h3>What does <code>new</code> do?</h3>
+						
+						<div>
+							<p>The <code>new</code> keyword is used to construct a new instance of an object or a struct. It's followed by calling a special constructor method, which has the same name as the class or struct it belongs to.</p>
+						</div>
+					</aside>
+					
+					<p>The problem is that every new fractal instance will create yet another one. This happens each frame, without end. Let it run for a while and your computer will get into trouble as it runs out of memory. Typically recursive algorithms that don't stop will consume your machine's resources almost instantly and result in either a stack overflow exception or a crash. In this case it is a rather benign explosion, because it happens slowly.</p>
+					
+					<p>To prevent this from happening, we introduce the concept of a maximum depth. Our initial fractal instance will have a depth of zero. It's child will have a depth of one. The child of this child will have a depth of 2. And so on, until the maximum depth is reached.</p>
+					
+					<p>Add a public <code>maxDepth</code> integer variable and set it to 4 in the inspector. Also add a private <code>depth</code> integer. Then only create a new child if we are below the maximum depth.</p>
+					
+					<p>What will happen when we enter play mode now?</p>
+			
+					<pre translate="no">	<mark>public int maxDepth;</mark>
+
+	<mark>private int depth;</mark>
+
+	private void Start () {
+		gameObject.AddComponent&lt;MeshFilter>().mesh = mesh;
+		gameObject.AddComponent&lt;MeshRenderer>().material = material;
+		<mark>if (depth &lt; maxDepth) {</mark>
+			new GameObject("Fractal Child").AddComponent&lt;Fractal>();
+		<mark>}</mark>
+	}</pre>
+			
+					<figure>
+						<img src="03-max-depth.png" width="320" height="92">
+						<figcaption>Maximum depth.</figcaption>
+					</figure>
+
+					<p>Exactly one child got created. Why? Because we never gave <code>depth</code> a value, it's always zero. Because zero is less than 4, our root fractal object created a child. The child's <code>depth</code> value is also zero. However, we never set the child's <code>maxDepth</code> either, so it is also zero. Therefore the child did not create another one.</p>
+					
+					<p>Besides that, the child also lacks a material and a mesh. We need to copy these references from its parent. Let's add a new method that takes care of all the necessary initializations.</p>
+			
+					<pre translate="no">	private void Start () {
+		gameObject.AddComponent&lt;MeshFilter>().mesh = mesh;
+		gameObject.AddComponent&lt;MeshRenderer>().material = material;
+		if (depth &lt; maxDepth) {
+			new GameObject("Fractal Child").
+				AddComponent&lt;Fractal>()<mark>.Initialize(this)</mark>;
+		}
+	}
+	
+	<mark>private void Initialize (Fractal parent) {</mark>
+		<mark>mesh = parent.mesh;</mark>
+		<mark>material = parent.material;</mark>
+		<mark>maxDepth = parent.maxDepth;</mark>
+		<mark>depth = parent.depth + 1;</mark>
+	<mark>}</mark></pre>
+					
+					<aside>
+						<h3>What's <code>this</code>?</h3>
+						
+						<div>
+							<p>The <code>this</code> keyword refers to the current object or struct whose method is being called. It's being used implicitly all the time when referring to stuff from the same class. For example, whenever we've accessed <code>depth</code> we could have also done it via <code>this.depth</code>.</p>
+							
+							<p>You typically only use this when you need to pass along a reference to the object itself, like we do for <code>Initialize</code>. Why? Because we're calling the <code>Initialize</code> method of the new child object, not of the parent object.</p>
+						</div>
+					</aside>
+					
+					<aside>
+						<h3>Is <code>Initialize</code> invoked before <code>Start</code>?</h3>
+						
+						<div>
+							<p>Yes, it is. First the new game object is created. Then a new <code>Fractal</code> component is created and added to it. At this point its <code>Awake</code> and <code>OnEnable</code> methods would be invoked, if they had existed. Then the <code>AddComponent</code> method finishes. Directly after that we invoke <code>Initialize</code>. The call to <code>Start</code> won't happen until the next frame.</p>
+						</div>
+					</aside>
+					
+					<p>When we enter play mode this time, four children will be created, as was expected. But they're not really children, as they all appear in the hierarchy root. The parent&ndash;child relationship between game objects is defined by their transformation hierarchy. So a child needs to make the parent of it's transform component equal to it's fractal parent's transform.</p>
+			
+					<pre translate="no">	private void Initialize (Fractal parent) {
+		mesh = parent.mesh;
+		material = parent.material;
+		maxDepth = parent.maxDepth;
+		depth = parent.depth + 1;
+		<mark>transform.parent = parent.transform;</mark>
+	}</pre>
+			
+					<figure>
+						<img alt="children without nesting" src="03-children-flat.png" width="228" height="116">
+						<img alt="children with nesting" src="03-children-nested.png" width="228" height="116">
+						<figcaption>Children, without and with nesting.</figcaption>
+					</figure>
+					
+					<a href="fractal-03-making-children.unitypackage" download rel="nofollow">unitypackage</a>
+				</section>
+			
+				<section>
+					<h2>Shaping Children</h2>
+			
+					<p>So far the children are superimposed on their parent, which means we still only see a single box. We need to move them inside their local space so that they become visible. And because they are supposed to be smaller than their parent, we have to scale them down too.</p>
+					
+					<p>First the scaling. How much? Let's make it configurable with a new variable named <code>childScale</code> and assign it a value of 0.5 in the inspector. Don't forget to pass this value from parent to child as well. Then use it to set the child's local scale.</p>
+					
+					<p>Next, where shall we move the children? Let's simply move them straight up, so that they touch their parent. We assume that the parent has a size of one in all directions, which is true for the cube that we're using. Moving up by a half puts us at the point where parent and child should touch. So we have to move an additional amount equal to half the size of the child.</p>
+			
+					<pre translate="no">	<mark>public float childScale;</mark>
+
+	private void Initialize (Fractal parent) {
+		mesh = parent.mesh;
+		material = parent.material;
+		maxDepth = parent.maxDepth;
+		depth = parent.depth + 1;
+		<mark>childScale = parent.childScale;</mark>
+		transform.parent = parent.transform;
+		<mark>transform.localScale = Vector3.one * childScale;</mark>
+		<mark>transform.localPosition = Vector3.up * (0.5f + 0.5f * childScale);</mark>
+	}</pre>
+			
+					<figure>
+						<img alt="inspector" src="04-inspector.png" width="320" height="108">
+						<img alt="child scale of 0.5" src="04-child-scale.png" width="200" height="300">
+						<img alt="child scale comparison" src="04-child-scale-comparison.png" width="350" height="350">
+						<figcaption>Child scale of 0.5, and from 0.3 to 0.7 for comparison.</figcaption>
+					</figure>
+					
+					<a href="fractal-04-shaping-children.unitypackage" download rel="nofollow">unitypackage</a>
+				</section>
+				
+				<section>
+					<h2>Making Multiple Children</h2>
+			
+					<p>What we are creating now looks like a tower, but not really a fractal. We need it to branch, by creating multiple children per parent. It is easy to just create a second object, but it also has to grow in a different direction. So let's add a direction parameter to our <code>Initialize</code> method and use that to position the second child to the right instead of up.</p>
+			
+					<pre translate="no">	private void Start () {
+		gameObject.AddComponent&lt;MeshFilter>().mesh = mesh;
+		gameObject.AddComponent&lt;MeshRenderer>().material = material;
+		if (depth &lt; maxDepth) {
+			new GameObject("Fractal Child").AddComponent&lt;Fractal>().
+				Initialize(this<mark>, Vector3.up</mark>);
+			<mark>new GameObject("Fractal Child").AddComponent&lt;Fractal>().</mark>
+				<mark>Initialize(this, Vector3.right);</mark>
+		}
+	}
+
+	private void Initialize (Fractal parent<mark>, Vector3 direction</mark>) {
+		&hellip;
+		transform.localPosition = <mark>direction</mark> * (0.5f + 0.5f * childScale);
+	}</pre>
+					
+					<aside>
+						<h3>What does <code>&hellip;</code> mean?</h3>
+						
+						<div>
+							<p>It means that I have omitted a chunk of code that hasn't changed. It should be clear where the new or changed code is situated, or its exact placement doesn't matter.</p>
+						</div>
+					</aside>
+			
+					<figure>
+						<img src="05-two-children.png" width="215" height="325">
+						<figcaption>Two children per parent.</figcaption>
+					</figure>
+			
+					<p>This is starting to look more like it! Do you still understand in what order the cubes have been created? As they're all created in a few frames, it goes too fast for us to see it grow. I think it's fun to slow this process down so we can watch it happen. We can do this by using a coroutine to create the children.</p>
+					
+					<p>Think of coroutines as methods in which you can insert pause statements. While the method invocation is paused, the rest of the program continues. Though this point of view is too simplistic, it is all we need to make use of it right now.</p>
+					
+					<p>Move the two child creation lines to a new method named <code>CreateChildren</code>. This method needs to have <code>IEnumerator</code> as a return type, which exists in the <code>System.Collections</code> namespace. That's why Unity includes it in their default script template and why I included it in the beginning as well.</p>
+					
+					<p>Instead of just calling this method in <code>Start</code>, we have to call it as an argument for Unity's <code>StartCoroutine</code> method.</p>
+					
+					<p>Then add a pause directive before creating each child. Do this by creating a new <code>WaitForSeconds</code> object for half a second or so, then yielding it back to Unity.</p>
+			
+					<pre translate="no">	private void Start () {
+		gameObject.AddComponent&lt;MeshFilter>().mesh = mesh;
+		gameObject.AddComponent&lt;MeshRenderer>().material = material;
+		if (depth &lt; maxDepth) {
+			<mark>StartCoroutine(CreateChildren());</mark>
+		}
+	}
+
+	<mark>private IEnumerator CreateChildren () {</mark>
+		<mark>yield return new WaitForSeconds(0.5f);</mark>
+		new GameObject("Fractal Child").
+			AddComponent&lt;Fractal>().Initialize(this, Vector3.up);
+		<mark>yield return new WaitForSeconds(0.5f);</mark>
+		new GameObject("Fractal Child").
+			AddComponent&lt;Fractal>().Initialize(this, Vector3.right);
+	<mark>}</mark></pre>
+					
+					<aside>
+						<h3>What's an enumerator?</h3>
+						
+						<div>
+							<p>Enumeration is the concept of going through some collection one item at a time, like looping over all elements in an array. An enumerator &ndash; or iterator &ndash; is an object that provides an interface for this functionality. <code>System.Collections.IEnumerator</code> describes such an interface.</p>
+							
+							<p>Why do we need this? Because coroutines use them. This is also why Unity includes <code>System.Collections</code> in their default script template, and why I included it as well.</p>
+						</div>
+					</aside>
+					
+					<aside>
+						<h3>What does <code>return</code> do?</h3>
+						
+						<div>
+							<p>You use the <code>return</code> keyword to indicate that a method is finished and what its result is. What you return must match the type of the method. If it's a <code>void</code> method then you simply return nothing.</p>
+							
+							<p>It's not needed to have a <code>return</code> statement at the end of a <code>void</code> or a special constructor method, for all other methods it's required.</p>
+							
+							<p>It is possible to have multiple <code>return</code> statements inside a method. In that case there are multiple possible exit points. You'd typically use <code>if</code> statements to determine which <code>return</code> gets used.</p>
+						</div>
+					</aside>
+					
+					<aside>
+						<h3>What does <code>yield</code> do?</h3>
+						
+						<div>
+							<p>The <code>yield</code> statement is used by iterators to make life easy for them. To make enumeration possible, you'd need to keep track of your progress. This involves some boilerplate code that is essentially always the same. What you'd really want is to just write something like <code>return firstItem; return secondItem;</code> until you are done. The <code>yield</code> statement allows you to do exactly that.</p>
+							
+							<p>So whenever you're using <code>yield</code>, an enumerator object is created behind the scenes to take care of the tedious bits. That's why our <code>CreateChildren</code> method has <code>IEnumerator</code> as its return type.</p>
+							
+							<p>By the way, you can also yield another iterator. In that case this other iterator will be processed completely, so you can stitch them together in creative ways.</p>
+						</div>
+					</aside>
+					
+					<aside>
+						<h3>How do coroutines work?</h3>
+						
+						<div>
+							<p>When you're creating a coroutine in Unity, what you're really doing is creating an iterator. When you pass it to the <code>StartCoroutine</code> method, it will get stored and gets asked for its next item every frame, until it is finished.</p>
+							
+							<p>The yield statements produce the items. The statements in between &ndash; the stuff that you want to happen &ndash; are side-effects of the iterator doing its job.</p>
+							
+							<p>You can yield special things like <code>WaitForSeconds</code> to have more control over when your own code continues, but the overall approach is simply that of an iterator.</p>
+						</div>
+					</aside>
+					
+					<p>Now we can watch it grow! Did you see a problem in the way it did? Let's add a third child per parent, this time on the left side.</p>
+			
+			<pre translate="no">	private IEnumerator CreateChildren () {
+		yield return new WaitForSeconds(0.5f);
+		new GameObject("Fractal Child").
+			AddComponent&lt;Fractal>().Initialize(this, Vector3.up);
+		yield return new WaitForSeconds(0.5f);
+		new GameObject("Fractal Child").
+			AddComponent&lt;Fractal>().Initialize(this, Vector3.right);
+		<mark>yield return new WaitForSeconds(0.5f);</mark>
+		<mark>new GameObject("Fractal Child").</mark>
+			<mark>AddComponent&lt;Fractal>().Initialize(this, Vector3.left);</mark>
+	}</pre>
+			
+					<figure>
+						<img alt="three children" src="05-three-children.png" width="300" height="280">
+						<img alt="three children with overdraw" src="05-three-children-overdraw.png" width="300" height="280">
+						<figcaption>Three children per parent, normal and overdraw vision.</figcaption>
+					</figure>
+					
+					<aside>
+						<h3>How can I use overdraw vision?</h3>
+						
+						<div>
+							<p>The toolbar of the scene view has a dropdown list that is set to <i>RGB</i> by default. One of its other options is <i>Overdraw</i>.</p>
+						</div>
+					</aside>
+					
+					<p>The problem is that the children have the same orientation as their parent. This means that a left child whose parent is itself a right child will find itself inside its grandparent, and vice versa. To solve this, we have to rotate the children so that their upward direction will point away from their parent.</p>
+					
+					<p>We will solve this by adding an orientation parameter to <code>Initialize</code>. It will be a quaternion used to set the local rotation of the new child. The upward child needs no rotation, the right child needs to rotate 90 degrees clockwise, and the left child needs to rotate in the opposite direction.</p>
+			
+					<pre translate="no">	private IEnumerator CreateChildren () {
+		yield return new WaitForSeconds(0.5f);
+		new GameObject("Fractal Child").AddComponent&lt;Fractal>().
+			Initialize(this, Vector3.up<mark>, Quaternion.identity</mark>);
+		yield return new WaitForSeconds(0.5f);
+		new GameObject("Fractal Child").AddComponent&lt;Fractal>().
+			Initialize(this, Vector3.right<mark>, Quaternion.Euler(0f, 0f, -90f)</mark>);
+		yield return new WaitForSeconds(0.5f);
+		new GameObject("Fractal Child").AddComponent&lt;Fractal>().
+			Initialize(this, Vector3.left<mark>, Quaternion.Euler(0f, 0f, 90f)</mark>);
+	}
+	
+	private void Initialize (Fractal parent,
+	                         Vector3 direction,
+	                         <mark>Quaternion orientation</mark>) {
+		&hellip;
+		<mark>transform.localRotation = orientation;</mark>
+	}</pre>
+			
+					<figure>
+						<img alt="three children rotated" src="05-three-children-rotated.png" width="300" height="280">
+						<img alt="three children rotated with overdraw" src="05-three-children-rotated-overdraw.png" width="300" height="280">
+						<figcaption>Three children per parent, now rotated.</figcaption>
+					</figure>
+					
+					<p>Now that the children are rotated, they no longer immediately grow back into the fractal. But you might have noticed that some of the smallest children still end up disappearing into the root cube. This happens because with a scaling factor of 0.5, this fractal will self-intersect in four steps. You can reduce the scaling to solve this problem, or use spheres instead of cubes.</p>
+			
+					<figure>
+						<img alt="spheres" src="05-spheres.png" width="295" height="260">
+						<img alt="spheres with overdraw" src="05-spheres-overdraw.png" width="295" height="260">
+						<figcaption>Spheres don't self-intersect with a child scale of 0.5.</figcaption>
+					</figure>
+					
+					<a href="fractal-05-making-multiple-children.unitypackage" download rel="nofollow">unitypackage</a>
+				</section>
+			
+				<section>
+					<h2>Better Code For More Children</h2>
+			
+					<p>Our code has become a bit unwieldy. Let us generalize by moving the direction and orientation data to static arrays. Then we can reduce <code>CreateChildren</code> to a short loop and use the child index as a parameter for <code>Initialize</code>.</p>
+			
+					<pre translate="no">	<mark>private static Vector3[] childDirections = {</mark>
+		<mark>Vector3.up,</mark>
+		<mark>Vector3.right,</mark>
+		<mark>Vector3.left</mark>
+	<mark>};</mark>
+
+	<mark>private static Quaternion[] childOrientations = {</mark>
+		<mark>Quaternion.identity,</mark>
+		<mark>Quaternion.Euler(0f, 0f, -90f),</mark>
+		<mark>Quaternion.Euler(0f, 0f, 90f)</mark>
+	<mark>};</mark>
+
+	private IEnumerator CreateChildren () {
+		<mark>for (int i = 0; i &lt; childDirections.Length; i++) {</mark>
+			yield return new WaitForSeconds(0.5f);
+			new GameObject("Fractal Child").AddComponent&lt;Fractal>().
+				Initialize(this, <mark>i</mark>);
+		<mark>}</mark>
+	}
+
+	private void Initialize (Fractal parent, <mark>int childIndex</mark>) {
+		&hellip;
+		transform.localPosition =
+			<mark>childDirections[childIndex]</mark> * (0.5f + 0.5f * childScale);
+		transform.localRotation = <mark>childOrientations[childIndex]</mark>;
+	}</pre>
+					
+					<aside>
+						<h3>How do arrays work?</h3>
+						
+						<div>
+							<p>Arrays are objects of fixed length that contain a linear sequence of variables. When declaring a variable, putting square brackets behind its type indicates that you want an array of that type. So <code>int myVariable;</code> gets you an integer, while <code>int[] myVariable;</code> get you an array of integers.</p>
+							
+							<p>Accessing one of the entries inside an array is done by putting its array index &ndash; not its position &ndash; between square brackets behind the variable. So <code>myVariable[0]</code> gets you the first entry in the array, <code>myVariable[1]</code> gets you the second, and so on.</p>
+							
+							<p>Actually creating an array and assigning it to the variable is done with <code>myVariable = new int[10];</code> which in this case creates a new array with room for ten entries. Alternatively, you can create one implicitly by listing its initial values between curly brackets, like <code>myVariable = {1, 2, 3};</code> does.</p>
+						</div>
+					</aside>
+					
+					<aside>
+						<h3>How does a <code>for</code> loop work?</h3>
+						
+						<div>
+							<p>A <code>for</code> loop is a compact way of writing a loop that iterates over something. In this case we use an integer named <code>i</code> as the iterator. The first part declares the iterator integer, the second part checks the loop's condition, and the third part increments the iterator.</p>
+							
+							<p>You can use a <code>while</code> loop to get the exact same result, but it doesn't conveniently group the iterator code.</p>
+							
+							<p><code>for(int i = 0; i &lt; 10; i++) { DoStuff(i); }</code></p>
+							
+							<p>is the same as</p>
+							
+							<p><code>int i = 0; while(i &lt; 10) { DoStuff(i); i++; }</code></p>
+							
+							<p>By the way, <code>i++</code> is shorthand for <code>i += 1</code>, which is shorthand for <code>i = i + 1</code>.</p>
+						</div>
+					</aside>
+					
+					<p>Now let's introduce two more children by simple adding their data to the arrays. One going forward, the other going backward.</p>
+			
+					<pre translate="no">	private static Vector3[] childDirections = {
+		Vector3.up,
+		Vector3.right,
+		Vector3.left<mark>,</mark>
+		<mark>Vector3.forward,</mark>
+		<mark>Vector3.back</mark>
+	};
+
+	private static Quaternion[] childOrientations = {
+		Quaternion.identity,
+		Quaternion.Euler(0f, 0f, -90f),
+		Quaternion.Euler(0f, 0f, 90f)<mark>,</mark>
+		<mark>Quaternion.Euler(90f, 0f, 0f),</mark>
+		<mark>Quaternion.Euler(-90f, 0f, 0f)</mark>
+	};</pre>
+			
+					<figure>
+						<img src="06-all-children.png" width="345" height="330">
+						<figcaption>Five children per parent, the full fractal.</figcaption>
+					</figure>
+					
+					<p>We now have the full fractal structure. But what about the underside of the root cube? The idea is that the fractal is growing out of something, like a plant. Although I won't, if you want to, you could add a special sixth child going downward that's only added to the root node. Adding it to all nodes would be a waste, because it would grow directly into its grandparent.</p>
+					
+					<a href="fractal-06-better-code-for-more-children.unitypackage" download rel="nofollow">unitypackage</a>
+				</section>
+			
+				<section>
+					<h2>Explosive Growth</h2>
+					
+					<p>How many cubes are we actually creating? As we're always creating five children per parent, the total number of cubes when fully grown will depend on the maximum depth. A maximum depth of zero produces only one cube, the initial root. A maximum depth of one produces five additional children, for a total of six cubes. As it is fractal, this pattern repeats and we can write it as the function <b>f(0) = 1, f(<i>n</i>) = 5 &times; f(<i>n</i> - 1) + 1</b>.</p>
+					
+					<p>The above function produces the sequence 1, 6, 31, 156, 781, 3906, 19531, 97656, and so on. You will see these numbers show up as the amount of draw calls in the game view statistics of Unity. If you have dynamic batching enabled, it will be the sum of <i>Draw Calls</i> and <i>Saved by batching</i>.</p>
+					
+					<p>Unity will probably be able to handle a maximum depth up to four or five. Any higher and your frame rate will become horrible.</p>
+					
+					<p>Besides quantity, duration is also an issue. Right now we're pausing half a second before creating a new child. This produces synchronized bursts of growth for a few seconds. We could distribute the growth more evenly by randomizing the delays. This also results in a more unpredictable and organic pattern that I find more fun to watch.</p>
+					
+					<p>So let's replace the fixed delay with a random range between 0.1 and 0.5. I also increased the maximum depth to 5 to make the effect more noticeable.</p>
+			
+					<pre translate="no">	private IEnumerator CreateChildren () {
+		for (int i = 0; i &lt; childDirections.Length; i++) {
+			yield return new WaitForSeconds(<mark>Random.Range(0.1f, 0.5f)</mark>);
+			new GameObject("Fractal Child").AddComponent&lt;Fractal>().
+				Initialize(this, i);
+		}
+	}</pre>
+					
+					<aside>
+						<h3>How does the random range work?</h3>
+						
+						<div>
+							<p><code>Random</code> is a utility class that contains some stuff to create random values. Its <code>Range</code> method can be used to generate a random value within some range.</p>
+							
+							<p>There are two versions of the <code>Range</code> method. You can call it with two floats, in which case it returns a float between the minimum and maximum value, both inclusive.</p>
+							
+							<p>Alternatively, you can call <code>Range</code> with two integers, in which case it returns an integer between the minimum, inclusive, and maximum, exclusive. The typical use case for this version is selecting an index at random, like <code>someArray[Random.Range(0, someArray.Length)]</code>.</p>
+						</div>
+					</aside>
+					
+					<a href="fractal-07-explosive-growth.unitypackage" download rel="nofollow">unitypackage</a>
+				</section>
+				
+				<section>
+					<h2>Adding Color</h2>
+					
+					<p>The fractal is a little dull. Let's liven it up by adding some color variation. We do this by interpolating from white at the root to yellow at the smallest children. The static <code>Color.Lerp</code> method is a handy way to do this. The interpolator goes from zero to one, which we do by dividing our current depth by the maximum depth. Because we don't want an integer division here, we convert depth to a float first.</p>
+					
+					<pre translate="no">	private void Start () {
+		gameObject.AddComponent&lt;MeshFilter>().mesh = mesh;
+		gameObject.AddComponent&lt;MeshRenderer>().material = material;
+		<mark>GetComponent&lt;MeshRenderer>().material.color =</mark>
+			<mark>Color.Lerp(Color.white, Color.yellow, (float)depth / maxDepth);</mark>
+		if (depth &lt; maxDepth) {
+			StartCoroutine(CreateChildren());
+		}
+	}</pre>
+					
+					<aside>
+						<h3>What does <code>Lerp</code> do?</h3>
+						
+						<div>
+							<p>Lerp is shorthand for linear interpolation. Its typical signature is <code>Lerp(a, b, t)</code> and it computes <code>a + (b - a) * t</code>, with <code>t</code> clamped to the 0&ndash;1 range. Multiple versions exist for various types, including floats, vectors, and colors.</p>
+						</div>
+					</aside>
+			
+					<figure>
+						<img src="08-colored.png" width="520" height="330">
+						<figcaption>Colored, but no dynamic batching.</figcaption>
+					</figure>
+					
+					<p>This already looks a lot more interesting! But another thing happened as well. Dynamic batching used to work, but now it doesn't. How do we fix this?</p>
+					
+					<aside>
+						<h3>What is dynamic batching?</h3>
+						
+						<div>
+							<p>Dynamic batching is a form of <a href="http://docs.unity3d.com/Manual/DrawCallBatching.html">draw call batching performed by Unity</a>. In short, it combines meshes that share the same material into larger meshes. Doing so reduces the amount of communication between the CPU and the GPU. You can enable or disable it via <i>Edit / Projects Settings / Player</i>, in the <i>Other Settings</i> group.</p>
+							<p>It only works for small meshes. For example, you'll find that it works with Unity's default cube, but not with the default sphere.</p>
+						</div>
+					</aside>
+					
+					<p>The problem is that by adjusting the color of a child's material we silently created a duplicate of that material. This is necessary because otherwise everything using that material would end up with the same color. However, batching only works when the exact same material is used for multiple items. Equivalence is not checked &ndash; that would be too expensive to do &ndash; it must really be the same material.</p>
+					
+					<p>Let's create only one material duplicate per depth instead of per cube. Add a new array field to hold the materials. Then check whether an array exists in <code>Start</code> and if not call a new <code>InitializeMaterials</code> method. In this method we will explicitly duplicate our material and change its color per depth.</p>
+			
+					<pre translate="no">	<mark>private Material[] materials;</mark>
+
+	<mark>private void InitializeMaterials () {</mark>
+		<mark>materials = new Material[maxDepth + 1];</mark>
+		<mark>for (int i = 0; i &lt;= maxDepth; i++) {</mark>
+			<mark>materials[i] = new Material(material);</mark>
+			<mark>materials[i]</mark>.color =
+				Color.Lerp(Color.white, Color.yellow, (float)<mark>i</mark> / maxDepth);
+		<mark>}</mark>
+	<mark>}</mark>
+	
+	private void Start () {
+		<mark>if (materials == null) {</mark>
+			<mark>InitializeMaterials();</mark>
+		<mark>}</mark>
+		gameObject.AddComponent&lt;MeshFilter>().mesh = mesh;
+		gameObject.AddComponent&lt;MeshRenderer>().material = <mark>materials[depth]</mark>;
+		if (depth &lt; maxDepth) {
+			StartCoroutine(CreateChildren());
+		}
+	}</pre>
+					
+					<aside>
+						<h3>What's <code>null</code>?</h3>
+						
+						<div>
+							<p>The default value of a variable that's not a simple value is <code>null</code>. This means that the variable doesn't reference anything. Trying to invoke or access anything from a variable that is <code>null</code> results in an error. You can test for this value to make sure that doesn't happen. You can also set such a variable to <code>null</code> yourself, in case you no longer need whatever it was referencing.</p>
+							
+							<p>Note that objects don't automatically cease to exist when setting a reference to them to <code>null</code>. Only when there's nobody left with a reference to them will they be become candidates for removal by the garbage collector.</p>
+							
+							<p>Also note that this approach works with private component fields, but not public ones. That's because Unity's serialization system would create an empty array for it, so it won't be <code>null</code>.</p>
+						</div>
+					</aside>
+					
+					<p>Now instead of passing the material reference from parent to child, pass the materials array reference instead. If we didn't, each child would be forced to create its own materials array and we wouldn't have solved the problem.</p>
+			
+					<pre translate="no">	private void Initialize (Fractal parent, int childIndex) {
+		mesh = parent.mesh;
+		<mark>materials</mark> = parent.<mark>materials</mark>;
+		&hellip;
+	}</pre>
+					
+					<aside>
+						<h3>Why not make <code>materials</code> static?</h3>
+						
+						<div>
+							<p>We're not making the materials array static because it depends on the maximum depth, which can be different from fractal to fractal. Why yes, you can have multiple fractals at the same time, and of course they can have different maximum depths.</p>
+						</div>
+					</aside>
+
+			
+					<figure>
+						<img src="08-batched.png" width="520" height="330">
+						<figcaption>Colored, now with dynamic batching.</figcaption>
+					</figure>
+					
+					<p>We have our batching back, and it makes quite a difference in this case! The color is still not that interesting though. A nice tweak is to give the deepest level a radically different color. This can reveal patterns in the fractal that you might not have noticed before.</p>
+					
+					<p>Simply change the last color to magenta afterwards. Also adjust the interpolator so that we still see the full transition to yellow. And while we're at it, squaring it results in a slightly nicer transition.</p>
+			
+					<pre translate="no">	private void InitializeMaterials () {
+		materials = new Material[maxDepth + 1];
+		for (int i = 0; i &lt;= maxDepth; i++) {
+			<mark>float t = i / (maxDepth - 1f);</mark>
+			<mark>t *= t;</mark>
+			materials[i] = new Material(material);
+			materials[i].color = Color.Lerp(Color.white, Color.yellow, <mark>t</mark>);
+		}
+		<mark>materials[maxDepth].color = Color.magenta;</mark>
+	}</pre>
+			
+					<figure>
+						<img src="08-colored-tips.png" width="345" height="330">
+						<figcaption>Now with magenta tips.</figcaption>
+					</figure>
+					
+					<p>Let's add a second color progression, say from white to cyan with red tips. We'll use a single two-dimensional array to hold them both, then select one at random when we need a material. This way our fractal will look different each time we enter play mode. Feel free to add a third progression if you like.</p>
+			
+					<aside>
+						<h3>How do two-dimensional arrays work?</h3>
+						
+						<div>
+							<p>You can add a second dimension to an array by inserting a comma inside its brackets. You then also need to provide two indexes whenever you want to access one of the array's elements. This approach extends to higher dimensions as well.</p>
+						</div>
+					</aside>
+			
+					<pre translate="no">	private Material[<mark>,</mark>] materials;
+
+	private void InitializeMaterials () {
+		materials = new Material[maxDepth + 1<mark>, 2</mark>];
+		for (int i = 0; i &lt;= maxDepth; i++) {
+			float t = i / (maxDepth - 1f);
+			t *= t;
+			materials[i<mark>, 0</mark>] = new Material(material);
+			materials[i<mark>, 0</mark>].color = Color.Lerp(Color.white, Color.yellow, t);
+			<mark>materials[i, 1] = new Material(material);</mark>
+			<mark>materials[i, 1].color = Color.Lerp(Color.white, Color.cyan, t);</mark>
+		}
+		materials[maxDepth<mark>, 0</mark>].color = Color.magenta;
+		<mark>materials[maxDepth, 1].color = Color.red;</mark>
+	}
+	
+	private void Start () {
+		if (materials == null) {
+			InitializeMaterials();
+		}
+		gameObject.AddComponent&lt;MeshFilter>().mesh = mesh;
+		gameObject.AddComponent&lt;MeshRenderer>().material =
+			materials[depth<mark>, Random.Range(0, 2)</mark>];
+		if (depth &lt; maxDepth) {
+			StartCoroutine(CreateChildren());
+		}
+	}</pre>
+			
+					<figure>
+						<img src="08-random-colors.png" width="345" height="330">
+						<figcaption>Randomized colors.</figcaption>
+					</figure>
+					
+					<a href="fractal-08-adding-color.unitypackage" download rel="nofollow">unitypackage</a>
+				</section>
+				
+				<section>
+					<h2>Randomizing Meshes</h2>
+					
+					<p>Besides colors, we also randomly choose which mesh to use. Let's replace our public mesh variable with an array and pick one out of it at random in <code>Start</code>.</p>
+			
+					<pre translate="no">	public Mesh<mark>[] meshes</mark>;
+	
+	private void Start () {
+		if (materials == null) {
+			InitializeMaterials();
+		}
+		gameObject.AddComponent&lt;MeshFilter>().mesh =
+			<mark>meshes[Random.Range(0, meshes.Length)]</mark>;
+		gameObject.AddComponent&lt;MeshRenderer>().material =
+			materials[depth, Random.Range(0, 2)];
+		if (depth &lt; maxDepth) {
+			StartCoroutine(CreateChildren());
+		}
+	}
+
+	private void Initialize (Fractal parent, int childIndex) {
+		<mark>meshes</mark> = parent.<mark>meshes</mark>;
+		&hellip;
+	}</pre>
+					
+					<p>If we were to put only a single cube in our new array property in the inspector, then the result would be the same as before. But add a sphere and you suddenly get a 50% chance of spawning either a cube or a sphere per element of the fractal.</p>
+					
+					<p>Fill this array however you like. I put the sphere in there twice so it is twice as likely to be used as the cube. You can also add other meshes, though capsules and cylinders don't work so well because they're elongated.</p>
+			
+					<figure>
+						<img alt="inspector" src="09-inspector.png" width="320" height="180">
+						<img alt="random meshes" src="09-meshes.png" width="345" height="330">
+						<figcaption>Randomly choosing between a cube and a sphere.</figcaption>
+					</figure>
+					
+					<a href="fractal-09-randomizing-meshes.unitypackage" download rel="nofollow">unitypackage</a>
+				</section>
+				
+				<section>
+					<h2>Making the Fractal Irregular</h2>
+					
+					<p>Our fractal is nice and complete, but we can make it a bit more organic by cutting off some of its branches. We do that by introducing a new public <code>spawnProbability</code> variable. We pass it along and use it to randomly determine whether we spawn a child or skip it. A probability of 0 means that no children will spawn at all, while a probability of 1 means that all children will spawn. Even values a little below one could drastically alter the shape of our fractal.</p>
+					
+					<p>The static <code>Random.value</code> property produces a random value between zero and one. Comparing it to <code>spawnProbability</code> tells us whether we should create a new child or not.</p>
+			
+					<pre translate="no">	<mark>public float spawnProbability;</mark>
+
+	private IEnumerator CreateChildren () {
+		for (int i = 0; i &lt; childDirections.Length; i++) {
+			<mark>if (Random.value &lt; spawnProbability) {</mark>
+				yield return new WaitForSeconds(Random.Range(0.1f, 0.5f));
+				new GameObject("Fractal Child").AddComponent&lt;Fractal>().
+					Initialize(this, i);
+			<mark>}</mark>
+		}
+	}
+
+	private void Initialize (Fractal parent, int childIndex) {
+		&hellip;
+		<mark>spawnProbability = parent.spawnProbability;</mark>
+		&hellip;
+	}</pre>
+			
+					<figure>
+						<img alt="inspector" src="10-inspector.png" width="320" height="126">
+						<img alt="irregular growth" src="10-irregular.png" width="345" height="330">
+						<figcaption>A 70% spawn chance produces irregular shapes.</figcaption>
+					</figure>
+					
+					<a href="fractal-10-making-the-fractal-irregular.unitypackage" download rel="nofollow">unitypackage</a>
+				</section>
+				
+				<section>
+					<h2>Rotating the Fractal</h2>
+					
+					<p>All this time our fractal has been a good boy and stayed motionless. But a little movement would make it a lot more interesting to watch. Let's add a very simple <code>Update</code> method that rotates around the current Y axis at a speed of 30 degrees per second.</p>
+			
+					<pre translate="no">	<mark>private void Update () {</mark>
+		<mark>transform.Rotate(0f, 30f * Time.deltaTime, 0f);</mark>
+	<mark>}</mark></pre>
+					
+					<p>With this simple addition all the fractal's parts are now merrily spinning. All at the same speed. Yes, let's randomize it! And make the maximum speed configurable too.</p>
+					
+					<p>Note that we have to initialize our rotation speed in <code>Start</code> &ndash; not in <code>Initialize</code> &ndash; because the root element should rotate too.</p>
+			
+					<pre translate="no">	<mark>public float maxRotationSpeed;</mark>
+	
+	<mark>private float rotationSpeed;</mark>
+
+	private void Start () {
+		<mark>rotationSpeed = Random.Range(-maxRotationSpeed, maxRotationSpeed);</mark>
+		&hellip;
+	}
+
+	private void Initialize (Fractal parent, int childIndex) {
+		&hellip;
+		<mark>maxRotationSpeed = parent.maxRotationSpeed;</mark>
+		&hellip;
+	}
+	
+	private void Update () {
+		transform.Rotate(0f, <mark>rotationSpeed</mark> * Time.deltaTime, 0f);
+	}</pre>
+			
+					<figure>
+						<img src="https://catlikecoding.com/unity/tutorials/constructing-a-fractal/11-inspector.png" width="320" height="144">
+						<figcaption>Configured for speed.</figcaption>
+					</figure>
+					
+					<a href="https://catlikecoding.com/unity/tutorials/constructing-a-fractal/fractal-11-rotating-the-fractal.unitypackage" download rel="nofollow">unitypackage</a>
+				</section>
+				
+				<section>
+					
+					<h2>Adding More Chaos</h2>
+					
+					<p>Are there more adjustments that we could do to throw our fractal out of whack in subtle ways? There are many! One of them is to knock the fractal's elements out of alignment by adding a subtle rotation. Let's call it twist.</p>
+			
+					<pre translate="no">	<mark>public float maxTwist;</mark>
+
+	private void Start () {
+		rotationSpeed = Random.Range(-maxRotationSpeed, maxRotationSpeed);
+		<mark>transform.Rotate(Random.Range(-maxTwist, maxTwist), 0f, 0f);</mark>
+		&hellip;
+	}
+
+	private void Initialize (Fractal parent, int childIndex) {
+		&hellip;
+		<mark>maxTwist = parent.maxTwist;</mark>
+		&hellip;
+	}</pre>
+			
+					<figure>
+						<img alt="inspector" src="https://catlikecoding.com/unity/tutorials/constructing-a-fractal/12-inspector.png" width="320" height="162">
+						<img alt="some twist" src="https://catlikecoding.com/unity/tutorials/constructing-a-fractal/12-twist.png" width="345" height="330">
+						<figcaption>Some nice twist.</figcaption>
+					</figure>
+					
+					<p>Another option would be to mess with the child scale. Or maybe skip a depth sometimes. Fiddle with positions? From this point I leave it up to you!</p>
+					
+					<a href="https://catlikecoding.com/unity/tutorials/constructing-a-fractal/fractal-12-adding-more-chaos.unitypackage" download rel="nofollow">unitypackage</a>
+					<a href="https://catlikecoding.com/unity/tutorials/constructing-a-fractal/Constructing-a-Fractal.pdf" download rel="nofollow">PDF</a>
+				</section>
+			</article>
+		</main>
+		
+		<footer>
+			<p>Enjoying the <a href="../../tutorials">tutorials</a>? Are they useful?</p>
+			<p><b><a href="https://www.patreon.com/catlikecoding">Please support me on Patreon!</a></b></p>
+			<p><a href="https://www.patreon.com/catlikecoding"><img src="../become-a-patron.png" alt="Become my patron!" width="217" height="51"></a></p>
+			<p><b><a href="../donating.html">Or make a direct donation</a>!</b></p>
+			<p>made by <a href="../../../about/index.html" rel="author">Jasper Flick</a></p>
+		</footer>
+		
+		<script src="../tutorials.js"></script>
+	</body>
+</html>

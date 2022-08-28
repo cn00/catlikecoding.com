@@ -1,0 +1,121 @@
+h1{
+	font-size: 25px;
+	font-weight: bold;
+	margin: 20px 0;
+	text-align: center;
+}
+
+h2{
+	font-size: 14px;
+	font-weight: normal;
+	font-style: italic;
+	margin: 20px 0;
+	text-align: center;
+}
+
+.sites{
+	display: table;
+	margin: 0 auto 1em auto;
+}
+
+.sites a, .sites a:visited{
+	display: table-cell;
+	padding-bottom: 5px;
+	text-decoration: none;
+	text-align: center;
+	width: 200px;
+}
+
+#sites a:hover{
+	text-decoration: underline;
+}
+
+small{
+	display: block;
+	font-size: 12px;
+	font-weight: normal;
+}
+#anydice_link{
+	background: url(anydice_logo.png) no-repeat top center;
+	font-size: 25px;
+	font-weight: bold;
+	padding-top: 100px;
+}
+
+#oh_shoot_link{
+	background: url(oh_shoot_logo.png) no-repeat top center;
+	font-size: 25px;
+	font-weight: bold;
+	padding-top: 100px;
+}
+
+#tutorials_link{
+	background: url(tutorials_logo.png) no-repeat top center;
+	font-size: 25px;
+	font-weight: bold;
+	padding-top: 100px;
+}
+
+#distance-map-link {
+	background: url(distance-map-icon.png) no-repeat top center;
+	font-size: 25px;
+	font-weight: bold;
+	padding-top: 100px;
+}
+
+#numberflow-link {
+	background: url(numberflow-icon.png) no-repeat top center;
+	font-size: 25px;
+	font-weight: bold;
+	padding-top: 100px;
+}
+
+#super-card-swipers-link {
+	background: url(super-card-swipers-icon.png) no-repeat top center;
+	background-size: 50%;
+	font-size: 25px;
+	font-weight: bold;
+	padding-top: 100px;
+}
+
+#text-box-link {
+	background: url(text-box-icon.png) no-repeat top center;
+	font-size: 25px;
+	font-weight: bold;
+	padding-top: 100px;
+}
+
+#media{
+	display: table;
+	margin: 2em auto 0;
+}
+
+#media a, #media a:visited{
+	display: table-cell;
+	padding-bottom: 5px;
+	text-decoration: none;
+	text-align: center;
+	width: 150px;
+}
+
+#media a:hover{
+	text-decoration: underline;
+}
+
+#blog_link{
+	background: url(media_blog.png) no-repeat top center;
+	font-size: 16px;
+	padding-top: 50px;
+}
+
+#chat_link{
+	background: url(media_chat.png) no-repeat top center;
+	font-size: 16px;
+	padding-top: 50px;
+}
+
+#message_link{
+	background: url(media_message.png) no-repeat top center;
+	font-size: 16px;
+	padding-top: 50px;
+}

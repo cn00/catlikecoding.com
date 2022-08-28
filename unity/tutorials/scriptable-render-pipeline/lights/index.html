@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/lights/">
+		<meta property="og:type" content="article">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/lights/tutorial-image.jpg">
+		<meta property="og:title" content="Lights">
+		<meta property="og:description" content="A Unity Scriptable Render Pipeline tutorial about single-pass forward rendering.">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta name="viewport" content="width=768">
+		<title>Lights</title>
+		<link href="../../tutorials.css" rel="stylesheet">
+
+				<link rel="manifest" href="https://catlikecoding.com/site.webmanifest">
+		<link rel="mask-icon" href="https://catlikecoding.com/safari-pinned-tab.svg" color="#aa0000">
+
+		<script type="application/ld+json">{
+			"@context": "http://schema.org",
+			"@type": "WebPage",
+			"mainEntity": {
+				"@type": "TechArticle",
+				"@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/lights/#article",
+				"headline": "Lights",
+				"alternativeHeadline": "Single-Pass Forward Rendering",
+				"datePublished": "2018-11-30",
+				"dateModified": "2019-01-09",
+				"author": { "@type": "Person", "name": "Jasper Flick", "@id": "https://catlikecoding.com/jasper-flick/#person" },
+				"publisher": { "@type": "Organization", "name": "Catlike Coding", "@id": "https://catlikecoding.com/#organization" },
+				"description": "A Unity Scriptable Render Pipeline tutorial about single-pass forward rendering.",
+				"image": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/lights/tutorial-image.jpg",
+				"dependencies": "Unity 2018.3.0f2",
+				"proficiencyLevel": "Expert"
+			},
+			"breadcrumb": {
+				"@type": "BreadcrumbList",
+				"itemListElement": [
+					{ "@type": "ListItem", "position": 1, "item": { "@id": "https://catlikecoding.com/unity/", "name": "Unity" }},
+					{ "@type": "ListItem", "position": 2, "item": { "@id": "https://catlikecoding.com/unity/tutorials/", "name": "Tutorials" }},
+					{ "@type": "ListItem", "position": 3, "item": { "@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/", "name": "Scriptable Render Pipeline" }}
+				]
+			}
+		}</script>
+		<script>
+			var customTypes = {
+				InstancedColor: 1,
+				MyPipeline: 1,
+				MyPipelineAsset: 1
+			};
+			
+			var defaultCodeClass = 'shader';
+			var hasMath = true;
+		</script>
+	</head>
+	<body>
+		<header>
+			<a href="https://catlikecoding.com"><img src="https://catlikecoding.com/catlike-coding-logo.svg" alt="Catlike Coding" width="45" height="45"></a>
+			<nav>
+				<ol>
+					<li><a href="https://catlikecoding.com">Catlike Coding</a></li>
+					<li><a href="https://catlikecoding.com/unity/">Unity</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/">Tutorials</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">Scriptable Render Pipeline</a></li>
+				</ol>
+			</nav>
+		</header>
+		
+		<main>
+			<article>
+				<header>
+					<h1>Lights</h1>
+					<p>Single-Pass Forward Rendering</p>
+					<ul>
+						<li>Perform diffuse shading.</li>
+						<li>Support directional, point, and spotlights.</li>
+						<li>Allow up to sixteen visible lights per frame.</li>
+						<li>Calculate up to four pixel lights and four vertex lights per object.</li>
+					</ul>
+				</header>
+				
+				<p>This is the third installment of a tutorial series covering Unity's <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">scriptable render pipeline</a>. This time we'll add support for diffuse lighting, by shading up to eight lights per object with a single draw call.</p>
+				
+				<p>This tutorial is made with Unity 2018.3.0f2.</p>
+				
+				<figure>
+					<img src="tutorial-image.jpg" width="512" height="256">
+					<figcaption>256 spheres, 8 lights, 214 draw calls.</figcaption>
+				</figure>
+				
+				<section>
+					<h2>Shading With a Light</h2>
+					
+					<p>To support lights, we have to add a lit shader to our pipeline. Lighting complexity can go from very simple&mdash;only including diffuse light&mdash;to very complex&mdash;full-blown physically-based shading. It can also be unrealistic, like cell-shading. We'll start with the minimum of a lit shader that calculates diffuse directional lighting, without shadows.</p>
+					
+					<section>
+						<h3>Lit Shader</h3>
+						
+						<p>Duplicate <em translate="no">Unlit.hlsl</em> and rename it to <em translate="no">Lit.hlsl</em>. Replace all instances of <em translate="no">unlit</em> in the new file with <em translate="no">lit</em>, specifically the include define and the vertex and fragment function names.</p>
+						
+						<pre translate="no">#ifndef <ins>MYRP_LIT_INCLUDED</ins>
+#define <ins>MYRP_LIT_INCLUDED</ins>
+
+&hellip;
+
+VertexOutput <ins>LitPassVertex</ins> (VertexInput input) {
+	&hellip;
+}
+
+float4 <ins>LitPassFragment</ins> (VertexOutput input) : SV_TARGET {
+	&hellip;
+}
+
+#endif // <ins>MYRP_LIT_INCLUDED</ins></pre>
+						
+						<p>Also duplicate <em translate="no">Unlit.shader</em> and rename it to <em translate="no">Lit.shader</em>, again replacing <em translate="no">unlit</em> with <em translate="no">lit</em> in the new file.</p>
+						
+						<pre translate="no">Shader "My Pipeline/<ins>Lit</ins>" {
+	
+	Properties {
+		_Color ("Color", Color) = (1, 1, 1, 1)
+	}
+	
+	SubShader {
+		
+		Pass {
+			HLSLPROGRAM
+			
+			#pragma target 3.5
+			
+			#pragma multi_compile_instancing
+			#pragma instancing_options assumeuniformscaling
+			
+			#pragma vertex <ins>LitPassVertex</ins>
+			#pragma fragment <ins>LitPassFragment</ins>
+			
+			#include "../ShaderLibrary/<ins>Lit</ins>.hlsl"
+			
+			ENDHLSL
+		}
+	}
+}</pre>
+						
+						<aside>
+							<h3>Shouldn't we explicitly use a lit pass?</h3>
+							<div>
+								<p>Because our pipeline is still very basic, we won't bother with dedicated passes yet.</p>
+							</div>
+						</aside>
+						
+						<p>Now we can create a lit opaque material with the new shader, although it still does exactly the same as the unlit variant.</p>
+						
+						<figure>
+							<img src="shading-with-a-light/lit-material.png" width="320" height="140">
+							<figcaption>Unlit shader asset.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Normal Vectors</h3>
+						
+						<p>In order to calculate the contribution of a directional light, we need to know the surface normal. So we have to add a normal vector to both the vertex input and output structures. For a detailed description of how the lighting is calculated, see <a href="https://catlikecoding.com/unity/tutorials/rendering/part-4/">Rendering 4, The First Light</a>.</p>
+						
+						<pre translate="no">struct VertexInput {
+	float4 pos : POSITION;
+	<ins>float3 normal : NORMAL;</ins>
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+struct VertexOutput {
+	float4 clipPos : SV_POSITION;
+	<ins>float3 normal : TEXCOORD0;</ins>
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};</pre>
+						
+						<p>Convert the normal from object space to world space in <code>LitPassVertex</code>. As we assume that we're only using uniform scales, we can simply use the 3&times;3 part of the model matrix, followed by normalization per fragment in <code>LitPassFragment</code>. Support for nonuniform scales would require us to use a transposed world-to-object matrix instead.</p>
+						
+						<pre translate="no">VertexOutput LitPassVertex (VertexInput input) {
+	&hellip;
+	<ins>output.normal = mul((float3x3)UNITY_MATRIX_M, input.normal);</ins>
+	return output;
+}
+
+float4 LitPassFragment (VertexOutput input) : SV_TARGET {
+	UNITY_SETUP_INSTANCE_ID(input);
+	<ins>input.normal = normalize(input.normal);</ins>
+	&hellip;
+}</pre>
+						
+						<p>To verify that we end up with correct normal vectors, use them for the final color. But still keep track of the material's, as we'll use that for its albedo later.</p>
+						
+						<pre translate="no">float4 LitPassFragment (VertexOutput input) : SV_TARGET {
+	UNITY_SETUP_INSTANCE_ID(input);
+	input.normal = normalize(input.normal);
+	<ins>float3 albedo =</ins> UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color)<ins>.rgb</ins>;
+	
+	<ins>float3 color = input.normal;</ins>
+	<ins>return float4(color, 1);</ins>
+}</pre>
+						
+						<figure>
+							<img src="shading-with-a-light/world-normals.jpg" width="300" height="220">
+							<figcaption>Showing raw world-space normal vectors.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Diffuse Light</h3>
+						
+						<p>The diffuse light contribution depends on the angle at which light hits the surface, which is found by computing the dot product of the surface normal and the direction where the light is coming from, discarding negative results. In the case of a directional light, the light vector is constant. Let's use a hard-coded direction for now, pointing straight up. Multiply the diffuse light with the albedo to get the final color.</p>
+						
+						<figure>
+							<img src="shading-with-a-light/diffuse-falloff.png" width="100" height="100">
+							<figcaption>Diffuse falloff from 0&deg; to 90&deg; angle of incoming light.</figcaption>
+						</figure>
+						
+						<pre translate="no">float4 LitPassFragment (VertexOutput input) : SV_TARGET {
+	UNITY_SETUP_INSTANCE_ID(input);
+	input.normal = normalize(input.normal);
+	float3 albedo = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color).rgb;
+	
+	<ins>float3 diffuseLight = saturate(dot(input.normal, float3(0, 1, 0)));</ins>
+	float3 color = <ins>diffuseLight * albedo</ins>;
+	return float4(color, 1);
+}</pre>
+						
+						<figure>
+							<img src="shading-with-a-light/diffuse-light-from-above.jpg" width="300" height="220">
+							<figcaption>Diffuse light from above.</figcaption>
+						</figure>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Visible Lights</h2>
+					
+					<p>To be able to use lights defined in the scene, our pipeline has to send the light data to the GPU. It is possible to have multiple lights in a scene, so we should support multiple lights too. There are multiple ways to do that. Unity's default pipeline renders each light in a separate pass, per object. The Lightweight pipeline renders all lights in a single pass, per object. And the HD pipeline uses deferred rendering, which renders the surface data of all objects, followed by one pass per light.</p>
+					
+					<p>We're going to use the same approach as the Lightweight pipeline, so each objects is rendered once, taking all lights into consideration. We do that by sending the data of all lights that are currently visible to the GPU. Lights that are in the scene but don't affect anything that is going to be rendered will be ignored.</p>
+					
+					<section>
+						<h3>Light Buffer</h3>
+						
+						<p>Rendering all lights in one pass means that all lighting data must be available at the same time. Limiting ourselves to directional lights only for now, that means we need to know both the color and the direction of each light. To support an arbitrary amount of lights, we'll use arrays to store this data, which we'll put in a separate buffer that we'll name <code>_LightBuffer</code>. Arrays are defined in shaders like in C#, except the brackets come after the variable name instead of the type.</p>
+						
+						<pre translate="no">CBUFFER_START(UnityPerDraw)
+	float4x4 unity_ObjectToWorld;
+CBUFFER_END
+
+<ins>CBUFFER_START(_LightBuffer)</ins>
+	<ins>float4 _VisibleLightColors[];</ins>
+	<ins>float4 _VisibleLightDirections[];</ins>
+<ins>CBUFFER_END</ins></pre>
+						
+						<p>However, we cannot define arrays of arbitrary size. The array definition must immediately declare its size. Let's use an array length of 4. That means that we can support up to four visible lights at once. Define this limit with a macro for easy reference.</p>
+						
+						<pre translate="no"><ins>#define MAX_VISIBLE_LIGHTS 4</ins>
+
+CBUFFER_START(_LightBuffer)
+	float4 _VisibleLightColors[<ins>MAX_VISIBLE_LIGHTS</ins>];
+	float4 _VisibleLightDirections[<ins>MAX_VISIBLE_LIGHTS</ins>];
+CBUFFER_END</pre>
+						
+						<p>Below the light buffer, add a <code>DiffuseLight</code> function that uses the light data to take care of the lighting calculation. It needs a light index and normal vector as parameters, extracts the relevant data from the arrays, then performs the diffuse lighting calculation and returns it, modulated by the light's color.</p>
+						
+						<pre translate="no">CBUFFER_START(_LightBuffer)
+	float4 _VisibleLightColors[MAX_VISIBLE_LIGHTS];
+	float4 _VisibleLightDirections[MAX_VISIBLE_LIGHTS];
+CBUFFER_END
+
+<ins>float3 DiffuseLight (int index, float3 normal) {</ins>
+	<ins>float3 lightColor = _VisibleLightColors[index].rgb;</ins>
+	<ins>float3 lightDirection = _VisibleLightDirections[index].xyz;</ins>
+	<ins>float diffuse = saturate(dot(normal, lightDirection));</ins>
+	<ins>return diffuse * lightColor;</ins>
+<ins>}</ins></pre>
+						
+						<p>In <code>LitPassFragment</code>, use a <code>for</code> loop to invoke the new function once per light, accumulating the total diffuse light affecting the fragment.</p>
+						
+						<pre translate="no">float4 LitPassFragment (VertexOutput input) : SV_TARGET {
+	…
+	
+	float3 diffuseLight = <ins>0</ins>;
+	<ins>for (int i = 0; i &lt; MAX_VISIBLE_LIGHTS; i++) {</ins>
+		<ins>diffuseLight += DiffuseLight(i, input.normal);</ins>
+	<ins>}</ins>
+	float3 color = diffuseLight * albedo;
+	return float4(color, 1);
+}</pre>
+						
+						<p>Note that even through we use a loop, the shader compiler will likely unroll it. As our shader becomes more complex, at some point the compiler will switch to using an actual loop.</p>
+					</section>
+					
+					<section>
+						<h3>Filling the Buffer</h3>
+						
+						<p>At the moment we end up with fully black shapes, because we aren't passing any light data to the GPU yet. We have to add the same arrays to <code>MyPipeline</code>, with the same size. Also, use the static <code>Shader.PropertyToID</code> method to find the identifiers of the relevant shader properties. The shader IDs are constant per session, so can be stored in static variables.</p>
+						
+						<pre class="shader" translate="no">	<ins>const int maxVisibleLights = 4;</ins>
+	
+	<ins>static int visibleLightColorsId =</ins>
+		<ins>Shader.PropertyToID("_VisibleLightColors");</ins>
+	<ins>static int visibleLightDirectionsId =</ins>
+		<ins>Shader.PropertyToID("_VisibleLightDirections");</ins>
+	
+	<ins>Vector4[] visibleLightColors = new Vector4[maxVisibleLights];</ins>
+	<ins>Vector4[] visibleLightDirections = new Vector4[maxVisibleLights];</ins></pre>
+						
+						<aside>
+							<h3>Why not use a <code class="csharp">Color</code> array?</h3>
+							<div>
+								<p>There is no way to directly pass a color array to the GPU. A <code class="csharp">Vector4</code> array is the best alternative and matches the data format of the shader. We can directly assign colors to the array, as there is an implicit conversion from <code class="csharp">Color</code> to <code class="csharp">Vector4</code>.</p>
+							</div>
+						</aside>
+						
+						<p>The arrays can be copied to the GPU via invoking the <code>SetGlobalVectorArray</code> method on a command buffer, and then executing it. As we already have <code class="csharp">cameraBuffer</code>, lets use that buffer, at the same moment that we start the <em translate="no">Render Camera</em> sample.</p>
+						
+						<pre class="shader" translate="no">		cameraBuffer.BeginSample("Render Camera");
+		<ins>cameraBuffer.SetGlobalVectorArray(</ins>
+			<ins>visibleLightColorsId, visibleLightColors</ins>
+		<ins>);</ins>
+		<ins>cameraBuffer.SetGlobalVectorArray(</ins>
+			<ins>visibleLightDirectionsId, visibleLightDirections</ins>
+		<ins>);</ins>
+		context.ExecuteCommandBuffer(cameraBuffer);
+		cameraBuffer.Clear();</pre>
+					</section>
+					
+					<section>
+						<h3>Configuring the Lights</h3>
+						
+						<p>We're now sending light data to the GPU each frame, but it's still the default data, so the objects remain black. We have to configure the lights before copying the vectors. Let's delegate that responsibility to a new <code>ConfigureLights</code> method.</p>
+						
+						<pre class="shader" translate="no">		cameraBuffer.ClearRenderTarget(
+			(clearFlags & CameraClearFlags.Depth) != 0,
+			(clearFlags & CameraClearFlags.Color) != 0,
+			camera.backgroundColor
+		);
+
+		<ins>ConfigureLights();</ins>
+
+		cameraBuffer.BeginSample("Render Camera");</pre>
+						
+						<p>During culling, Unity also figures out which lights are visible. This information is made available via a <code class="csharp">visibleLights</code> list that is part of the cull results. The list's elements are <code class="csharp">VisibleLight</code> structs that contain all the data that we need. Create the required <code>ConfigureLights</code> method and have it loop through the list.</p>
+						
+						<pre class="shader" translate="no">	<ins>void ConfigureLights () {</ins>
+		<ins>for (int i = 0; i &lt; cull.visibleLights.Count; i++) {</ins>
+			<ins>VisibleLight light = cull.visibleLights[i];</ins>
+		<ins>}</ins>
+	<ins>}</ins></pre>
+						
+						<p>The <code class="csharp">VisibleLight.finalColor</code> field holds the light's color. It is the light's color multiplied by its intensity, and also converted to the correct color space. So we can directly copy it to <code class="csharp">visibleLightColors</code>, at the same index.</p>
+						
+						<pre class="shader" translate="no">			VisibleLight light = cull.visibleLights[i];
+			<ins>visibleLightColors[i] = light.finalColor;</ins></pre>
+						
+						<p>However, by default Unity considers the light's intensity to be defined in gamma space, even through we're working in linear space. This is a holdover of Unity's default render pipeline; the new pipelines consider it a linear value. This behavior is controlled via the boolean <code class="csharp">GraphicsSettings.lightsUseLinearIntensity</code> property. It is a project setting, but can only be adjusted via code. We only need to set it once, so let's do that in the constructor method of <code>MyPipeline</code>.</p>
+						
+						<pre class="shader" translate="no">	public MyPipeline (bool dynamicBatching, bool instancing) {
+		<ins>GraphicsSettings.lightsUseLinearIntensity = true;</ins>
+		&hellip;
+	}</pre>
+						
+						<p>Changing this setting only affects the editor when it re-applies its graphics settings, which doesn't automatically happen. Entering and exiting play mode will apply it.</p>
+
+						<p>Besides that, the direction of a directional light is determined by its rotation. The light shines along its local Z axis. We can find this vector in world space via the <code class="csharp">VisibleLight.localtoWorld</code> matrix field. The third column of that matrix defines the transformed local Z direction vector, which we can get via the <code class="csharp">Matrix4x4.GetColumn</code> method, with index 2 as an argument.</p>
+						
+						<p>That gives us the direction in which the light is shining, but in the shader we use the direction from the surface toward the light source. So we have to negate the vector before we assign it to <code class="csharp">visibleLightDirections</code>. As the fourth component of a direction vector is always zero, we only have to negate X, Y, and Z.</p>
+						
+						<pre class="shader" translate="no">			VisibleLight light = cull.visibleLights[i];
+			visibleLightColors[i] = light.finalColor;
+			<ins>Vector4 v = light.localToWorld.GetColumn(2);</ins>
+			<ins>v.x = -v.x;</ins>
+			<ins>v.y = -v.y;</ins>
+			<ins>v.z = -v.z;</ins>
+			<ins>visibleLightDirections[i] = v;</ins></pre>
+						
+						<p>Our objects are now shaded with the color and direction of the main direction light, assuming you have no other lights in the scene. If you don't have a light source in the scene, just add a single directional light.</p>
+						
+						<figure>
+							<img src="visible-lights/main-directional-light.jpg" width="300" height="220">
+							<figcaption>Diffuse shading with one directional light.</figcaption>
+						</figure>
+						
+						<p>But our shader always calculates the lighting contribution of four lights, even if we only have a single light in the scene. So you could add three more directional lights and it wouldn't slow down the GPU.</p>
+						
+						<figure>
+							<img src="visible-lights/four-directional-lights.jpg" width="300" height="220">
+							<figcaption>Four directional lights.</figcaption>
+						</figure>
+						
+						<p>You can inspect the light data that is sent to the GPU via the frame debugger. Select one of the draw calls that uses our shader, then expand the vector arrays to see their contents.</p>
+						
+						<figure>
+							<img src="visible-lights/frame-debugger-visible-light-colors.png" width="270" height="100">
+							<figcaption>Light colors found via the frame debugger.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Varying the Number of Lights</h3>
+						
+						<p>Everything works as expected when using exactly four directional lights. We can even have more, as long as only four are visible at the same time. But when there are more than four visible lights our pipeline fails with an index-out-of-bounds exception. We can only support up to four visible lights, but Unity doesn't take that into consideration while culling. So <code class="csharp">visibleLights</code> can end up with more elements than our arrays. We have to abort the loop when we exceed the maximum. That means that we simply ignore some of the visible lights.</p>
+						
+						<pre class="shader" translate="no">		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			<ins>if (i == maxVisibleLights) {</ins>
+				<ins>break;</ins>
+			<ins>}</ins>
+			VisibleLight light = cull.visibleLights[i];
+			&hellip;
+		}</pre>
+						
+						<aside>
+							<h3>Which lights get omitted?</h3>
+							<div>
+								<p>We simple skip the last lights in the <code class="csharp">visibleLights</code> list. The lights are ordered based on various criteria, including light type, intensity, and whether they have shadows enabled. You can assume that the lights are ordered from most to least important. For example, the directional light with the highest intensity and shadows enabled will be the first element.</p>
+							</div>
+						</aside>
+						
+						<p>Another weird thing happens when the amount of visible lights decreases. They remain visible, because we don't reset their data. We can solve that by continuing to loop through our arrays after finishing the visible lights, clearing the color of all lights that aren't used.</p>
+						
+						<pre class="shader" translate="no">		<ins>int i = 0;</ins>
+		for (<ins>;</ins> i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+		}
+		<ins>for (; i &lt; maxVisibleLights; i++) {</ins>
+			<ins>visibleLightColors[i] = Color.clear;</ins>
+		<ins>}</ins></pre>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Point Lights</h2>
+					
+					<p>We currently only support directional lights, but typically a scene has only a single directional light plus additional point lights. While we can add points lights to the scene, they are currently interpreted as a directional lights. We're going to fix that now.</p>
+					
+					<figure>
+						<img src="point-lights/point-light-as-directional.jpg" width="300" height="220">
+						<figcaption>Point light interpreted as directional.</figcaption>
+					</figure>
+					
+					<p><a href="https://catlikecoding.com/unity/tutorials/rendering/part-5/">Rendering 5, Multiple Lights</a> describes point lights and spotlights, but uses the old approach of Unity's default pipeline. We're going to use the same approach as the Lightweight pipeline.</p>
+					
+					<section>
+						<h3>Light Position</h3>
+						
+						<p>Unlike a directional light, the position of a point light matters. Rather than adding a separate array for positions, we'll store both direction and position data in the same array, each element containing either a direction or a position. Rename the variables in <code class="csharp">MyPipeline</code> accordingly.</p>
+						
+						<pre class="shader" translate="no">	static int visibleLightColorsId =
+		Shader.PropertyToID("_VisibleLightColors");
+	static int <ins>visibleLightDirectionsOrPositionsId</ins> =
+		Shader.PropertyToID("<ins>_VisibleLightDirectionsOrPositions</ins>");
+
+	Vector4[] visibleLightColors = new Vector4[maxVisibleLights];
+	Vector4[] <ins>visibleLightDirectionsOrPositions</ins> = new Vector4[maxVisibleLights];</pre>
+						
+						<p><code class="csharp">ConfigureLights</code> can use <code class="csharp">VisibleLight.lightType</code> to check the type of each light. In case of a direction light, storing the direction is correct. Otherwise, store the light's world position instead, which is can be extracted from the fourth column of its local-to-world matrix.</p>
+						
+						<pre class="shader" translate="no">			<ins>if (light.lightType == LightType.Directional) {</ins>
+				Vector4 v = light.localToWorld.GetColumn(2);
+				v.x = -v.x;
+				v.y = -v.y;
+				v.z = -v.z;
+				visibleLightDirectionsOrPositions[i] = v;
+			<ins>}</ins>
+			<ins>else {</ins>
+				<ins>visibleLightDirectionsOrPositions[i] =</ins>
+					<ins>light.localToWorld.GetColumn(3);</ins>
+			<ins>}</ins></pre>
+						
+						<p>Rename the array in the shader too. In <code>DiffuseLight</code>, begin by assuming that we're still always dealing with a directional light.</p>
+						
+						<pre translate="no">CBUFFER_START(_LightBuffer)
+	float4 _VisibleLightColors[MAX_VISIBLE_LIGHTS];
+	float4 <ins>_VisibleLightDirectionsOrPositions</ins>[MAX_VISIBLE_LIGHTS];
+CBUFFER_END
+
+float3 DiffuseLight (int index, float3 normal) {
+	float3 lightColor = _VisibleLightColors[index].rgb;
+	<ins>float4 lightPositionOrDirection = _VisibleLightDirectionsOrPositions[index];</ins>
+	float3 lightDirection = <ins>lightPositionOrDirection.xyz</ins>;
+	float diffuse = saturate(dot(normal, lightDirection));
+	return diffuse * lightColor;
+}</pre>
+						
+						<p>But if we are dealing with a point light, we have to calculate the light direction ourselves. First, we subtract the surface position from the light position, which requires us to add an additional parameter to the function. That gives us the  light vector, in world space, which we turn into a direction by normalizing it.</p>
+						
+						<pre translate="no">float3 DiffuseLight (int index, float3 normal<ins>, float3 worldPos</ins>) {
+	float3 lightColor = _VisibleLightColors[index].rgb;
+	float4 lightPositionOrDirection = _VisibleLightDirectionsOrPositions[index];
+	<ins>float3 lightVector =</ins>
+		<ins>lightPositionOrDirection.xyz - worldPos;</ins>
+	float3 lightDirection = <ins>normalize(lightVector)</ins>;
+	float diffuse = saturate(dot(normal, lightDirection));
+	return diffuse * lightColor;
+}</pre>
+						
+						<p>That works for point lights, but is nonsensical for directional lights. We can support both with the same calculation, by multiplying the world position with the W component of the light's direction or position vector. If it's a position vector, then W is 1 and the calculation is unchanged. But if it's a direction vector, then W is 0 and the subtraction is eliminated. So we end up normalizing the original direction vector, which makes no difference. It does introduce an unneeded normalization for directional lights, but branching to avoid that isn't worth it.</p>
+						
+						<pre translate="no">		lightPositionOrDirection.xyz - worldPos <ins>* lightPositionOrDirection.w</ins>;</pre>
+						
+						<p>To make this work we need to know the fragment's world-space position in <code>LitPassFragment</code>. We already have it in <code>LitPassVertex</code>, so add it as an additional output and pass it along.</p>
+						
+						<pre translate="no">struct VertexOutput {
+	float4 clipPos : SV_POSITION;
+	float3 normal : TEXCOORD0;
+	<ins>float3 worldPos : TEXCOORD1;</ins>
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+VertexOutput LitPassVertex (VertexInput input) {
+	&hellip;
+	<ins>output.worldPos = worldPos.xyz;</ins>
+	return output;
+}
+
+float4 LitPassFragment (VertexOutput input) : SV_TARGET {
+	&hellip;
+	
+	float3 diffuseLight = 0;
+	for (int i = 0; i &lt; MAX_VISIBLE_LIGHTS; i++) {
+		diffuseLight += DiffuseLight(i, input.normal<ins>, input.worldPos</ins>);
+	}
+	float3 color = diffuseLight * albedo;
+	return float4(color, 1);
+}</pre>
+						
+						<figure>
+							<img src="point-lights/light-direction.jpg" width="300" height="220">
+							<figcaption>Correct light direction.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Distance Attenuation</h3>
+						
+						<p>Except for directional lights&mdash;which are assumed to be infinitely far away&mdash;the intensity of a light decreases with distance. The relation is `i/d^2`, where `i` is the light's stated intensity and `d` is the distance between the light source and the surface. This is known as the inverse-square law. So we have to divide the final diffuse contribution by the square of the light vector. To avoid a division by zero, we enforce a tiny minimum for the square distance used.</p>
+						
+						<pre translate="no">	float diffuse = saturate(dot(normal, lightDirection));
+	
+	<ins>float distanceSqr = max(dot(lightVector, lightVector), 0.00001);</ins>
+	<ins>diffuse /= distanceSqr;</ins>
+	
+	return diffuse * lightColor;</pre>
+						
+						<aside>
+							<h3>Doesn't that increase the intensity very close to point lights?</h3>
+							<div>
+								<p>Indeed, when `d` is less than 1 a light's intensity goes up. When `d` approaches its minimum the intensity becomes enormous.</p>
+								
+								<p>Unity's default pipeline uses `i/(1+d^2)` to avoid increasing the brightness, but is less realistic and produces results that are too dark close to the light. The Lightweight pipeline initially used the same falloff, but starting with version 3.3.0 it uses the correct square falloff.</p>
+								
+								<figure>
+									<img src="point-lights/distance-attenuation-graph.png" width="100" height="100">
+									<figcaption>`1/d^2` and `1/(1+d^2)`.</figcaption>
+								</figure>
+							</div>
+						</aside>
+						
+						<figure>
+							<img src="point-lights/distance-attenuation.jpg" width="300" height="220">
+							<figcaption>Light fades with distance.</figcaption>
+						</figure>
+						
+						<p>As the light vector is the same as the direction vector for directional lights, the square distance ends up as 1. That means that directional lights aren't affected by distance attenuation, which is correct.</p>
+					</section>
+					
+					<section>
+						<h3>Light Range</h3>
+						
+						<p>Point lights also have a configured range, which limits their area of influence. Nothing outside this range is affected by the light, even though it could still illuminate objects. This isn't realistic, but allows better control of lighting and limits how many objects are affected by the light. Without this range limit every light would always be considered visible.</p>
+						
+						<p>The range limit isn't a sudden cutoff. Instead, the light's intensity is smoothly faded out, based on the square distance. The Lightweight pipeline and lightmapper use `(1-(d^2/r^2)^2)^2` where `r` is the light's range. We'll use the same fade curve.</p>
+						
+						<figure>
+							<img src="point-lights/range-fade-graph.png" width="100" height="100">
+							<figcaption>Range fade curve.</figcaption>
+						</figure>
+						
+						<p>The light ranges are part of the scene data, so we have to send it to the GPU, per light. We'll use another array for this attenuation data. While we could suffice with a float array, we'll once again use a vector array, as we'll need to include more data later.</p>
+						
+						<pre class="shader" translate="no">	static int visibleLightColorsId =
+		Shader.PropertyToID("_VisibleLightColors");
+	static int visibleLightDirectionsOrPositionsId =
+		Shader.PropertyToID("_VisibleLightDirectionsOrPositions");
+	<ins>static int visibleLightAttenuationsId =</ins>
+		<ins>Shader.PropertyToID("_VisibleLightAttenuations");</ins>
+
+	Vector4[] visibleLightColors = new Vector4[maxVisibleLights];
+	Vector4[] visibleLightDirectionsOrPositions = new Vector4[maxVisibleLights];
+	<ins>Vector4[] visibleLightAttenuations = new Vector4[maxVisibleLights];</ins></pre>
+						
+						<p>Also copy the new array to the GPU in <code class="csharp">Render</code>.</p>
+						
+						<pre class="shader" translate="no">		cameraBuffer.SetGlobalVectorArray(
+			visibleLightDirectionsOrPositionsId, visibleLightDirectionsOrPositions
+		);
+		<ins>cameraBuffer.SetGlobalVectorArray(</ins>
+			<ins>visibleLightAttenuationsId, visibleLightAttenuations</ins>
+		<ins>);</ins></pre>
+						
+						<p>And fill it in <code class="csharp">ConfigureLights</code>. Directional lights have no range limit, so they can use the zero vector. In the case of points lights, we put their range in the X component of the vector. But rather than store the range directly, we reduce the work that the shader has to do by storing `1/r^2` and avoiding a division by zero.</p>
+						
+						<pre class="shader" translate="no">			<ins>Vector4 attenuation = Vector4.zero;</ins>
+
+			if (light.lightType == LightType.Directional) {
+				&hellip;
+			}
+			else {
+				visibleLightDirectionsOrPositions[i] =
+					light.localToWorld.GetColumn(3);
+				<ins>attenuation.x = 1f /</ins>
+					<ins>Mathf.Max(light.range * light.range, 0.00001f);</ins>
+			}
+			
+			<ins>visibleLightAttenuations[i] = attenuation;</ins></pre>
+						
+						<p>Add the new array to the shader, calculate the fading caused by range, and factor that into the final diffuse contribution.</p>
+						
+						<pre translate="no">CBUFFER_START(_LightBuffer)
+	float4 _VisibleLightColors[MAX_VISIBLE_LIGHTS];
+	float4 _VisibleLightDirectionsOrPositions[MAX_VISIBLE_LIGHTS];
+	<ins>float4 _VisibleLightAttenuations[MAX_VISIBLE_LIGHTS];</ins>
+CBUFFER_END
+
+float3 DiffuseLight (int index, float3 normal, float3 worldPos) {
+	float3 lightColor = _VisibleLightColors[index].rgb;
+	float4 lightPositionOrDirection = _VisibleLightDirectionsOrPositions[index];
+	<ins>float4 lightAttenuation = _VisibleLightAttenuations[index];</ins>
+	
+	float3 lightVector =
+		lightPositionOrDirection.xyz - worldPos * lightPositionOrDirection.w;
+	float3 lightDirection = normalize(lightVector);
+	float diffuse = saturate(dot(normal, lightDirection));
+	
+	<ins>float rangeFade = dot(lightVector, lightVector) * lightAttenuation.x;</ins>
+	<ins>rangeFade = saturate(1.0 - rangeFade * rangeFade);</ins>
+	<ins>rangeFade *= rangeFade;</ins>
+	
+	float distanceSqr = max(dot(lightVector, lightVector), 0.00001);
+	diffuse <ins>*= rangeFade /</ins> distanceSqr;
+	
+	return diffuse * lightColor;
+}</pre>
+						
+						<figure>
+							<img src="point-lights/range-fade.jpg" width="300" height="220">
+							<figcaption>Light fades out based on range.</figcaption>
+						</figure>
+						
+						<p>Once again directional lights aren't affected, because in their case <code>lightAttenuation.x</code> is always 0, thus <code>rangeFade</code> is always 1.</p>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Spotlights</h2>
+					
+					<p>The Lightweight pipeline also supports spotlights, so we'll add them too. Spotlights work like point lights, but are restricted to a cone instead of shining in all directions.</p>
+					
+					<section>
+						<h3>Spot Direction</h3>
+						
+						<p>Like a directional light, a spotlight shines along its local Z axis, but in a cone. And it also has a position, which means that we have to provide both for spotlights. So add an additional array for the spot direction to <code class="csharp">MyPipeline</code>.</p>
+						
+						<pre class="shader" translate="no">	static int visibleLightAttenuationsId =
+		Shader.PropertyToID("_VisibleLightAttenuations");
+	<ins>static int visibleLightSpotDirectionsId =</ins>
+		<ins>Shader.PropertyToID("_VisibleLightSpotDirections");</ins>
+
+	Vector4[] visibleLightColors = new Vector4[maxVisibleLights];
+	Vector4[] visibleLightDirectionsOrPositions = new Vector4[maxVisibleLights];
+	Vector4[] visibleLightAttenuations = new Vector4[maxVisibleLights];
+	<ins>Vector4[] visibleLightSpotDirections = new Vector4[maxVisibleLights];</ins>
+	
+	&hellip;
+	
+	void Render (ScriptableRenderContext context, Camera camera) {
+		&hellip;
+			cameraBuffer.SetGlobalVectorArray(
+			visibleLightAttenuationsId, visibleLightAttenuations
+		);
+		<ins>cameraBuffer.SetGlobalVectorArray(</ins>
+			<ins>visibleLightSpotDirectionsId, visibleLightSpotDirections</ins>
+		<ins>);</ins>
+		&hellip;
+	}</pre>
+						
+						<p>In <code class="csharp">ConfigureLights</code>, when not dealing with a directional light, also check whether the light is a spotlight. If so, setup the direction vector, just like for a directional light, but assign it to <code>visibleLightSpotDirections</code> instead.</p>
+						
+						<pre class="shader" translate="no">			if (light.lightType == LightType.Directional) {
+				Vector4 v = light.localToWorld.GetColumn(2);
+				v.x = -v.x;
+				v.y = -v.y;
+				v.z = -v.z;
+				visibleLightDirectionsOrPositions[i] = v;
+			}
+			else {
+				visibleLightDirectionsOrPositions[i] =
+					light.localToWorld.GetColumn(3);
+				attenuation.x = 1f /
+					Mathf.Max(light.range * light.range, 0.00001f);
+
+				<ins>if (light.lightType == LightType.Spot) {</ins>
+					<ins>Vector4 v = light.localToWorld.GetColumn(2);</ins>
+					<ins>v.x = -v.x;</ins>
+					<ins>v.y = -v.y;</ins>
+					<ins>v.z = -v.z;</ins>
+					<ins>visibleLightSpotDirections[i] = v;</ins>
+				<ins>}</ins>
+			}</pre>
+						
+						<p>Add the new data to the shader too.</p>
+						
+						<pre translate="no">CBUFFER_START(_LightBuffer)
+	float4 _VisibleLightColors[MAX_VISIBLE_LIGHTS];
+	float4 _VisibleLightDirectionsOrPositions[MAX_VISIBLE_LIGHTS];
+	float4 _VisibleLightAttenuations[MAX_VISIBLE_LIGHTS];
+	<ins>float4 _VisibleLightSpotDirections[MAX_VISIBLE_LIGHTS];</ins>
+CBUFFER_END
+
+float3 DiffuseLight (int index, float3 normal, float3 worldPos) {
+	float3 lightColor = _VisibleLightColors[index].rgb;
+	float4 lightPositionOrDirection = _VisibleLightDirectionsOrPositions[index];
+	float4 lightAttenuation = _VisibleLightAttenuations[index];
+	<ins>float3 spotDirection = _VisibleLightSpotDirections[index].xyz;</ins>
+	
+	&hellip;
+}</pre>
+					</section>
+					
+					<section>
+						<h3>Angle Falloff</h3>
+						
+						<p>The cone of a spotlight is specified with a positive angle that's less than 180&deg;. We can determine whether a surface point lies within the cone by taking the dot product of the spot's direction and the light direction. If the result is at most the cosine of half the configured spot angle, then the fragment is affected by the light.</p>
+						
+						<p>There isn't an instant cutoff at the edge of the cone. Instead, there is a transition range in which the light fades out. This range can be defined by an inner spot angle where the fading begins and an outer spot angle where the light intensity reaches zero. However, Unity's spotlight only allows us to set the outer angle. Unity's default pipeline uses a light cookie to determine the falloff, while the Lightweight pipeline computes the falloff with a smooth function that assumes a fixed relationship between the inner and outer angles.</p>
+						
+						<p>To determine the falloff, begin by converting half the spot's angle from degrees to radians, then compute its cosine. The configured angle is made available via <code class="csharp">VisibleLight.spotAngle.</code></p>
+						
+						<pre class="shader" translate="no">				if (light.lightType == LightType.Spot) {
+					&hellip;
+					
+					<ins>float outerRad = Mathf.Deg2Rad * 0.5f * light.spotAngle;</ins>
+					<ins>float outerCos = Mathf.Cos(outerRad);</ins>
+				}</pre>
+						
+						<p>The Lightweight pipeline and the lightmapper define the inner angle with the relationship `tan(r_i)=46/64tan(r_o)`, where `r_i` and `r_o` are half the inner and outer spot angles in radians. We need to use the cosine of the inner angle, so the complete relationship is `cos(r_i)=cos(arctan(46/64tan(r_o)))`.</p>
+						
+						<pre class="shader" translate="no">					float outerRad = Mathf.Deg2Rad * 0.5f * light.spotAngle;
+					float outerCos = Mathf.Cos(outerRad);
+					<ins>float outerTan = Mathf.Tan(outerRad);</ins>
+					<ins>float innerCos =</ins>
+						<ins>Mathf.Cos(Mathf.Atan(((46f / 64f) * outerTan));</ins></pre>
+						
+						<p>The angle-based falloff is defined as `(D_s*D_l-cos(r_o))/(cos(r_i)-cos(r_o))` clamped to 0&ndash;1 and then squared, with `D_s*D_l` being the dot product of the spot direction and light direction.</p>
+						
+						<figure>
+							<img src="spotlights/spot-fade-graph.png" width="100" height="100">
+							<figcaption>Spot falloff from 0&deg; to 45&deg; for 90&deg; spot angle.</figcaption>
+						</figure>
+						
+						<p>That expression can be simplified to `(D_s*D_l)a+b`, with `a=1/(cos(r_i)-cos(r_o)` and `b=-cos(r_o)a`. That allows us to compute `a` and `b` in <code class="csharp">ConfigureLights</code> and store them in the last two components of the attenuation data vector.</p>
+						
+						<pre class="shader" translate="no">					float outerRad = Mathf.Deg2Rad * 0.5f * light.spotAngle;
+					float outerCos = Mathf.Cos(outerRad);
+					float outerTan = Mathf.Tan(outerRad);
+					float innerCos =
+						Mathf.Cos(Mathf.Atan(((64f - 18f) / 64f) * outerTan));
+					<ins>float angleRange = Mathf.Max(innerCos - outerCos, 0.001f);</ins>
+					<ins>attenuation.z = 1f / angleRange;</ins>
+					<ins>attenuation.w = -outerCos * attenuation.z;</ins></pre>
+						
+						<p>In the shader, the spot fade factor can then be computed with a dot product, multiplication, addition, saturation, and finally squaring. Then use the result to modulate the diffuse light.</p>
+						
+						<pre translate="no">	float rangeFade = dot(lightVector, lightVector) * lightAttenuation.x;
+	rangeFade = saturate(1.0 - rangeFade * rangeFade);
+	rangeFade *= rangeFade;
+	
+	<ins>float spotFade = dot(spotDirection, lightDirection);</ins>
+	<ins>spotFade = saturate(spotFade * lightAttenuation.z + lightAttenuation.w);</ins>
+	<ins>spotFade *= spotFade;</ins>
+	
+	float distanceSqr = max(dot(lightVector, lightVector), 0.00001);
+	diffuse *= <ins>spotFade *</ins> rangeFade / distanceSqr;</pre>
+						
+						<figure>
+							<img src="spotlights/spotlight.jpg" width="300" height="220">
+							<figcaption>Spotlight, intensity 4.</figcaption>
+						</figure>
+						
+						<p>To keep the spot fade calculation from affecting the other light types, set the W component of their attenuation vector to 1.</p>
+						
+						<pre class="shader" translate="no">			Vector4 attenuation = Vector4.zero;
+			<ins>attenuation.w = 1f;</ins></pre>
+						
+						<aside>
+							<h3>What about area lights?</h3>
+							<div>
+								<p>Unity's Lightweight and default pipelines do not support realtime area lights, and neither will we. Area lights are only used for lightmapping, which we'll support later.</p>
+							</div>
+						</aside>
+					</section>
+					
+				</section>
+				
+				<section>
+					<h2>Lights Per Object</h2>
+					
+					<p>We currently support up to four lights per object. In fact, we always calculate lighting for four lights per object, even when that would not be necessary. For example, consider a 9&times;9 grid of 81 spheres with four point lights near its corners. If the range of those lights is set so they cover roughly a quarter of the grid each, then most spheres end up affected by only a single light, some by two, and some by none.
+					
+					<figure>
+						<img src="lights-per-object/grid-four-point-lights.jpg" width="320" height="200">
+						<figcaption>Grid of 81 spheres, with four point lights.</figcaption>
+					</figure>
+					
+					<p>At the moment those 81 spheres are rendered with one draw call&mdash;assuming GPU instancing is enabled&mdash;but light contribution is calculated four times per sphere fragment. It would be better if we could somehow only calculate the lights that are needed per object. That would allow us to also increase the number of visible lights supported.</p>
+					
+					<section>
+						<h3>Light Indices</h3>
+						
+						<p>During culling, Unity determines the lights that are visible, which also involves figuring out which lights affect each object. We can ask Unity to send this information to the GPU, in the form of a list of light indices.</p>
+						
+						<p>Unity currently supports two formats for the light indices. The first approach is to store up to eight indices in two <code>float4</code> variables, which are set per object. The second approach is to put a list of the light indices for all objects in a single buffer, similar to how GPU-instanced data is stored. However, the second approach is disabled in Unity 2018.3, with only the first option supported. So although not ideal, we'll limit ourselves to the first option too, for now.</p>
+						
+						<p>We instruct Unity to set the light indices via <code>float4</code> fields by setting the <code class="csharp">rendererConfiguration</code> field of the draw settings to <code class="csharp">RendererConfiguration.PerObjectLightIndices8</code>.</p>
+						
+						<pre class="shader" translate="no">		var drawSettings = new DrawRendererSettings(
+			camera, new ShaderPassName("SRPDefaultUnlit")
+		) <ins>{</ins>
+			<ins>flags = drawFlags,</ins>
+			<ins>rendererConfiguration = RendererConfiguration.PerObjectLightIndices8</ins>
+		<ins>}</ins>;
+		<del>//drawSettings.flags = drawFlags;</del>
+		drawSettings.sorting.flags = SortFlags.CommonOpaque;</pre>
+						
+						<p>Unity now has to setup additional GPU data per object, which affects GPU instancing. Unity tries to group objects that are affected by the same lights, but prefers to group based on distance. Also, the light indices are ordered based on the relative light importance per object, which can split batches further. In the case of the grid example, I ended up with 30 draw calls, which is a lot more than 1, but still much less than 81.</p>
+						
+						<p>The indices are made available via the <code>unity_4LightIndices0</code> and <code>unity_4LightIndices1</code> vectors, which should be part of the <code>UnityPerDraw</code> buffer. Besides that, there's also <code>unity_LightIndicesOffsetAndCount</code>, another <code>float4</code> vector. Its Y component contains the number of lights affecting the object. Its X component contains an offset for when the second approach is used, so we can ignore that.</p>
+						
+						<pre translate="no">CBUFFER_START(UnityPerDraw)
+	float4x4 unity_ObjectToWorld;
+	<ins>float4 unity_LightIndicesOffsetAndCount;</ins>
+	<ins>float4 unity_4LightIndices0, unity_4LightIndices1;</ins>
+CBUFFER_END</pre>
+						
+						<p>Now we can limit ourselves to invoking <code>DiffuseLight</code> only as often as needed. But we have to retrieve the correct light indices. As we currently support up to four visible lights, all we need is <code>unity_4LightIndices0</code>, which we can index as an array to retrieve its appropriate component.</p>
+						
+						<pre translate="no">	for (int i = 0; i &lt; <ins>unity_LightIndicesOffsetAndCount.y</ins>; i++) {
+		<ins>int lightIndex = unity_4LightIndices0[i];</ins>
+		diffuseLight +=
+			DiffuseLight(<ins>lightIndex</ins>, input.normal, input.worldPos);
+
+	}</pre>
+						
+						<p>While there should be no visible change&mdash;assuming there are only up to four visible lights&mdash;the GPU now has less work to do, because it only calculates light contribution of the relevant lights. You can use the frame debugger to check how many lights end up being used per draw call. The shader did become more complex, because we're now using a variable loop instead of a fixed one. Whether that results in better or worse performance can vary. The more visible lights we support, the better this new approach is.</p>
+						
+						<figure>
+							<img src="lights-per-object/two-lights.png" width="300" height="56">
+							<figcaption>Two lights affecting an object, indices 3 and 1.</figcaption>
+						</figure>
+						
+						<p>Note that as we no longer loop through the maximum visible lights, we no longer need to clear light data that ends up not being used.</p>
+						
+						<pre class="shader" translate="no">	void ConfigureLights () {
+		<del>//int i = 0;</del>
+		for (<ins>int i = 0</ins>; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+		}
+		<del>//for (; i &lt; maxVisibleLights; i++) {</del>
+		<del>//	visibleLightColors[i] = Color.clear;</del>
+		<del>//}</del>
+	}</pre>
+					</section>
+					
+					<section>
+						<h3>More Visible Lights</h3>
+						
+						<p>Our new approach makes it possible to support more visible lights without automatically increasing the work that the GPU has to do. Let's increase the limit to 16, the same used by the Lightweight pipeline. That requires us to send a bit more data to the GPU each frame, but most objects will only be affected by a few lights. Adjust <code>MAX_VISIBLE_LIGHTS</code> in the shader.</p>
+						
+						<pre translate="no">#define MAX_VISIBLE_LIGHTS <ins>16</ins></pre>
+						
+						<p>And <code class="csharp">maxVisibleLights</code> in <code class="csharp">MyPipeline</code>.</p>
+						
+						<pre class="shader" translate="no">	const int maxVisibleLights = <ins>16</ins>;</pre>
+						
+						<p>After recompiling, Unity will warn us that that we're exceeding the previous array size. Unfortunately, it's not possible to just change the size of a fixed array in a shader. That's a graphics API limitation, not something that we can do anything about. The application has to be restarted before the new size is used, so you'll have to restart the Unity editor.</p>
+						
+						<p>Before we go ahead and add more lights to the scene, we have to realize that <code>unity_4LightIndices0</code> only contains up to four indices, even though an object can now be affected by more than four lights. To prevent incorrect results, we have to make sure that our light loop doesn't go beyond four.</p>
+						
+						<pre translate="no">	for (int i = 0; i &lt; <ins>min(</ins>unity_LightIndicesOffsetAndCount.y<ins>, 4)</ins>; i++) {
+		int lightIndex = unity_4LightIndices0[i];
+		diffuseLight +=
+			DiffuseLight(lightIndex, input.normal, input.worldPos);
+	}</pre>
+						
+						<figure>
+							<img src="lights-per-object/16-lights-4-per-object.jpg" width="320" height="200">
+							<figcaption>Sixteen lights, at most four per object.</figcaption>
+						</figure>
+						
+						<p>But we don't have to limit ourselves to at most four lights per object. There's also <code>unity_4LightIndices1</code>, which can contain another four light indices. Let's simply add a second loop after the first one, starting at index 4 and retrieving the light indices from <code>unity_4LightIndices1</code>. That increases the maximum lights per object to eight. We should make sure that we don't exceed eight though, because it's possible for objects to be affected by even more lights in the scene.</p>
+						
+						<pre translate="no">	for (int i = 0; i &lt; min(unity_LightIndicesOffsetAndCount.y, 4); i++) {
+		int lightIndex = unity_4LightIndices0[i];
+		diffuseLight +=
+			DiffuseLight(lightIndex, input.normal, input.worldPos);
+	}
+	<ins>for (int i = 4; i &lt; min(unity_LightIndicesOffsetAndCount.y, 8); i++) {</ins>
+		<ins>int lightIndex = unity_4LightIndices1[i - 4];</ins>
+		<ins>diffuseLight +=</ins>
+			<ins>DiffuseLight(lightIndex, input.normal, input.worldPos);</ins>
+	<ins>}</ins></pre>
+						
+						<figure>
+							<img src="lights-per-object/8-lights-per-object.jpg" width="320" height="200">
+							<figcaption>Up to eight lights per object.</figcaption>
+						</figure>
+						
+						<p>As the light indices are sorted based on relative importance, usually the second quartet of lights isn't as obvious as the first. Also, most objects won't be affected by that many lights. To see the difference that the extra four lights make, you can temporarily disable the first loop.</p>
+						
+						<figure>
+							<img src="lights-per-object/beyond-four-lights.jpg" width="320" height="200">
+							<figcaption>Skipping the first four lights per object.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Vertex Lights</h3>
+						
+						<p>As the second quartet of lights is likely much less visually important than the first, we could make them less costly by computing their contribution per vertex instead of per light. The light contribution will be linearly interpolated between vertices, which is less accurate, but is acceptable for subtle diffuse lighting, as long as the light distance is reasonably large compared to the triangle edge length.</p>
+						
+						<p>It's possible to fine-tune how many pixel and vertex lights we support, but we'll simply move the second light loop to <code>LitPassVertex</code>, which only requires adjusting the variables used. That means we support up to four pixel lights plus four vertex lights. The vertex lighting has to be added to <code>VertexOutput</code> and used as the initial value for <code>diffuseLight</code> in <code>LitPassFragment</code>.</p>
+						
+						<pre translate="no">struct VertexOutput {
+	float4 clipPos : SV_POSITION;
+	float3 normal : TEXCOORD0;
+	float3 worldPos : TEXCOORD1;
+	<ins>float3 vertexLighting : TEXCOORD2;</ins>
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+VertexOutput LitPassVertex (VertexInput input) {
+	VertexOutput output;
+	UNITY_SETUP_INSTANCE_ID(input);
+	UNITY_TRANSFER_INSTANCE_ID(input, output);
+	float4 worldPos = mul(UNITY_MATRIX_M, float4(input.pos.xyz, 1.0));
+	output.clipPos = mul(unity_MatrixVP, worldPos);
+	output.normal = mul((float3x3)UNITY_MATRIX_M, input.normal);
+	output.worldPos = worldPos.xyz;
+	
+	<ins>output.vertexLighting = 0;</ins>
+	<ins>for (int i = 4; i &lt; min(unity_LightIndicesOffsetAndCount.y, 8); i++) {</ins>
+		<ins>int lightIndex = unity_4LightIndices1[i - 4];</ins>
+		<ins>output.vertexLighting +=</ins>
+			<ins>DiffuseLight(lightIndex, output.normal, output.worldPos);</ins>
+	<ins>}</ins>
+
+	return output;
+}
+
+float4 LitPassFragment (VertexOutput input) : SV_TARGET {
+	UNITY_SETUP_INSTANCE_ID(input);
+	input.normal = normalize(input.normal);
+	float3 albedo = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color).rgb;
+	
+	float3 diffuseLight = <ins>input.vertexLighting</ins>;
+	for (int i = 0; i &lt; min(unity_LightIndicesOffsetAndCount.y, 4); i++) {
+		&hellip;
+	}
+	<del>//for (int i = 4; i &lt; min(unity_LightIndicesOffsetAndCount.y, 8); i++) {</del>
+	<del>//	&hellip;</del>
+	<del>//}</del>
+	float3 color = diffuseLight * albedo;
+	return float4(color, 1);
+}</pre>
+					</section>
+					
+					<section>
+						<h3>Too Many Visible Lights</h3>
+						
+						<p>Although we now support up to 16 visible lights, with enough lights in the scene we can still end up exceeding that limit. When that happens, the overall least important lights are omitted when rendering. However, that's only because we don't copy their data to the shader. Unity doesn't know about that and doesn't eliminate those lights from the light index list per object. So we can end up with light indices that are out of bounds. To prevent that, we have to tell Unity that some lights were eliminated.</p>
+						
+						<p>We can get a list of the indices of all visible lights via invoking <code>GetLightIndexMap</code> on the cull results. Unity allows us to modify this mapping and then assign it back to the cull results via <code>SetLightIndexMap</code>. The point of this is that Unity will skip all lights whose index has been changed to &minus;1. Do this at the end of <code>ConfigureLights</code>, for all lights beyond the maximum.</p>
+						
+						<pre class="shader" translate="no">	void ConfigureLights () {
+		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+		}
+
+		<ins>int[] lightIndices = cull.GetLightIndexMap();</ins>
+		<ins>for (int i = maxVisibleLights; i &lt; cull.visibleLights.Count; i++) {</ins>
+			<ins>lightIndices[i] = -1;</ins>
+		<ins>}</ins>
+		<ins>cull.SetLightIndexMap(lightIndices);</ins>
+	}</pre>
+						
+						<p>We only really need to do that when we end up with too many visible lights, which shouldn't happen all the time.</p>
+						
+						<pre class="shader" translate="no">		<ins>if (cull.visibleLights.Count > maxVisibleLights) {</ins>
+			int[] lightIndices = cull.GetLightIndexMap();
+			for (int i = maxVisibleLights; i &lt; cull.visibleLights.Count; i++) {
+				lightIndices[i] = -1;
+			}
+			cull.SetLightIndexMap(lightIndices);
+		<ins>}</ins></pre>
+						
+						<p>Unfortunately, <code>GetLightIndexMap</code> creates a new array each invocation, so our pipeline now allocates memory every frame we end up with too many visible lights. We currently cannot do anything about that, but future Unity releases will give us access to an allocation-free alternative of <code class="csharp">GetLightIndexMap</code>.</p>
+					</section>
+					
+					<section>
+						<h3>Zero Visible Lights</h3>
+						
+						<p>Another possibility is that there are zero visible lights. This should just work, but unfortunately Unity crashes when trying to set the light indices in this case. We can avoid the crash by only using per-object light indices when we have at least one visible light.</p>
+						
+						<pre class="shader" translate="no">		var drawSettings = new DrawRendererSettings(
+			camera, new ShaderPassName("SRPDefaultUnlit")
+		) {
+			flags = drawFlags<del>//,</del>
+			<del>//rendererConfiguration = RendererConfiguration.PerObjectLightIndices8</del>
+		};
+		<ins>if (cull.visibleLights.Count > 0) {</ins>
+			<ins>drawSettings.rendererConfiguration =</ins>
+				<ins>RendererConfiguration.PerObjectLightIndices8;</ins>
+		<ins>}</ins></pre>
+						
+						<p>If there are no lights, we can also completely skip invoking <code>ConfigureLights</code>.</p>
+						
+						<pre class="shader" translate="no">		<ins>if (cull.visibleLights.Count > 0) {</ins>
+			ConfigureLights();
+		<ins>}</ins></pre>
+						
+						<p>A side effect of not having Unity set the light data is that they keep the value set for the last object. So we can end up with a nonzero light count for all objects. To avoid that, we'll manually set <em translate="no">unity_LightIndicesOffsetAndCount</em> to zero.</p>
+						
+						<pre class="shader" translate="no">	<ins>static int lightIndicesOffsetAndCountID =</ins>
+		<ins>Shader.PropertyToID("unity_LightIndicesOffsetAndCount");</ins>
+	
+	&hellip;
+	
+	void Render (ScriptableRenderContext context, Camera camera) {
+		&hellip;
+		
+		if (cull.visibleLights.Count > 0) {
+			ConfigureLights();
+		}
+		<ins>else {</ins>
+			<ins>cameraBuffer.SetGlobalVector(</ins>
+				<ins>lightIndicesOffsetAndCountID, Vector4.zero</ins>
+			<ins>);</ins>
+		<ins>}</ins>
+
+		&hellip;
+	}</pre>
+						
+						<p>The next tutorial is <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/spotlight-shadows/">Spotlight Shadows</a>.</p>
+					</section>
+					
+					<a href="https://bitbucket.org/catlikecodingunitytutorials/scriptable-render-pipeline-03-lights/" class="repository">repository</a>
+					<a href="Lights.pdf" download rel="nofollow">PDF</a>
+				</section>
+				
+			</article>
+		</main>
+
+		<footer>
+			<p>Enjoying the <a href="https://catlikecoding.com/unity/tutorials/">tutorials</a>? Are they useful? Want more?</p>
+			<p><b><a href="https://www.patreon.com/catlikecoding">Please support me on Patreon!</a></b></p>
+			<p><a href="https://www.patreon.com/catlikecoding"><img src="https://catlikecoding.com/unity/tutorials/become-a-patron.png" alt="Become my patron!" width="217" height="51"></a></p>
+			<p><b><a href="https://catlikecoding.com/unity/tutorials/donating.html">Or make a direct donation</a>!</b></p>
+			<p>made by <a href="https://catlikecoding.com/jasper-flick/" rel="author">Jasper Flick</a></p>
+		</footer>
+		
+		<script src="../../tutorials.js"></script>
+	</body>
+</html>

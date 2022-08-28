@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/directional-shadows/">
+		<meta property="og:type" content="article">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/directional-shadows/tutorial-image.jpg">
+		<meta property="og:title" content="Directional Shadows">
+		<meta property="og:description" content="A Unity Scriptable Render Pipeline tutorial about directional shadows for sigle-pass forward rendering, with and without cascades.">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta name="viewport" content="width=768">
+		<title>Directional Shadows</title>
+		<link href="../../tutorials.css" rel="stylesheet">
+
+				<link rel="manifest" href="https://catlikecoding.com/site.webmanifest">
+		<link rel="mask-icon" href="https://catlikecoding.com/safari-pinned-tab.svg" color="#aa0000">
+
+		<script type="application/ld+json">{
+			"@context": "http://schema.org",
+			"@type": "WebPage",
+			"mainEntity": {
+				"@type": "TechArticle",
+				"@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/directional-shadows/#article",
+				"headline": "Directional Shadows",
+				"alternativeHeadline": "Cascaded Maps",
+				"datePublished": "2019-01-31",
+				"author": { "@type": "Person", "name": "Jasper Flick", "@id": "https://catlikecoding.com/jasper-flick/#person" },
+				"publisher": { "@type": "Organization", "name": "Catlike Coding", "@id": "https://catlikecoding.com/#organization" },
+				"description": "A Unity Scriptable Render Pipeline tutorial about directional shadows for single-pass forward rendering, with and without cascades.",
+				"image": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/directional-shadows/tutorial-image.jpg",
+				"dependencies": "Unity 2018.3.0f2",
+				"proficiencyLevel": "Expert"
+			},
+			"breadcrumb": {
+				"@type": "BreadcrumbList",
+				"itemListElement": [
+					{ "@type": "ListItem", "position": 1, "item": { "@id": "https://catlikecoding.com/unity/", "name": "Unity" }},
+					{ "@type": "ListItem", "position": 2, "item": { "@id": "https://catlikecoding.com/unity/tutorials/", "name": "Tutorials" }},
+					{ "@type": "ListItem", "position": 3, "item": { "@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/", "name": "Scriptable Render Pipeline" }}
+				]
+			}
+		}</script>
+		<script>
+			var customTypes = {
+				InstancedColor: 1,
+				MyPipeline: 1,
+				MyPipelineAsset: 1,
+				MyPipelineAssetEditor: 1,
+				ShadowCascades: 1,
+				ShadowMapSize: 1
+			};
+		</script>
+	</head>
+	<body>
+		<header>
+			<a href="https://catlikecoding.com"><img src="https://catlikecoding.com/catlike-coding-logo.svg" alt="Catlike Coding" width="45" height="45"></a>
+			<nav>
+				<ol>
+					<li><a href="https://catlikecoding.com">Catlike Coding</a></li>
+					<li><a href="https://catlikecoding.com/unity/">Unity</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/">Tutorials</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">Scriptable Render Pipeline</a></li>
+				</ol>
+			</nav>
+		</header>
+		
+		<main>
+			<article>
+				<header>
+					<h1>Directional Shadows</h1>
+					<p>Cascaded Maps</p>
+					<ul>
+						<li>Support multiple shadowed directional lights.</li>
+						<li>Control the shadow distance.</li>
+						<li>Define a separate main light.</li>
+						<li>Render and sample a cascaded shadow map.</li>
+						<li>Work with culling spheres.</li>
+					</ul>
+				</header>
+				
+				<p>This is the fifth installment of a tutorial series covering Unity's <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">scriptable render pipeline</a>. This time we'll add support for directional shadows.</p>
+				
+				<p>This tutorial is made with Unity 2018.3.0f2.</p>
+				
+				<figure>
+					<img src="tutorial-image.jpg" width="512" height="256">
+					<figcaption>Four directional lights with shadows, one with cascades.</figcaption>
+				</figure>
+				
+				<section>
+					<h2>Shadows for Directional Lights</h2>
+					
+					<p>Conceptually, directional lights aren't that different from spotlights. They're the same, just infinitely far away. The approach we used for spotlight shadows works for them too, with a few adjustments. We'll enhance our pipeline so it supports a mix of directional lights and spotlight that can all cast shadows.</p>
+					
+					<section>
+						<h3>Configuring Shadows</h3>
+						
+						<p>Current, <code>ConfigureLights</code> only deals with shadow data in case of spotlights. But when we support directional shadows too, the same code has to be used twice. So copy the relevant code to a separate method, doing its work based on the light index and shadow light, then returning the shadow data.</p>
+						
+						<pre translate="no">	<ins>Vector4 ConfigureShadows (int lightIndex, Light shadowLight) {</ins>
+		<ins>Vector4 shadow = Vector4.zero;</ins>
+		<ins>Bounds shadowBounds;</ins>
+		if (
+			shadowLight.shadows != LightShadows.None &&
+			cull.GetShadowCasterBounds(<ins>lightIndex</ins>, out shadowBounds)
+		) {
+			shadowTileCount += 1;
+			shadow.x = shadowLight.shadowStrength;
+			shadow.y =
+				shadowLight.shadows == LightShadows.Soft ? 1f : 0f;
+		}
+		<ins>return shadow;</ins>
+	<ins>}</ins></pre>
+						
+						<p>Use the new method in <code>ConfigureLights</code> for spotlights.</p>
+						
+						<pre translate="no">				if (light.lightType == LightType.Spot) {
+					&hellip;
+
+					<del>//Light shadowLight = light.light;</del>
+					<del>//Bounds shadowBounds;</del>
+					<del>//if (</del>
+					<del>//	shadowLight.shadows != LightShadows.None &&</del>
+					<del>//	cull.GetShadowCasterBounds(i, out shadowBounds)</del>
+					<del>//) {</del>
+					<del>//	&hellip;</del>
+					<del>//}</del>
+					<ins>shadow = ConfigureShadows(i, light.light);</ins>
+				}</pre>
+						
+						<p>And also use it for directional lights.</p>
+						
+						<pre translate="no">			if (light.lightType == LightType.Directional) {
+				Vector4 v = light.localToWorld.GetColumn(2);
+				v.x = -v.x;
+				v.y = -v.y;
+				v.z = -v.z;
+				visibleLightDirectionsOrPositions[i] = v;
+				<ins>shadow = ConfigureShadows(i, light.light);</ins>
+			}</pre>
+						
+						<p>Because there are some differences when rendering a directional shadow map, let's signal that we're dealing with a directional light here. We can do that by using the Z component of the shadow data as a flag.</p>
+						
+						<pre translate="no">				shadow = ConfigureShadows(i, light.light);
+				<ins>shadow.z = 1f;</ins></pre>
+						
+					</section>
+					
+					<section>
+						<h3>Rendering Shadows</h3>
+						
+						<p>At this point we reserve tiles in the shadow map for directional lights, but it's not useful yet because <code>RenderShadows</code> is computing its matrices for a spotlight. We can only use <code>ComputeSpotShadowMatricesAndCullingPrimitives</code> for spotlights and have to use a different method to compute the matrices for a directional light.</p>
+						
+						<p>First, pull the invocation of <code>ComputeSpotShadowMatricesAndCullingPrimitives</code> out of the check for whether we have valid shadows. That makes it easier to do it differently for directional lights.</p>
+						
+						<pre translate="no">			<del>//if (!cull.ComputeSpotShadowMatricesAndCullingPrimitives(</del>
+			<del>//	i, out viewMatrix, out projectionMatrix, out splitData</del>
+			<del>//)) {</del>
+			<del>//	shadowData[i].x = 0f;</del>
+			<del>//	continue;</del>
+			<del>//}</del>
+			<ins>bool validShadows;</ins>
+			<ins>validShadows = cull.ComputeSpotShadowMatricesAndCullingPrimitives(</ins>
+				<ins>i, out viewMatrix, out projectionMatrix, out splitData</ins>
+			<ins>);</ins>
+			<ins>if (!validShadows) {</ins>
+				<ins>shadowData[i].x = 0f;</ins>
+				<ins>continue;</ins>
+			<ins>}</ins></pre>
+						
+						<p>Next, if the shadow data indicates the we have a directional light, invoke <code>ComputeDirectionalShadowMatricesAndCullingPrimitives</code> instead. That method has more parameters because it allows us to use shadow cascades, which we won't do here. The first argument that we supply is the light index, followed by a cascade index and the amount of cascades. We won't use cascades, to the index is zero and the count is 1. After that comes a three-component vector to define the cascade split, for which we'll use (1, 0, 0). This is followed by the tile size as an integer, then the shadow near plane value, and finally the matrices and split data output.</p>
+						
+						<pre translate="no">			bool validShadows;
+			<ins>if (shadowData[i].z > 0f) {</ins>
+				<ins>validShadows =</ins>
+					<ins>cull.ComputeDirectionalShadowMatricesAndCullingPrimitives(</ins>
+						<ins>i, 0, 1, Vector3.right, (int)tileSize,</ins>
+						<ins>cull.visibleLights[i].light.shadowNearPlane,</ins>
+						<ins>out viewMatrix, out projectionMatrix, out splitData</ins>
+					<ins>);</ins>
+			<ins>}</ins>
+			<ins>else {</ins>
+				validShadows =
+					cull.ComputeSpotShadowMatricesAndCullingPrimitives(
+						i, out viewMatrix, out projectionMatrix, out splitData
+					);
+			<ins>}</ins>
+			if (!validShadows) {
+				shadowData[i].x = 0f;
+				continue;
+			}</pre>
+						
+						<p>That gives us correct matrices for directional shadows. Besides that, the split data also contains a valid culling sphere. This is a sphere that envelops all objects that need to be rendered to create a valid directional shadow map. This is useful for directional shadows because unlike spotlights they affect everything. We can use the culling sphere to reduce the amount of shapes that have to be rendered into the shadow map by assigning it to the split data of the shadow settings.</p>
+						
+						<pre translate="no">			var shadowSettings = new DrawShadowsSettings(cull, i);
+			<ins>shadowSettings.splitData.cullingSphere = splitData.cullingSphere;</ins>
+			context.DrawShadows(ref shadowSettings);</pre>
+						
+						<p>Spotlights don't have valid culling spheres, but we can assign them anyway as there is no effect. So we don't have to distinguish between light types here.</p>
+						
+					</section>
+					
+					<section>
+						<h3>Shadow Distance</h3>
+						
+						<p>At this point we should get valid shadow maps for directional lights, but they appear to be empty, except for maybe a little dot. That's because the map has to cover everything that the camera can see, which is up to 1000 units away by default, controlled by the camera's far plane. This region needs to be covered no matter whether geometry is actually in it, so the map gets spread very thin. Drastically reducing the camera's far plane distance will make shadows appear eventually.</p>
+						
+						<p>How far away shadows are rendered isn't tied to the camera's far plane, that's just the default behavior. There is a different shadow distance that controls up to how far away shadows are rendered. The shadow distance is typically much smaller than the camera's far plane. This both limits the amount of shadows that have to be rendered and allows the directional shadow map to cover a smaller region.</p>
+						
+						<p>Add a field for the shadow distance to <code>MyPipeline</code>, which is set via its constructor. Then assign it to the culling parameters after we've extracted them from the camera. Because it doesn't make sense to render shadow further than the camera can see, use the minimum of the shadow distance and the camera's far plane.</p>
+						
+						<pre translate="no">	<ins>float shadowDistance;</ins>
+
+	public MyPipeline (
+		bool dynamicBatching, bool instancing,
+		int shadowMapSize<ins>, float shadowDistance</ins>
+	) {
+		&hellip;
+		<ins>this.shadowDistance = shadowDistance;</ins>
+	}
+
+	&hellip;
+
+	void Render (ScriptableRenderContext context, Camera camera) {
+		ScriptableCullingParameters cullingParameters;
+		if (!CullResults.GetCullingParameters(camera, out cullingParameters)) {
+			return;
+		}
+		<ins>cullingParameters.shadowDistance =</ins>
+			<ins>Mathf.Min(shadowDistance, camera.farClipPlane);</ins>
+
+		&hellip;
+	}</pre>
+						
+						<p>Add a configuration option for the shadow distance to <code>MyPipelineAsset</code> and give it a reasonable default value, like 100.</p>
+						
+						<pre translate="no">	<ins>[SerializeField]</ins>
+	<ins>float shadowDistance = 100f;</ins>
+
+	&hellip;
+	
+	protected override IRenderPipeline InternalCreatePipeline () {
+		return new MyPipeline(
+			dynamicBatching, instancing, (int)shadowMapSize<ins>, shadowDistance</ins>
+		);
+	}</pre>
+						
+						<figure>
+							<img src="shadows-for-directional-lights/shadow-distance.png" width="320" height="96">
+							<figcaption>Shadow distance set to 10.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Investigating Shadows</h3>
+						
+						<p>Once the shadow distance has been sufficiently reduced, directional shadows finally appear. Let's work with a very small distance for now, like 10. To get a good impression of what is covered by the map, set the light's shadow bias to zero and use a large plane for the ground. Start with a single directional light.</p>
+						
+						<figure>
+							<img src="shadows-for-directional-lights/directional-shadows-with-artifacts.png" width="330" height="260">
+							<figcaption>Directional shadows, bias set to zero.</figcaption>
+						</figure>
+						
+						<p>Because of the zero bias, we can roughly see what region is covered by the shadow map, thanks to self-shadowing on the ground. Unlike spotlight shadows, the directional shadow map moves with the camera. Also, the edge of the shadow map can still influence the scene beyond its bounds. That happens because we end up sampling beyond the edge of the map, which effectively stretches its edge to infinity. Such stretching disappears when we have more than one shadowed light, because then we use scissoring to clear the edge of each tile.</p>
+						
+						<figure>
+							<img src="shadows-for-directional-lights/directional-and-spotlight.png" width="330" height="260">
+							<figcaption>Two shadow map tiles, one directional and one spotlight.</figcaption>
+						</figure>
+						
+						<p>However, when there are multiple tiles we can end up sampling beyond the bounds of the directional tile and end up sampling from the wrong tile. The more tiles there are, the worse this gets.</p>
+						
+						<figure>
+							<img src="shadows-for-directional-lights/shadow-soup.png" width="400" height="220">
+							<figcaption>Two directional and one spotlight produce shadow soup.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Clamping to Shadow Tile</h3>
+						
+						<p>Directional shadow maps are troublesome because they're sampled everywhere regardless of the region they cover. The solution is to clamp shadow sampling to the tile. This is done by clamping the shadow position after converting it to the 0&ndash;1 range, before scaling and offsetting to the correct tile. Without clamping we could compute the whole transformation matrix in <code>MyPipeline</code>, but now we have to move the tile transformation step to the shader.</p>
+						
+						<p>The tile scale is needed for the tile transformation, so we have to send it to the shader. Let's add a global shadow data vector for that, which we can also use to store more stuff later. Name it <em translate="no">_GlobalShadowData</em> and keep track of its shader identifier.</p>
+						
+						<pre translate="no">	<ins>static int globalShadowDataId = Shader.PropertyToID("_GlobalShadowData");</ins></pre>
+						
+						<p>Put the tile scale in the first component of this vector and set it in <code>RenderShadows</code>.</p>
+						
+						<pre translate="no">		shadowBuffer.BeginSample("Render Shadows");
+		<ins>shadowBuffer.SetGlobalVector(</ins>
+			<ins>globalShadowDataId, new Vector4(tileScale, 0f)</ins>
+		<ins>);</ins>
+		context.ExecuteCommandBuffer(shadowBuffer);
+		shadowBuffer.Clear();</pre>
+						
+						<p>The shader also needs to know the offsets of all tiles. We can store them in the ZW components of the shadow data vectors.</p>
+						
+						<pre translate="no">			float tileOffsetX = tileIndex % split;
+			float tileOffsetY = tileIndex / split;
+			tileViewport.x = tileOffsetX * tileSize;
+			tileViewport.y = tileOffsetY * tileSize;
+			<ins>shadowData[i].z = tileOffsetX * tileScale;</ins>
+			<ins>shadowData[i].w = tileOffsetY * tileScale;</ins></pre>
+						
+						<p>After that, remove the multiplication with the tile matrix.</p>
+						
+						<pre translate="no">			worldToShadowMatrices[i] =
+				scaleOffset * (projectionMatrix * viewMatrix);
+
+			<del>//if (split > 1) {</del>
+			<del>//	var tileMatrix = Matrix4x4.identity;</del>
+			<del>//	tileMatrix.m00 = tileMatrix.m11 = tileScale;</del>
+			<del>//	tileMatrix.m03 = tileOffsetX * tileScale;</del>
+			<del>//	tileMatrix.m13 = tileOffsetY * tileScale;</del>
+			<del>//	worldToShadowMatrices[i] = tileMatrix * worldToShadowMatrices[i];</del>
+			<del>//}</del>
+			tileIndex += 1;</pre>
+						
+						<p>On the shader side, add the global shadow data vector to the shadow buffer.</p>
+						
+						<pre class="shader" translate="no">CBUFFER_START(_ShadowBuffer)
+	float4x4 _WorldToShadowMatrices[MAX_VISIBLE_LIGHTS];
+	float4 _ShadowData[MAX_VISIBLE_LIGHTS];
+	float4 _ShadowMapSize;
+	<ins>float4 _GlobalShadowData;</ins>
+CBUFFER_END</pre>
+						
+						<p>In <code class="shader">ShadowAttenuation</code>, clamp the XY coordinates of the shadow position after the perspective division. After that, apply the tile transformation.</p>
+						
+						<pre class="shader" translate="no">	float4 shadowPos = mul(_WorldToShadowMatrices[index], float4(worldPos, 1.0));
+	shadowPos.xyz /= shadowPos.w;
+	<ins>shadowPos.xy = saturate(shadowPos.xy);</ins>
+	<ins>shadowPos.xy = shadowPos.xy * _GlobalShadowData.x + _ShadowData[index].zw;</ins></pre>
+						
+						<figure>
+							<img src="shadows-for-directional-lights/no-more-soup.png" width="400" height="220">
+							<figcaption>No more soup.</figcaption>
+						</figure>
+						
+						<aside>
+							<h3>Is a perspective division valid for directional shadows?</h3>
+							<div>
+								<p>It isn't needed, because directional shadow maps use an orthographic projection. The W component of the shadow position is always 1. But because we mix directional and spotlight maps we simply always perform the division.</p>
+							</div>
+						</aside>
+					</section>
+					
+					<section>
+						<h3>Always Use Scissors</h3>
+						
+						<p>We solved the shadow soup when multiple tiles are in use, but we still get stretched shadow map edges when only a single directional shadow map is active. We solve that issue by simply always scissoring in <code>RenderShadows</code>.</p>
+						
+						<pre translate="no">		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+			<del>//if (split > 1) {</del>
+				shadowBuffer.SetViewport(tileViewport);
+				shadowBuffer.EnableScissorRect(new Rect(
+					tileViewport.x + 4f, tileViewport.y + 4f,
+					tileSize - 8f, tileSize - 8f
+				));
+			<del>//}</del>
+			&hellip;
+		}
+
+		<del>//if (split > 1) {</del>
+			shadowBuffer.DisableScissorRect();
+		<del>//}</del></pre>
+						
+						<figure>
+							<img src="shadows-for-directional-lights/clamped-single-directional.png" width="330" height="260">
+							<figcaption>Single directional light with scissoring.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Clipping Shadows Based on Distance</h3>
+						
+						<p>Although the shadow distance is based on the view distance, shadows don't disappear immediately when they go out of range. That's because the shadow maps cover stretched cubic regions of space. If part of their region falls inside the shadow distance, they are rendered entirely. Directional shadow maps move with the camera and are shaped to best fit the shadow distance, so they match fairly well. In contrast, spotlight shadow volumes are fixed to their light. If even a small part of their volume ends up in range, it gets rendered entirely. The result is that all shadows of a single spotlight appear and disappear together.</p>
+						
+						<aside>
+							<h3>I sometimes get weird clipping of spotlight shadows?</h3>
+							<div>
+								<p>There is a bug in Unity 2018.3 that causes strange shadow clipping for spotlight shadows at the edge of the shadow distance. This can be severe when a very short shadow distance is used. It manifests as flickering or incorrect clipping during camera movement.</p>
+							</div>
+						</aside>
+						
+						<p>We can make the disappearance of shadows more uniform by clipping them at the configured shadow distance. To do so, we have to pass the shadow distance to the shader. We can put it in the second component of the global shadow data vector. As we'll use it to clip, we can suffice by comparing squared distances, so store the squared distance.</p>
+						
+						<pre translate="no">		shadowBuffer.SetGlobalVector(
+			globalShadowDataId, new Vector4(
+				tileScale<ins>, shadowDistance * shadowDistance</ins>
+			)
+		);</pre>
+						<p>To make this also work when only a main light is in a scene, set the distance in <code>RenderCascadedShadows</code> as well.</p>
+						
+						<pre>		shadowBuffer.BeginSample("Render Shadows");
+		<ins>shadowBuffer.SetGlobalVector(</ins>
+			<ins>globalShadowDataId, new Vector4(0f, shadowDistance * shadowDistance)</ins>
+		<ins>);</ins>
+		context.ExecuteCommandBuffer(shadowBuffer);</pre>
+						
+						<p>We also need to know the camera's position in the shader. Unity already provides this information when setting up the camera. All we have to do is add a <code class="shader">UnityPerCamera</code> buffer with a <code class="shader">float3 _WorldSpaceCameraPos</code> variable.
+						
+						<pre class="shader" translate="no"><ins>CBUFFER_START(UnityPerCamera)</ins>
+	<ins>float3 _WorldSpaceCameraPos;</ins>
+<ins>CBUFFER_END</ins></pre>
+						
+						<p>Create a convenient <code class="shader">DistanceToCameraSqr</code> function that takes a world position and returns the squared distance to the camera.</p>
+						
+						<pre class="shader" translate="no"><ins>float DistanceToCameraSqr (float3 worldPos) {</ins>
+	<ins>float3 cameraToFragment = worldPos - _WorldSpaceCameraPos;</ins>
+	<ins>return dot(cameraToFragment, cameraToFragment);</ins>
+<ins>}</ins></pre>
+						
+						<p>Invoke this function in <code class="shader">ShadowAttenuation</code>, check whether we're beyond the shadow distance, and if so skip sampling shadows. Use it as an additional condition in the existing check so we don't get an extra branch.</p>
+						
+						<pre class="shader" translate="no">	if (
+		_ShadowData[index].x &lt;= 0 <ins>||</ins>
+		<ins>DistanceToCameraSqr(worldPos) > _GlobalShadowData.y</ins>
+	) {
+		return 1.0;
+	}</pre>
+						
+						<p>All shadows now get cut off at the same distance and don't just suddenly appear or disappear.</p>
+						
+						<figure>
+							<img src="shadows-for-directional-lights/distance-clamp.png" width="340" height="260" alt="no bias">
+							<img src="shadows-for-directional-lights/with-bias.png" width="340" height="260" alt="with bias">
+							<figcaption>Distance clamp, shadow distance 15, without and with bias.</figcaption>
+						</figure>
+						
+						<aside>
+							<h3>Can't we make shadows fade smoothly?</h3>
+							<div>
+								<p>You could do that by adding a fade range and using a linear interpolation, smoothstep, or another transition function.</p>
+							</div>
+						</aside>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Cascaded Shadow Map</h2>
+					
+					<p>A limitation of shadow maps is that they are textures and thus have a texel density. You can increase the shadow map resolution if the texels end up visually too large, but that has limits. It can work fine for spotlights that cover only a small area, but directional lights have unlimited range. You can end up with a view where far away shadows appear fine, but nearby shadows are too blocky. This is known as perspective aliasing.</p>
+					
+					<figure>
+						<img src="cascaded-shadow-map/perspective-aliasing.png" width="360" height="319">
+						<figcaption>Perspective aliasing.</figcaption>
+					</figure>
+					
+					<p>We need a higher resolution for nearby shadows, but those far away are fine. Ideally, we could use a different resolution based on distance. The solution to this problem is to render multiple shadow maps for the same directional light. Each map has the same size, but uses a different shadow distance. Then we'll pick the best map per fragment. That way, we get a higher resolution nearby and a lower resolution further away, which is a smarter use of texels. Each of these maps is known as a shadow cascade.</p>
+					
+					<section>
+						<h3>Cascade Amount</h3>
+						
+						<p>Unity has always offered three options for the amount of shadow cascades: zero, two, or four. We'll support the same options. Add a custom <code>ShadowCascades</code> enum configuration option to <code>MyPipelineAsset</code> to make this configurable, with four as the default.</p>
+						
+						<pre translate="no">	<ins>public enum ShadowCascades {</ins>
+		<ins>Zero = 0,</ins>
+		<ins>Two = 2,</ins>
+		<ins>Four = 4</ins>
+	<ins>}</ins>
+	
+	&hellip;
+	
+	<ins>[SerializeField]</ins>
+	<ins>ShadowCascades shadowCascades = ShadowCascades.Four;</ins></pre>
+						
+						<p>Also move the shadow options below the batching and instancing options, in anticipation of a later addition.</p>
+						
+						<figure>
+							<img src="cascaded-shadow-map/four-cascades.png" width="320" height="112">
+							<figcaption>Using four cascades.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Cascade Split</h3>
+						
+						<p>Unity also allows you to specify how the cascades are distributed relative to the shadow distance. That's done by splitting the entire shadow range in either two or four parts. In the case of two cascades, a single value controls where the split happens. In the case of four cascades, three split values are stored in a vector. We'll again use the same approach as Unity, using the same default values as the Lightweight render pipeline.</p>
+						
+						<pre translate="no">	<ins>[SerializeField]</ins>
+	<ins>float twoCascadesSplit = 0.25f;</ins>
+
+	<ins>[SerializeField]</ins>
+	<ins>Vector3 fourCascadesSplit = new Vector3(0.067f, 0.2f, 0.467f);</ins></pre>
+						
+						<p>But Unity doesn't expose these values directly. Instead, a special GUI control is shows that allows you to adjust the cascade regions. We'll use the same GUI, so hide the split fields by attaching the <code>HideInInspector</code> attribute to them.</p>
+						
+						<pre translate="no">	[SerializeField<ins>, HideInInspector</ins>]
+	float twoCascadesSplit = 0.25f;
+
+	[SerializeField<ins>, HideInInspector</ins>]
+	Vector3 fourCascadesSplit = new Vector3(0.067f, 0.2f, 0.467f);</pre>
+						
+						<p>We need to create a custom editor to show the cascade split GUI. We'll create a very basic one. Put its script's asset file in an <em translate="no">Editor</em> folder, have it keep track of the three relevant properties, and draw the default inspector. We also need to use the <code>UnityEditor.Experimental.Rendering</code> namespace, as it contains the code for the cascade split GUI.</p>
+						
+						<pre translate="no"><ins>using UnityEditor;</ins>
+<ins>using UnityEditor.Experimental.Rendering;</ins>
+<ins>using UnityEngine;</ins>
+
+<ins>[CustomEditor(typeof(MyPipelineAsset))]</ins>
+<ins>public class MyPipelineAssetEditor : Editor {</ins>
+
+	<ins>SerializedProperty shadowCascades;</ins>
+	<ins>SerializedProperty twoCascadesSplit;</ins>
+	<ins>SerializedProperty fourCascadesSplit;</ins>
+
+	<ins>void OnEnable () {</ins>
+		<ins>shadowCascades = serializedObject.FindProperty("shadowCascades");</ins>
+		<ins>twoCascadesSplit = serializedObject.FindProperty("twoCascadesSplit");</ins>
+		<ins>fourCascadesSplit = serializedObject.FindProperty("fourCascadesSplit");</ins>
+	<ins>}</ins>
+
+	<ins>public override void OnInspectorGUI () {</ins>
+		<ins>DrawDefaultInspector();</ins>
+	<ins>}</ins>
+<ins>}</ins></pre>
+						
+						<aside>
+							<h3>How does a custom editor work?</h3>
+							<div>
+								<p>In short, you put a script in an <em translate="no">Editor</em> folder, use the <code>UnityEditor</code> namespace, and have it extend <code>Editor</code>. You give it a <code>CustomEditor</code> attribute to indicate for what type it should be used. Then you override the <code>OnInspectorGUI</code> method to draw its inspector. The default inspector can be drawn by invoking <code>DrawDefaultInspector</code>.</p>
+								
+								<p>Each editor has a <code>serializedObject</code> property that represents what's being edited. Fields can be extracted from it by invoking <code>FindProperty</code> on it, which returns a <code>SerializedProperty</code> reference. That's typically done in an <code>OnEnable</code> method.</p>
+							</div>
+						</aside>
+						
+						<p>We can use the <code>CoreEditorUtils.DrawCascadeSplitGUI</code> method to draw what we need. Its design is a bit weird. It is a generic method that works either on a float or a vector. The first is for the two-split while the second is for the four-split. The relevant serialized property has to be passed as a reference parameter.</p>
+						
+						<p>Use a switch after drawing the default inspector to determine which GUI we have to show. We can access <code>enumValueIndex</code> of the <code>shadowCascades</code> property for this. It gives us the index of the chosen enum option, which is not the actual enum value. So it's either 0, 1, or 2, instead of 0, 2, or 4. In the first case we can stop and in the other two invoke the appropriate method. After that, we have to invoke <code>ApplyModifiedProperties</code> on the serialized object so the user's changes get applied to our asset.</p>
+						
+						<pre translate="no">	public override void OnInspectorGUI () {
+		DrawDefaultInspector();
+
+		<ins>switch (shadowCascades.enumValueIndex) {</ins>
+			<ins>case 0: return;</ins>
+			<ins>case 1:</ins>
+				<ins>CoreEditorUtils.DrawCascadeSplitGUI&lt;float>(ref twoCascadesSplit);</ins>
+				<ins>break;</ins>
+			<ins>case 2:</ins>
+				<ins>CoreEditorUtils.DrawCascadeSplitGUI&lt;Vector3>(</ins>
+					<ins>ref fourCascadesSplit</ins>
+				<ins>);</ins>
+				<ins>break;</ins>
+		<ins>}</ins>
+		<ins>serializedObject.ApplyModifiedProperties();</ins>
+	}</pre>
+						
+						<figure>
+							<img src="cascaded-shadow-map/cascade-split.png" width="320" height="54">
+							<figcaption>Cascade split GUI for four cascades.</figcaption>
+						</figure>
+						
+						<aside>
+							<h3>Why does the skybox disappear in the scene window when I edit the split?</h3>
+							<div>
+								<p>It is a visual glitch. It fixes itself when the scene window refreshes after you do something else in the editor.</p>
+							</div>
+						</aside>
+						
+						<p><code>MyPipeline</code> only needs to know how many cascades to use and what the split values are. We can use a single 3D vector to store the split data for both two and four cascades. Add the required fields and constructor parameters.</p>
+						
+						<pre translate="no">	<ins>int shadowCascades;</ins>
+	<ins>Vector3 shadowCascadeSplit;</ins>
+
+	public MyPipeline (
+		bool dynamicBatching, bool instancing,
+		int shadowMapSize, float shadowDistance<ins>,</ins>
+		<ins>int shadowCascades, Vector3 shadowCascadeSplit</ins>
+	) {
+		&hellip;
+		<ins>this.shadowCascades = shadowCascades;</ins>
+		<ins>this.shadowCascadeSplit = shadowCascadeSplit;</ins>
+	}</pre>
+						
+						<p>When <code>MyPipelineAsset</code> invokes the pipeline's constructor it always has to provide a split vector, even when there are two cascades. In the case of two cascades, the single split value becomes the first one, while the other two remain zero.</p>
+						
+						<pre translate="no">	protected override IRenderPipeline InternalCreatePipeline () {
+		<ins>Vector3 shadowCascadeSplit = shadowCascades == ShadowCascades.Four ?</ins>
+			<ins>fourCascadesSplit : new Vector3(twoCascadesSplit, 0f);</ins>
+		return new MyPipeline(
+			dynamicBatching, instancing, (int)shadowMapSize, shadowDistance<ins>,</ins>
+			<ins>(int)shadowCascades, shadowCascadeSplit</ins>
+		);
+	}</pre>
+					</section>
+					
+					<section>
+						<h3>Cascades for Main Directional Light Only</h3>
+						
+						<p>We won't support cascaded shadow maps for all directional lights. Drawing multiple maps per light and figuring out which to sample from isn't cheap. So we'll limit ourselves to only a single directional light with cascaded shadow maps. This will be the brightest directional light with shadows in the scene. We'll refer to it as the main light. All other directional lights only get a single shadow map.</p>
+						
+						<p>The main directional light is always the first element in the visible lights list. We can determine whether the first light meets the criterial in <code>ConfigureLights</code>. If it is directional, has shadows, has a positive shadow strength, and shadow cascades are enabled, then we have a main light. Keep track of this fact with a boolean field.</p>
+						
+						<pre translate="no">	<ins>bool mainLightExists;</ins>
+	
+	&hellip;
+	
+	void ConfigureLights () {
+		<ins>mainLightExists = false;</ins>
+		shadowTileCount = 0;
+		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+
+			if (light.lightType == LightType.Directional) {
+				&hellip;
+				shadow = ConfigureShadows(i, light.light);
+				shadow.z = 1f;
+				<ins>if (i == 0 &amp;&amp; shadow.x > 0f && shadowCascades > 0) {</ins>
+					<ins>mainLightExists = true;</ins>
+				<ins>}</ins>
+			}
+			&hellip;
+		}
+
+		&hellip;
+	}</pre>
+						
+						<p>We won't try to fit the shadow cascade maps in the same texture along with all other shadow maps. That would make them too small if there are multiply lights with shadows. So decrement the shadow tile count when we encounter a main light.</p>
+						
+						<pre translate="no">				if (i == 0 && shadow.x > 0f && shadowCascades > 0) {
+					mainLightExists = true;
+					<ins>shadowTileCount -= 1;</ins>
+				}</pre>
+						
+						<p>Thus, if a main light exists we have to skip the first light in <code>RenderShadows</code>.</p>
+						
+						<pre translate="no">		for (int i = <ins>mainLightExists ? 1 :</ins> 0; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+		}</pre>
+						
+						<p>We'll render the shadow cascades as tiles to a separate shadow map, which we'll name <em translate="no">_CascadedShadowMap</em>. Add an identifier and field for it and make sure to release it along with the other shadow map.</p>
+						
+						<pre translate="no">	<ins>static int cascadedShadowMapId = Shader.PropertyToID("_CascadedShadowMap");</ins>
+	&hellip;
+	
+	RenderTexture shadowMap<ins>, cascadedShadowMap;</ins>
+	
+	&hellip;
+	
+	void Render (ScriptableRenderContext context, Camera camera) {
+		&hellip;
+
+		if (shadowMap) {
+			RenderTexture.ReleaseTemporary(shadowMap);
+			shadowMap = null;
+		}
+		<ins>if (cascadedShadowMap) {</ins>
+			<ins>RenderTexture.ReleaseTemporary(cascadedShadowMap);</ins>
+			<ins>cascadedShadowMap = null;</ins>
+		<ins>}</ins>
+	}</pre>
+					</section>
+					
+					<section>
+						<h3>Reusing Code</h3>
+						
+						<p>Rendering the cascaded shadow map is similar to the shadow rendering that we're already doing, but different enough that it requires its own method. However, a lot of the code of both methods will be the same, so let's move those bits to separate methods.</p>
+						
+						<p>First is setting the render target for shadows. It's the same for both approaches, we only need to keep track of the render textures with different fields. So put that code in a method that returns a reference to the texture. Rather than adding yet another shadow configuration option, we'll just use the same size for both maps. If you'd like to include a separate control for the cascaded shadow map size, you can add a size parameter to this method.</p>
+						
+						<pre translate="no">	<ins>RenderTexture SetShadowRenderTarget () {</ins>
+		<ins>RenderTexture texture</ins> = RenderTexture.GetTemporary(
+			shadowMapSize, shadowMapSize, 16, RenderTextureFormat.Shadowmap
+		);
+		<ins>texture</ins>.filterMode = FilterMode.Bilinear;
+		<ins>texture</ins>.wrapMode = TextureWrapMode.Clamp;
+
+		CoreUtils.SetRenderTarget(
+			shadowBuffer, <ins>texture</ins>,
+			RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store,
+			ClearFlag.Depth
+		);
+		<ins>return texture;</ins>
+	<ins>}</ins></pre>
+						
+						<p>Second is configuring the shadow tile. Determining the offset, setting the viewport, and scissoring can all be put together. The tile offset can be returned as a 2D vector.</p>
+						
+						<pre translate="no">	<ins>Vector2 ConfigureShadowTile (int tileIndex, int split, float tileSize) {</ins>
+		<ins>Vector2 tileOffset;</ins>
+		<ins>tileOffset.x</ins> = tileIndex % split;
+		<ins>tileOffset.y</ins> = tileIndex / split;
+		<ins>var tileViewport = new Rect(</ins>
+			<ins>tileOffset.x * tileSize, tileOffset.y * tileSize, tileSize, tileSize</ins>
+		<ins>);</ins>
+		shadowBuffer.SetViewport(tileViewport);
+		shadowBuffer.EnableScissorRect(new Rect(
+			tileViewport.x + 4f, tileViewport.y + 4f,
+			tileSize - 8f, tileSize - 8f
+		));
+		<ins>return tileOffset;</ins>
+	<ins>}</ins></pre>
+						
+						<p>Third, calculating the world-to-shadow matrix can be put in its own method too. Define the view and projection matrices as reference parameters so they don't need to be copied. Likewise, make the world-to-shadow matrix an output parameter.</p>
+						
+						<pre translate="no">	<ins>void CalculateWorldToShadowMatrix (</ins>
+		<ins>ref Matrix4x4 viewMatrix, ref Matrix4x4 projectionMatrix,</ins>
+		<ins>out Matrix4x4 worldToShadowMatrix</ins>
+	<ins>) {</ins>
+		if (SystemInfo.usesReversedZBuffer) {
+			projectionMatrix.m20 = -projectionMatrix.m20;
+			projectionMatrix.m21 = -projectionMatrix.m21;
+			projectionMatrix.m22 = -projectionMatrix.m22;
+			projectionMatrix.m23 = -projectionMatrix.m23;
+		}
+		var scaleOffset = Matrix4x4.identity;
+		scaleOffset.m00 = scaleOffset.m11 = scaleOffset.m22 = 0.5f;
+		scaleOffset.m03 = scaleOffset.m13 = scaleOffset.m23 = 0.5f;
+		<ins>worldToShadowMatrix</ins> =
+			scaleOffset * (projectionMatrix * viewMatrix);
+	<ins>}</ins></pre>
+						
+						<p>Finally, adjust <code>RenderShadows</code> so it takes advantage of these new methods.</p>
+						
+						<pre translate="no">	void RenderShadows (ScriptableRenderContext context) {
+		&hellip;
+		<del>//Rect tileViewport = new Rect(0f, 0f, tileSize, tileSize);</del>
+
+		<del>//shadowMap = RenderTexture.GetTemporary(</del>
+		<del>//	shadowMapSize, shadowMapSize, 16, RenderTextureFormat.Shadowmap</del>
+		<del>//);</del>
+		<del>//shadowMap.filterMode = FilterMode.Bilinear;</del>
+		<del>//shadowMap.wrapMode = TextureWrapMode.Clamp;</del>
+
+		<del>//CoreUtils.SetRenderTarget(</del>
+		<del>//	&hellip;</del>
+		<del>//);</del>
+		<ins>shadowMap = SetShadowRenderTarget();</ins>
+		shadowBuffer.BeginSample("Render Shadows");
+		&hellip;
+		for (int i = mainLightExists ? 1 : 0; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+
+			<ins>Vector2 tileOffset = ConfigureShadowTile(tileIndex, split, tileSize);</ins>
+			<del>//float tileOffsetX = tileIndex % split;</del>
+			<del>//float tileOffsetY = tileIndex / split;</del>
+			<del>//tileViewport.x = tileOffsetX * tileSize;</del>
+			<del>//tileViewport.y = tileOffsetY * tileSize;</del>
+			shadowData[i].z = <ins>tileOffset.x</ins> * tileScale;
+			shadowData[i].w = <ins>tileOffset.y</ins> * tileScale;
+			<del>//shadowBuffer.SetViewport(tileViewport);</del>
+			<del>//shadowBuffer.EnableScissorRect(new Rect(</del>
+			<del>&hellip;</del>
+			<del>//));</del>
+			shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+			&hellip;
+			context.DrawShadows(ref shadowSettings);
+
+			<del>//if (SystemInfo.usesReversedZBuffer) {</del>
+			<del>//	&hellip;</del>
+			<del>//}</del>
+			<del>//&hellip;</del>
+			<del>//worldToShadowMatrices[i] =</del>
+			<del>//	scaleOffset * (projectionMatrix * viewMatrix);</del>
+			<ins>CalculateWorldToShadowMatrix(</ins>
+				<ins>ref viewMatrix, ref projectionMatrix, out worldToShadowMatrices[i]</ins>
+			<ins>);</ins>
+
+			&hellip;
+		}</pre>
+					</section>
+					
+					<section>
+						<h3>Rendering Cascades</h3>
+						
+						<p>The world-to-shadow matrices for the cascades need to to stored in their own array, so add an identifier and field for that. As we'll have at most four cascades, the array's length is four.</p>
+						
+						<pre translate="no">	<ins>static int worldToShadowCascadeMatricesId =</ins>
+		<ins>Shader.PropertyToID("_WorldToShadowCascadeMatrices");</ins>
+	&hellip;
+	<ins>Matrix4x4[] worldToShadowCascadeMatrices = new Matrix4x4[4];</ins></pre>
+						
+						<p>Create a new <code>RenderCascadedShadows</code>, which can start as a copy of <code>RenderShadows</code>. It ends up simpler, because we don't have to worry about spotlights and only use the first light. We don't have to deal with shadow data per light and the cascades are always valid. We have either two or four cascades, so we always cut the map in four tiles.</p>
+						
+						<p>When invoking <code>ComputeDirectionalShadowMatricesAndCullingPrimitives</code>, we now use zero as the light index and the interpolator as the cascade index. We also supply it with the actual cascade amount and split vector.</p>
+						
+						<p>Finally, we'll once again bake the tile transformation in the world-to-shadow matrix. Making sure that we stay inside the tile bounds is part of picking the correct cascade in the shader.</p>
+						
+						<pre translate="no">	<ins>void RenderCascadedShadows (ScriptableRenderContext context) {</ins>
+		<ins>float tileSize = shadowMapSize / 2;</ins>
+		<ins>cascadedShadowMap = SetShadowRenderTarget();</ins>
+		<ins>shadowBuffer.BeginSample("Render Shadows");</ins>
+		<ins>context.ExecuteCommandBuffer(shadowBuffer);</ins>
+		<ins>shadowBuffer.Clear();</ins>
+		<ins>Light shadowLight = cull.visibleLights[0].light;</ins>
+		<ins>shadowBuffer.SetGlobalFloat(</ins>
+			<ins>shadowBiasId, shadowLight.shadowBias</ins>
+		<ins>);</ins>
+		<ins>var shadowSettings = new DrawShadowsSettings(cull, 0);</ins>
+		<ins>var tileMatrix = Matrix4x4.identity;</ins>
+		<ins>tileMatrix.m00 = tileMatrix.m11 = 0.5f;</ins>
+
+		<ins>for (int i = 0; i &lt; shadowCascades; i++) {</ins>
+			<ins>Matrix4x4 viewMatrix, projectionMatrix;</ins>
+			<ins>ShadowSplitData splitData;</ins>
+			<ins>cull.ComputeDirectionalShadowMatricesAndCullingPrimitives(</ins>
+				<ins>0, i, shadowCascades, shadowCascadeSplit, (int)tileSize,</ins>
+				<ins>shadowLight.shadowNearPlane,</ins>
+				<ins>out viewMatrix, out projectionMatrix, out splitData</ins>
+			<ins>);</ins>
+
+			<ins>Vector2 tileOffset = ConfigureShadowTile(i, 2, tileSize);</ins>
+			<ins>shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);</ins>
+			<ins>context.ExecuteCommandBuffer(shadowBuffer);</ins>
+			<ins>shadowBuffer.Clear();</ins>
+			
+			<ins>shadowSettings.splitData.cullingSphere = splitData.cullingSphere;</ins>
+			<ins>context.DrawShadows(ref shadowSettings);</ins>
+			<ins>CalculateWorldToShadowMatrix(</ins>
+				<ins>ref viewMatrix, ref projectionMatrix</ins>
+				<ins>out worldToShadowCascadeMatrices[i]</ins>
+			<ins>);</ins>
+			<ins>tileMatrix.m03 = tileOffset.x * 0.5f;</ins>
+			<ins>tileMatrix.m13 = tileOffset.y * 0.5f;</ins>
+			<ins>worldToShadowCascadeMatrices[i] =</ins>
+				<ins>tileMatrix * worldToShadowCascadeMatrices[i];</ins>
+		<ins>}</ins>
+
+		<ins>shadowBuffer.DisableScissorRect();</ins>
+		<ins>shadowBuffer.SetGlobalTexture(cascadedShadowMapId, cascadedShadowMap);</ins>
+		<ins>shadowBuffer.SetGlobalMatrixArray(</ins>
+			<ins>worldToShadowCascadeMatricesId, worldToShadowCascadeMatrices</ins>
+		<ins>);</ins>
+		<ins>shadowBuffer.EndSample("Render Shadows");</ins>
+		<ins>context.ExecuteCommandBuffer(shadowBuffer);</ins>
+		<ins>shadowBuffer.Clear();</ins>
+	<ins>}</ins></pre>
+						
+						<p>Invoke this method after <code>ConfigureLights</code>, if there is a main light.</p>
+						
+						<pre translate="no">		if (cull.visibleLights.Count > 0) {
+			ConfigureLights();
+			<ins>if (mainLightExists) {</ins>
+				<ins>RenderCascadedShadows(context);</ins>
+			<ins>}</ins>
+			if (shadowTileCount > 0) {
+				RenderShadows(context);
+			}
+			else {
+				cameraBuffer.DisableShaderKeyword(shadowsHardKeyword);
+				cameraBuffer.DisableShaderKeyword(shadowsSoftKeyword);
+			}
+		}</pre>
+						
+						<p>We can now end up using either one, two, or zero render textures. If there's only a main light, then we only render to the cascaded shadow map. If there are additional lights with shadows, then we render to the regular shadow map too. Or we have shadows but no main light, in which case we only render to the regular shadow map. The frame debugger will merge the two <em translate="no">Render Shadows</em> sections into a single one.</p>
+						
+						<figure>
+							<img src="cascaded-shadow-map/rendering-two-shadow-maps.png" width="300" height="98">
+							<figcaption>Rendering to two shadow maps.</figcaption>
+						</figure>
+						
+						<p>If you inspect the cascaded shadow map via the frame debugger you'll see that it contains four tiles. What's visible in the tiles depends on the shadow distance and the cascade split. In case of the default four cascade split, a large shadow distance is required for anything to appear in the first cascade.</p>
+						
+						<figure>
+							<img src="cascaded-shadow-map/cascaded-shadow-maps.png" width="254" height="254">
+							<figcaption>Cascaded shadow map.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Sampling the Cascaded Shadow Map</h3>
+						
+						<p>To make use of the cascaded shadow map in the shader, we need a few things. First, we have to know that the map is in use, which we can control via shader keywords. Let's use two, to differentiate between hard and soft cascaded shadows, avoiding a branch in the shader.</p>
+						
+						<pre translate="no">	<ins>const string cascadedShadowsHardKeyword = "_CASCADED_SHADOWS_HARD";</ins>
+	<ins>const string cascadedShadowsSoftKeyword = "_CASCADED_SHADOWS_SOFT";</ins></pre>
+						
+						<p>Next, we also need to know the map's size and shadow strength. While we could use <em translate="no">_ShadowMapSize</em>, let's use a separate <em translate="no">_CascadedShadowMapSize</em> vector so the shader supports separate sizes.</p>
+						
+						<pre translate="no">	<ins>static int cascadedShadowMapSizeId =</ins>
+		<ins>Shader.PropertyToID("_CascadedShadowMapSize");</ins>
+	<ins>static int cascadedShadoStrengthId =</ins>
+		<ins>Shader.PropertyToID("_CascadedShadowStrength");</ins></pre>
+						
+						<p>Set these values and keywords at the end of <code>RenderCascadedShadows</code>.</p>
+						
+						<pre translate="no">		shadowBuffer.SetGlobalMatrixArray(
+			worldToShadowCascadeMatricesId, worldToShadowCascadeMatrices
+		);
+		<ins>float invShadowMapSize = 1f / shadowMapSize;</ins>
+		<ins>shadowBuffer.SetGlobalVector(</ins>
+			<ins>cascadedShadowMapSizeId, new Vector4(</ins>
+				<ins>invShadowMapSize, invShadowMapSize, shadowMapSize, shadowMapSize</ins>
+			<ins>)</ins>
+		<ins>);</ins>
+		<ins>shadowBuffer.SetGlobalFloat(</ins>
+			<ins>cascadedShadoStrengthId, shadowLight.shadowStrength</ins>
+		<ins>);</ins>
+		<ins>bool hard = shadowLight.shadows == LightShadows.Hard;</ins>
+		<ins>CoreUtils.SetKeyword(shadowBuffer, cascadedShadowsHardKeyword, hard);</ins>
+		<ins>CoreUtils.SetKeyword(shadowBuffer, cascadedShadowsSoftKeyword, !hard);</ins>
+		shadowBuffer.EndSample("Render Shadows");</pre>
+						
+						<p>Also disable the cascaded shadow keywords when <code>RenderCascadedShadow</code> is not invoked.</p>
+						
+						<pre translate="no">		if (cull.visibleLights.Count > 0) {
+			ConfigureLights();
+			if (mainLightExists) {
+				RenderCascadedShadows(context);
+			}
+			<ins>else {</ins>
+				<ins>cameraBuffer.DisableShaderKeyword(cascadedShadowsHardKeyword);</ins>
+				<ins>cameraBuffer.DisableShaderKeyword(cascadedShadowsSoftKeyword);</ins>
+			<ins>}</ins>
+			if (shadowTileCount > 0) {
+				RenderShadows(context);
+			}
+			else {
+				cameraBuffer.DisableShaderKeyword(shadowsHardKeyword);
+				cameraBuffer.DisableShaderKeyword(shadowsSoftKeyword);
+			}
+		}
+		else {
+			cameraBuffer.SetGlobalVector(
+				lightIndicesOffsetAndCountID, Vector4.zero
+			);
+			<ins>cameraBuffer.DisableShaderKeyword(cascadedShadowsHardKeyword);</ins>
+			<ins>cameraBuffer.DisableShaderKeyword(cascadedShadowsSoftKeyword);</ins>
+			cameraBuffer.DisableShaderKeyword(shadowsHardKeyword);
+			cameraBuffer.DisableShaderKeyword(shadowsSoftKeyword);
+		}</pre>
+						
+						<p>Add a single multi-compile directive to the <em translate="no">Lit</em> shader for the cascaded shadow keywords. There are three options: either no, hard, or soft cascaded shadows are in use.</p>
+						
+						<pre class="shader" translate="no">			<ins>#pragma multi_compile _ _CASCADED_SHADOWS_HARD _CASCADED_SHADOWS_SOFT</ins>
+			#pragma multi_compile _ _SHADOWS_HARD
+			#pragma multi_compile _ _SHADOWS_SOFT</pre>
+						
+						<p>After that, add the required variables to the shadow buffer and define the cascaded shadow map texture and sampler.</p>
+						
+						<pre class="shader" translate="no">CBUFFER_START(_ShadowBuffer)
+	float4x4 _WorldToShadowMatrices[MAX_VISIBLE_LIGHTS];
+	<ins>float4x4 _WorldToShadowCascadeMatrices[4];</ins>
+	float4 _ShadowData[MAX_VISIBLE_LIGHTS];
+	float4 _ShadowMapSize;
+	<ins>float4 _CascadedShadowMapSize;</ins>
+	float4 _GlobalShadowData;
+	<ins>float _CascadedShadowStrength;</ins>
+CBUFFER_END
+
+TEXTURE2D_SHADOW(_ShadowMap);
+SAMPLER_CMP(sampler_ShadowMap);
+
+<ins>TEXTURE2D_SHADOW(_CascadedShadowMap);</ins>
+<ins>SAMPLER_CMP(sampler_CascadedShadowMap);</ins></pre>
+						
+						<p>Let's make <code class="shader">HardShadowAttenuation</code> work with both maps by adding a boolean parameter to indicate whether we want to sample cascades, with false being the default. Use that to decide which texture and sampler to use. We'll hard-code the cascade argument, so it won't result in shader branches.</p>
+						
+						<pre class="shader" translate="no">float HardShadowAttenuation (float4 shadowPos<ins>, bool cascade = false</ins>) {
+	<ins>if (cascade) {</ins>
+		<ins>return SAMPLE_TEXTURE2D_SHADOW(</ins>
+			<ins>_CascadedShadowMap, sampler_CascadedShadowMap, shadowPos.xyz</ins>
+		<ins>);</ins>
+	<ins>}</ins>
+	<ins>else {</ins>
+		return SAMPLE_TEXTURE2D_SHADOW(
+			_ShadowMap, sampler_ShadowMap, shadowPos.xyz
+		);
+	<ins>}</ins>
+}</pre>
+						
+						<p>Give <code class="shader">SoftShadowAttenuation</code> the same treatment. In this case it's about selecting the correct shadow map size. We can invoke <code class="shader">HardShadowAttenuation</code> here so we don't have to write the same code again.</p>
+						
+						<pre class="shader" translate="no">float SoftShadowAttenuation (float4 shadowPos<ins>, bool cascade = false</ins>) {
+	real tentWeights[9];
+	real2 tentUVs[9];
+	<ins>float4 size = cascade ? _CascadedShadowMapSize : _ShadowMapSize;</ins>
+	SampleShadow_ComputeSamples_Tent_5x5(
+		<ins>size</ins>, shadowPos.xy, tentWeights, tentUVs
+	);
+	float attenuation = 0;
+	for (int i = 0; i &lt; 9; i++) {
+		<del>//attenuation += tentWeights[i] * SAMPLE_TEXTURE2D_SHADOW(</del>
+		<del>//	_ShadowMap, sampler_ShadowMap, float3(tentUVs[i].xy, shadowPos.z)</del>
+		<del>//);</del>
+		<ins>attenuation += tentWeights[i] * HardShadowAttenuation(</ins>
+			<ins>float4(tentUVs[i].xy, shadowPos.z, 0), cascade</ins>
+		<ins>);</ins>
+	}
+	return attenuation;
+}</pre>
+						
+						<p>Now add a <code class="shader">CascadedShadowAttenuation</code> function, which is a simpler version of <code class="shader">ShadowAttenuation</code>. If there are no cascades, the attenuation is always 1. Otherwise, compute the shadow position and retrieve either the hard or soft shadow attenuation and apply the shadow strength. We won't clip shadows based on distance at this point.</p>
+						
+						<p>Start by always using the third shadow cascade map, so use 2 to index the <code class="shader">_WorldToShadowCascadeMatrices</code> array. That way it's most likely that we'll see at least some shadows in a reasonably large area, assuming you're using four cascades. The fourth cascade covers the largest area, but might be so low-resolution that nearby shadows are hard to see.</p>
+						
+						<pre class="shader" translate="no"><ins>float CascadedShadowAttenuation (float3 worldPos) {</ins>
+	<ins>#if !defined(_CASCADED_SHADOWS_HARD) && !defined(_CASCADED_SHADOWS_SOFT)</ins>
+		<ins>return 1.0;</ins>
+	<ins>#endif</ins>
+	
+	<ins>float cascadeIndex = 2;</ins>
+	<ins>float4 shadowPos = mul(</ins>
+		<ins>_WorldToShadowCascadeMatrices[cascadeIndex], float4(worldPos, 1.0)</ins>
+	<ins>);</ins>
+	<ins>float attenuation;</ins>
+	<ins>#if defined(_CASCADED_SHADOWS_HARD)</ins>
+		<ins>attenuation = HardShadowAttenuation(shadowPos, true);</ins>
+	<ins>#else</ins>
+		<ins>attenuation = SoftShadowAttenuation(shadowPos, true);</ins>
+	<ins>#endif</ins>
+	
+	<ins>return lerp(1, attenuation, _CascadedShadowStrength);</ins>
+<ins>}</ins></pre>
+						
+						<p>Next, add a separate <code class="shader">MainLight</code> function to take care of the main light. It does the same as <code class="shader">DiffuseLight</code>, but limited to only the directional light at index zero, relying on <code class="shader">CascadedShadowAttenuation</code> for its shadows.</p>
+						
+						<pre class="shader" translate="no"><ins>float3 MainLight (float3 normal, float3 worldPos) {</ins>
+	<ins>float shadowAttenuation = CascadedShadowAttenuation(worldPos);</ins>
+	<ins>float3 lightColor = _VisibleLightColors[0].rgb;</ins>
+	<ins>float3 lightDirection = _VisibleLightDirectionsOrPositions[0].xyz;</ins>
+	<ins>float diffuse = saturate(dot(normal, lightDirection));</ins>
+	<ins>diffuse *= shadowAttenuation;</ins>
+	<ins>return diffuse * lightColor;</ins>
+<ins>}</ins></pre>
+						
+						<p>Add the main light to the diffuse light in <code class="shader">LitPassFragment</code> if there are cascaded shadows.</p>
+						
+						<pre class="shader" translate="no">	float3 diffuseLight = input.vertexLighting;
+	<ins>#if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)</ins>
+		<ins>diffuseLight += MainLight(input.normal, input.worldPos);</ins>
+	<ins>#endif</ins>
+	
+	for (int i = 0; i &lt; min(unity_LightIndicesOffsetAndCount.y, 4); i++) {
+		&hellip;
+	}</pre>
+						
+						<figure>
+							<img src="cascaded-shadow-map/double-main-light.png" width="360" height="320">
+							<figcaption>Main light, twice.</figcaption>
+						</figure>
+						
+						<p>The cascaded shadows for the main light now show up, but the same light gets added a second time in the light loop, which is incorrect. We cannot simply skip the first index of the light loop, because the main light isn't guaranteed to be the most important light for every object. We either have to add another shader branch in the loop, or eliminate the main light from the visible light list before rendering. We can do that in <code>ConfigureLight</code> along with limiting the amount of lights. As a side effect, this also increases the maximum pixel lights per object to five when a main light is active.</p>
+						
+						<pre translate="no">		if (<ins>mainLightExists ||</ins> cull.visibleLights.Count > maxVisibleLights) {
+			int[] lightIndices = cull.GetLightIndexMap();
+			<ins>if (mainLightExists) {</ins>
+				<ins>lightIndices[0] = -1;</ins>
+			<ins>}</ins>
+			for (int i = maxVisibleLights; i &lt; cull.visibleLights.Count; i++) {
+				lightIndices[i] = -1;
+			}
+			cull.SetLightIndexMap(lightIndices);
+		}</pre>
+						
+						<figure>
+							<img src="cascaded-shadow-map/single-main-light.png" width="360" height="320">
+							<figcaption>Main light, only once.</figcaption>
+						</figure>
+						
+						<p>Eliminating the main light from the list means that we adjust the visible lights each frame that we use cascaded shadows. Currently, that also means that temporary memory is allocated every such frame. We have to live with this until we get a variant <code>GetLightIndexMap</code> method that doesn't allocate a new array each invocation.</p>
+					</section>
+					
+					<section>
+						<h3>Selecting the Correct Cascade</h3>
+						
+						<p>At this point we have a functional main light with a cascaded shadow map, but we always use the same cascade. The third cascade is suitable for shadows that are fairly far away, but is bad for nearby shadows. In contrast, the second cascade is a lot better nearby, but doesn't cover as large a region.</p>
+						
+						<figure>
+							<img src="cascaded-shadow-map/second-cascade.png" width="360" height="320">
+							<figcaption>Second cascade.</figcaption>
+						</figure>
+						
+						<p>Unity uses the cascade split to partition the shadow space into cascades. It uses culling spheres to define each cascade's region. Each successive sphere has a larger radius. Their positions vary too, because they're placed as optimally as possible to cover as little of the scene as required. To determine which cascade to use, we have to figure out inside which culling sphere each fragment lies.</p>
+						
+						<p>We have to send the culling spheres to the shader. It's most convenient to do that via an array. Add an identifier and field for this purpose to <code>MyPipeline</code>. Each sphere is described by a 4D vector. The XYZ components define its position while the W component defines its radius.</p>
+						
+						<pre translate="no">	<ins>static int cascadeCullingSpheresId =</ins>
+		<ins>Shader.PropertyToID("_CascadeCullingSpheres");</ins>
+
+	&hellip;
+	<ins>Vector4[] cascadeCullingSpheres = new Vector4[4];</ins></pre>
+						
+						<p>We already retrieve the culling sphere of each cascade inside <code>RenderCascadedShadows</code>. We can simply copy them to the array and later send it to the shader. And because we only need to check whether the fragment lies inside the sphere we can make do with a squared distance comparison, so square the stored radii.</p>
+						
+						<pre translate="no">		for (int i = 0; i &lt; shadowCascades; i++) {
+			&hellip;
+			
+			<ins>cascadeCullingSpheres[i] =</ins>
+				shadowSettings.splitData.cullingSphere = splitData.cullingSphere;
+			<ins>cascadeCullingSpheres[i].w *= splitData.cullingSphere.w;</ins>
+			context.DrawShadows(ref shadowSettings);
+			&hellip;
+		}
+		
+		shadowBuffer.DisableScissorRect();
+		shadowBuffer.SetGlobalTexture(cascadedShadowMapId, cascadedShadowMap);
+		<ins>shadowBuffer.SetGlobalVectorArray(</ins>
+			<ins>cascadeCullingSpheresId, cascadeCullingSpheres</ins>
+		<ins>);</ins></pre>
+						
+						<p>On the shader side, add the culling sphere array to the shadow buffer.</p>
+						
+						<pre class="shader" translate="no">	float4x4 _WorldToShadowCascadeMatrices[4];
+	<ins>float4 _CascadeCullingSpheres[4];</ins></pre>
+						
+						<p>Let's add a convenient method to check whether a world position falls inside a given culling sphere, using its index as a parameter. We'll do some math with the result later, so return it as a float.</p>
+						
+						<pre class="shader" translate="no"><ins>float InsideCascadeCullingSphere (int index, float3 worldPos) {</ins>
+	<ins>float4 s = _CascadeCullingSpheres[index];</ins>
+	<ins>return dot(worldPos - s.xyz, worldPos - s.xyz) &lt; s.w;</ins>
+<ins>}</ins></pre>
+						
+						<p>Invoke that function in <code class="shader">CascadedShadowAttenuation</code> for all four culling spheres. For each sphere, the result is 1 when the sphere encompasses the point and zero otherwise. These values serve as flags to indicate which spheres are valid. Put them in an ordered <code class="shader">float4</code> variable before determining the cascade index.</p>
+						
+						<pre class="shader" translate="no">	<ins>float4 cascadeFlags = float4(</ins>
+		<ins>InsideCascadeCullingSphere(0, worldPos),</ins>
+		<ins>InsideCascadeCullingSphere(1, worldPos),</ins>
+		<ins>InsideCascadeCullingSphere(2, worldPos),</ins>
+		<ins>InsideCascadeCullingSphere(3, worldPos)</ins>
+	<ins>);</ins>
+	float cascadeIndex = 2;</pre>
+						
+						<p>If a point lies within a sphere, then it also lies inside all larger spheres. So we can end up with five different flag configurations: (1,1,1,1), (0,1,1,1), (0,0,1,1), (0,0,0,1), or (0,0,0,0). We can use this to visualize the cascades, by summing the flags and dividing by four. That can be done by taking the dot product of the flags and (&frac14;,&frac14;,&frac14;,&frac14;).</p> 
+						
+						<pre class="shader" translate="no">	<ins>return dot(cascadeFlags, 0.25);</ins>
+	float cascadeIndex = 2;
+</pre>
+						
+						<figure>
+							<img src="cascaded-shadow-map/cascades-visualized.png" width="360" height="320">
+							<figcaption>Cascades visualized, splits tweaked to make them all visible.</figcaption>
+						</figure>
+						
+						<p>We want to use the first cascade that is valid, so we have to clear all the flags after the first one that's set. The first flag is always good, but the second should be cleared if the first one is set. And the third should be cleared when the second is set; likewise for the fourth. We can do that by subtracting the XYZ components from YZW and saturating the result. If we take the dot product of that result with (0,1,2,3), then we end up with the final cascade index. The conversion goes like this:</p>
+						
+						<p>(1,1,1,1) → (1,0,0,0) → 0</p>
+						<p>(0,1,1,1) → (0,1,0,0) → 1</p>
+						<p>(0,0,1,1) → (0,0,1,0) → 2</p>
+						<p>(0,0,0,1) → (0,0,0,1) → 3</p>
+						<p>(0,0,0,0) → (0,0,0,0) → 0</p>
+						
+						<pre class="shader" translate="no">	<del>//return dot(cascadeFlags, 0.25);</del>
+	<ins>cascadeFlags.yzw = saturate(cascadeFlags.yzw - cascadeFlags.xyz);</ins>
+	float cascadeIndex = <ins>dot(cascadeFlags, float4(0, 1, 2, 3))</ins>;</pre>
+						
+						<p>That works correctly when at least one culling sphere encompasses the point. But when a point lies outside all spheres we end up with zero, incorrectly sampling from the first cascade. A trick Unity uses here is to provide an extra world-to-shadow matrix for a fifth nonexistent cascade. It's a zero matrix, which sets the shadow position to the near plane and thus never results in a shadow. We can do that by simply adding a fifth element to the <code>worldToShadowCascadeMatrices</code> array in <code>MyPipeline</code>.</p>
+						
+						<pre translate="no">	Matrix4x4[] worldToShadowCascadeMatrices = new Matrix4x4[<ins>5</ins>];</pre>
+						
+						<p>However, when a reverse Z buffer is used we have to push the shadow position Z coordinate to 1 instead. We can do that by setting the <code>m33</code> field of the dummy matrix to 1 in the constructor.</p>
+						
+						<pre translate="no">	public MyPipeline (
+		&hellip;
+	) {
+		GraphicsSettings.lightsUseLinearIntensity = true;
+		<ins>if (SystemInfo.usesReversedZBuffer) {</ins>
+			<ins>worldToShadowCascadeMatrices[4].m33 = 1f;</ins>
+		<ins>}</ins>
+	
+		&hellip;
+	}</pre>
+						
+						<p>Increase the size of the matrix array in the shader to match. Like before, this will require a restart of Unity if you've already compiled the shader when its length was four.</p>
+						
+						<pre class="shader" translate="no">	float4x4 _WorldToShadowCascadeMatrices[<ins>5</ins>];</pre>
+						
+						<p>Now we have to include the (0,0,0,0) → 4 conversion, which we can do by starting with 4 and subtracting the dot product of the isolated flag with (4,3,2,1).</p>
+						
+						<pre class="shader" translate="no">	float cascadeIndex = <ins>4 -</ins> dot(cascadeFlags, float4(<ins>4, 3, 2, 1</ins>));</pre>
+						
+						<figure>
+							<img src="cascaded-shadow-map/using-the-correct-cascade.png" width="360" height="320">
+							<figcaption>Sampling the correct cascade.</figcaption>
+						</figure>
+						
+						<aside>
+							<h3>Can we blend cascades?</h3>
+							<div>
+								<p>Like Unity's pipelines, we directly cut from one cascade to the next. This results in a discontinuity between cascades, where the texel size suddenly changes. You could add a transition zone where you interpolate between adjacent cascades, but that requires finding two cascade indices, a blend factor, and double the amount of shadow samples.</p>
+							</div>
+						</aside>
+						
+						<p>Because the culling spheres don't line up with the camera and the shadow distance, the cascaded shadows aren't cut off at the exact same distance as the other shadows. Sometimes nearer, sometimes further away, and they can still pop in and out of existence. We can synchronize them by checking the shadow distance in <code class="shader">CascadedShadowAttenuation</code> too.</p>
+						
+						<pre class="shader" translate="no">	#if !defined(_CASCADED_SHADOWS_HARD) && !defined(_CASCADED_SHADOWS_SOFT)
+		return 1.0;
+	#endif
+	
+	<ins>if (DistanceToCameraSqr(worldPos) > _GlobalShadowData.y) {</ins>
+		<ins>return 1.0;</ins>
+	<ins>}</ins></pre>
+						
+						<aside>
+							<h3>Doesn't Unity sample cascaded shadow maps with a screen-space pass?</h3>
+							<div>
+								<p>Yes, Unity adds a separate screen-space pass that renders to another texture when using cascaded shadows. It does the same thing that we do, just in one go for the entire display. It then samples the resulting shadow data in the lit forward pass, per fragment. Both approaches are valid. Adding a screen-space pass ends up doing the same work, just in a roundabout way. Per-fragment is the simplest approach, so I chose that for this tutorial.</p>
+								
+								<p>The rationale for using a separate full-screen pass is that it's quicker to sample the cascades once per display texel. That can be true when there is a lot of overdraw, in which case we could end up sampling the cascaded map more than once per fragment. That could be alleviated by adding a depth-only pass that primes the depth buffer, eliminating opaque overdraw. The screen-space approach always needs a depth-only pass, to retrieve the fragment depth.</p>
+								
+								<p>Another reason for the screen-space pass in case of Unity's legacy render pipeline is that it performs higher-quality soft shadow filtering. But that isn't true for the Lightweight render pipeline, which uses the same code for all shadow sampling.</p>
+								
+								<p>Which approach is best? You could profile three options for your target platform: per-fragment, depth-only with per-fragment, or depth-only with screen-space.</p>
+							</div>
+						</aside>
+						
+						<p>The next tutorial is <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/transparency/">Transparency</a>.</p>
+					</section>
+					
+					<a href="https://bitbucket.org/catlikecodingunitytutorials/scriptable-render-pipeline-05-directional-shadows/" class="repository">repository</a>
+					<a href="Directional-Shadows.pdf" download rel="nofollow">PDF</a>
+				</section>
+				
+			</article>
+		</main>
+
+		<footer>
+			<p>Enjoying the <a href="https://catlikecoding.com/unity/tutorials/">tutorials</a>? Are they useful? Want more?</p>
+			<p><b><a href="https://www.patreon.com/catlikecoding">Please support me on Patreon!</a></b></p>
+			<p><a href="https://www.patreon.com/catlikecoding"><img src="https://catlikecoding.com/unity/tutorials/become-a-patron.png" alt="Become my patron!" width="217" height="51"></a></p>
+			<p><b><a href="https://catlikecoding.com/unity/tutorials/donating.html">Or make a direct donation</a>!</b></p>
+			<p>made by <a href="https://catlikecoding.com/jasper-flick/" rel="author">Jasper Flick</a></p>
+		</footer>
+		
+		<script src="../../tutorials.js"></script>
+	</body>
+</html>

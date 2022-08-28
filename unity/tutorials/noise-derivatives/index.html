@@ -1,0 +1,2130 @@
+<!DOCTYPE html>
+<html>
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/noise-derivatives/">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/noise-derivatives/tutorial-image.png">
+		<meta property="og:image:width" content="750">
+		<meta property="og:image:height" content="750">
+		<meta property="og:description" content="A Unity C# scripting tutorial in which you will create a mesh terrain and particles flows. You will use noise derivatives and curl noise.">
+		<meta name="description" content="A Unity C# scripting tutorial in which you will create a mesh terrain and particles flows. You will use noise derivatives and curl noise.">
+		<meta property="og:title" content="Noise Derivatives, a Unity C# Tutorial">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<title>Noise Derivatives, a Unity C# Tutorial</title>
+		<link href="../../default.css" rel="stylesheet">
+		<script>
+			var customTypes = {
+				Flow3D: 1,
+				Noise: 1,
+				NoiseMethod: 1,
+				NoiseMethodType: 1,
+				NoiseSample: 1,
+				SurfaceCreator: 1,
+				SurfaceCreatorInspector: 1,
+				SurfaceFlow: 1,
+				TextureCreator: 1,
+				TextureCreatorInspector: 1
+			};
+		</script>
+	</head>
+	<body>
+		<header data-type="tutorial"></header>
+
+		<article class="tutorial" itemscope="" itemtype="http://schema.org/TechArticle">
+			<h1 itemprop="name headline">Noise Derivatives<span>, going with the flow</span></h1>
+
+			<div class="instructions">
+				<span itemprop="about description">In this tutorial you will create a mesh that looks like a terrain. You will also use noise to animate particle flows.</span>
+				You'll learn to
+				<ul>
+					<li>Use a mesh to create a triangle grid;</li>
+					<li>Compute surface normals for a vertex grid;</li>
+					<li>Write a simple surface shader;</li>
+					<li>Compute analytical derivatives of Value noise;</li>
+					<li>Compute analytical derivatives of Perlin noise;</li>
+					<li>Turn derivatives into normals.</li>
+					<li>Use 2D Curl noise to flow particles around terrain features;</li>
+					<li>Use 3D Curl noise to simulate volumetric flows.</li>
+				</ul>
+				<p><span itemprop="dependencies">This tutorial comes after the <a href="../noise/index.html">Noise</a> tutorial. I assume you did that one first.</span></p>
+				<p>This tutorial has been made with Unity 4.5.2. It might not work for older versions.</p>
+			</div>
+			
+			<aside class="share"></aside>
+
+			<figure>
+				<img src="tutorial-image.jpg" width="375" height="375" itemprop="image">
+				<figcaption>Fun with meshes and particles.</figcaption>
+			</figure>
+			
+			<h2>Setting the Scene</h2>
+			
+			<div class="instructions">
+				<p>In the <a href="../noise/index.html">Noise</a> tutorial we experimented with coloring a texture based on pseudorandom noise, but that's not the only thing you can do. Another common technique is to deform a flat surface, interpreting the noise function as a height field.</p>
+				<p>Because we'll be using the same noise and roughly the same approach we used for our textured quad, start with the <a href="../noise/noise-finished.unitypackage" onclick="_gaq.push(['_trackEvent', 'Tutorial Download', 'Noise', 'Final']);" target="_blank" download rel="nofollow">finished project</a> of the <a href="../noise/index.html">Noise</a> tutorial. Then move all the quad-related stuff into their own folder and rename things a bit for clarity. We'll put the surface stuff in its own folder too, starting with a new scene.</p>
+			</div>
+			
+			<figure>
+				<img src="01-setup.png" width="232" height="166">
+				<figcaption>Organizing the project.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>This time we'll be creating a surface, so create a new <code>SurfaceCreator</code> script, along with a new default material for it.</p>
+				<p>We'll use a mesh to represent our surface, so like with <code>TextureCreator</code> we generate a new one in <code>SurfaceCreator.OnEnable</code> if it doesnt' exist yet, then call a method to refill or refresh it.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-mesh" id="q-mesh">What's a <code>Mesh</code>?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no"><mark>using UnityEngine;</mark>
+
+<mark>public class SurfaceCreator : MonoBehaviour {</mark>
+
+	<mark>private Mesh mesh;</mark>
+
+	<mark>private void OnEnable () {</mark>
+		<mark>if (mesh == null) {</mark>
+			<mark>mesh = new Mesh();</mark>
+			<mark>mesh.name = "Surface Mesh";</mark>
+		<mark>}</mark>
+		<mark>Refresh();</mark>
+	<mark>}</mark>
+
+	<mark>public void Refresh () {</mark>
+	<mark>}</mark>
+<mark>}</mark></pre>
+			
+			<div class="instructions">
+				<p>Of course we also want to make sure that our mesh gets rendered. We do that by assigning it to a <code>MeshFilter</code> component that should be attached to our game object, and making sure that there's a <code>MeshRenderer</code> component attached as well. To make sure those components exist, add the <code>RequireComponent</code> attribute to our script with the types that we need.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-require-component" id="q-require-component">What does <code>RequireComponent</code> do?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">using UnityEngine;
+
+<mark>[RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]</mark>
+public class SurfaceCreator : MonoBehaviour {
+
+	private Mesh mesh;
+
+	private void OnEnable () {
+		if (mesh == null) {
+			mesh = new Mesh();
+			mesh.name = "Surface Mesh";
+			<mark>GetComponent&lt;MeshFilter>().mesh = mesh;</mark>
+		}
+		Refresh();
+	}
+
+	public void Refresh () {
+	}
+}</pre>
+			
+			<div class="instructions">
+				<p>Now when creating a new game object and adding our component to it, the other two components will be added as well. Then we can set the renderer to use our surface material by dragging it onto the game object.</p>
+			</div>
+			
+			<figure>
+				<img src="01-surface.png" width="786" height="373">
+				<figcaption>A new surface.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Our <code>TextureCreator</code> component has a handy custom editor which makes sure that its texture is updated as soon as a change is made via the inspector. Let's copy it and turn it into a version that works with our new <code>SurfaceCreator</code>.</p>
+			</div>
+			
+			<pre translate="no">using UnityEditor;
+using UnityEngine;
+
+[CustomEditor(typeof(<mark>SurfaceCreator</mark>))]
+public class <mark>SurfaceCreatorInspector</mark> : Editor {
+
+	private <mark>SurfaceCreator</mark> creator;
+
+	private void OnEnable () {
+		creator = target as <mark>SurfaceCreator</mark>;
+		Undo.undoRedoPerformed += RefreshCreator;
+	}
+
+	private void OnDisable () {
+		Undo.undoRedoPerformed -= RefreshCreator;
+	}
+
+	private void RefreshCreator () {
+		if (Application.isPlaying) {
+			creator.<mark>Refresh</mark>();
+		}
+	}
+
+	public override void OnInspectorGUI () {
+		EditorGUI.BeginChangeCheck();
+		DrawDefaultInspector();
+		if (EditorGUI.EndChangeCheck()) {
+			RefreshCreator();
+		}
+	}
+}</pre>
+			
+			<figure>
+				<img src="01-surface-inspector.png" width="232" height="150">
+				<figcaption>Custom inspector for our surface creator.</figcaption>
+			</figure>
+			
+			<h2>Creating a Mesh</h2>
+			
+			<div class="instructions">
+				<p>Right now we only have an empty mesh. We have to add vertices and triangles to it before anything shows up. Let's start with a single right triangle.</p>
+				<p>In <code>Refresh</code>, first give an array containing three vertices to our mesh. Now that it knows how many vertices it has, we can give it an array of vertex indices that tells it how to draw a triangle.</p>
+			</div>
+			
+			<pre translate="no">	public void Refresh () {
+		<mark>mesh.vertices = new Vector3[] {</mark>
+			<mark>new Vector3(0f, 0f),</mark>
+			<mark>new Vector3(1f, 0f),</mark>
+			<mark>new Vector3(0f, 1f)</mark>
+		<mark>};</mark>
+		<mark>mesh.triangles = new int[] {</mark>
+			<mark>0, 1, 2</mark>
+		<mark>};</mark>
+	}</pre>
+			
+			<div class="instructions">
+				<p>Now a triangle will show up while in play mode, but it is only visible when you look at it in the negative-Z direction. The triangle isn't drawn when looking in the positive-Z direction, because the default material's shader only draws one side of it. This is known as face culling. It is done because you're typically only interested in the outside of a mesh, not its inside.</p>
+				<p>To determine which side of a triangle you're looking at, the shader checks the winding order of its three vertices. In Unity's case, by default a clockwise order indicates forward-facing triangles that should be drawn, while counterclockwise triangles should be discarded.</p>
+				<p>To see our triangle when looking down the Z axis, we should switch to a clockwise vertex order.</p>
+			</div>
+			
+			<pre translate="no">		mesh.triangles = new int[] {
+			0, <mark>2</mark>, <mark>1</mark>
+		};</pre>
+			
+			<figure>
+				<img alt="counter-clockwise" src="02-counter-clockwise.png" width="200" height="200">
+				<img alt="clockwise" src="02-clockwise.png" width="200" height="200">
+				<figcaption>Counterclockwise vs. clockwise triangle, viewed from their appropriate sides.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>We can turn our mesh into a quad by adding a second triangle to it. First we have to add a fourth vertex so they all form a square. Then we can add three more vertex incides, which causes a second triangle to be drawn.</p>
+			</div>
+			
+			<pre translate="no">		mesh.vertices = new Vector3[] {
+			new Vector3(0f, 0f),
+			new Vector3(1f, 0f),
+			new Vector3(0f, 1f)<mark>,</mark>
+			<mark>new Vector3(1f, 1f)</mark>
+		};
+		mesh.triangles = new int[] {
+			0, 2, 1<mark>,</mark>
+			<mark>1, 2, 3</mark>
+		};</pre>
+			
+			<figure>
+				<img src="02-quad.png" width="200" height="200">
+				<figcaption>Two triangles forming a quad.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>A surface that consists of one quad is like a texture that has only one pixel. If we want to show any details, we have to use a grid of smaller quads. So let's add a resolution variable to <code>SurfaceCreator</code> with a range of 1&ndash;200. Also add a <code>currentResolution</code> variable so we only recreate the grid when the resolution has changed, just like we did for <code>TextureCreator</code>.
+			</div>
+			
+			<pre translate="no">	<mark>[Range(1, 200)]</mark>
+	<mark>public int resolution = 10;</mark>
+	
+	<mark>private int currentResolution;</mark>
+	
+	public void Refresh () {
+		<mark>if (resolution != currentResolution) {</mark>
+			<mark>CreateGrid();</mark>
+		<mark>}</mark>
+	<mark>}</mark>
+
+	<mark>private void CreateGrid () {</mark>
+		<mark>currentResolution = resolution;</mark>
+		mesh.vertices = new Vector3[] {
+			new Vector3(0f, 0f),
+			new Vector3(1f, 0f),
+			new Vector3(0f, 1f),
+			new Vector3(1f, 1f)
+		};
+		mesh.triangles = new int[] {
+			0, 2, 1,
+			1, 2, 3
+		};
+	}</pre>
+			
+			<figure>
+				<img src="02-resolution.png" width="320" height="56">
+				<figcaption>Surface resolution.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Now replace the fixed vertex array with a double loop over y and x, like for <code>TextureCreator</code>, but with two differences.</p>
+				<p>First, because a quad needs two vertices in both directions, a grid of <b>n<sup>2</sup></b> quads &ndash; with <b>n</b> being its resolution &ndash; needs <b>(n + 1)<sup>2</sup></b> vertices.</p>
+				<p>Second, as the vertices are placed on the edge of our quad cells and not in their centers, we don't have to offset them by half a pixel. We will still offset the entire quad by -&frac12; to center it on the origin though.</p>
+			</div>
+			
+			<pre translate="no">	private void CreateGrid () {
+		currentResolution = resolution;
+		<mark>Vector3[] vertices = new Vector3[(resolution + 1) * (resolution + 1)];</mark>
+		<mark>float stepSize = 1f / resolution;</mark>
+		<mark>for (int v = 0, y = 0; y &lt;= resolution; y++) {</mark>
+			<mark>for (int x = 0; x &lt;= resolution; x++, v++) {</mark>
+				<mark>vertices[v] = new Vector3(x * stepSize - 0.5f, y * stepSize - 0.5f);</mark>
+			<mark>}</mark>
+		<mark>}</mark>
+		mesh.vertices = <mark>vertices</mark>;
+		mesh.triangles = new int[] {
+			0, 2, 1,
+			1, 2, 3
+		};
+	}</pre>
+			
+			<div class="instructions">
+				<p>As the triangle array requires six vertex indices per quad, its length is <b>6n<sup>2</sup></b>. Filling it is a bit more involved.</p>
+				<p>First, we will loop over y and x in units of quads, which means six triangle indices per step.</p>
+				<p>Second, as each row has <b>n</b> quads but <b>n + 1</b> vertices, we have to increase the vertex index after each quad, but also after each row.</p>
+				<p>Third, we have to replace the quad indices 0, 1, 2, 3 into offsets relative to the current vertex index. 0 and 1 stay the same as offsets, but 2 and 3 are actually the 0 and 1 of the next row. So we need to add the length of a vertex row to get them, which is <b>n + 1</b>.</p>
+			</div>
+			
+			<pre translate="no">		<mark>int[] triangles = new int[resolution * resolution * 6];</mark>
+		<mark>for (int t = 0, v = 0, y = 0; y &lt; resolution; y++, v++) {</mark>
+			<mark>for (int x = 0; x &lt; resolution; x++, v++, t += 6) {</mark>
+				<mark>triangles[t] = v;</mark>
+				<mark>triangles[t + 1] = v + resolution + 1;</mark>
+				<mark>triangles[t + 2] = v + 1;</mark>
+				<mark>triangles[t + 3] = v + 1;</mark>
+				<mark>triangles[t + 4] = v + resolution + 1;</mark>
+				<mark>triangles[t + 5] = v + resolution + 2;</mark>
+			<mark>}</mark>
+		<mark>}</mark>
+		mesh.triangles = <mark>triangles</mark>;</pre>
+			
+			<div class="instructions">
+				<p>Now you will see the quad density increase as you slide up the resolution. However, it will go wrong when you try to decrease the resolution. This happens because we try to assign less vertices to the mesh than are currently being used by its triangles. We should clear the mesh data before assigning a different amount of vertices.</p>
+			</div>
+			
+			<pre translate="no">		currentResolution = resolution;
+		<mark>mesh.Clear();</mark></pre>
+			
+			<figure>
+				<img alt="1" src="02-resolution-1.png" width="200" height="200">
+				<img alt="2" src="02-resolution-2.png" width="200" height="200">
+				<img alt="3" src="02-resolution-3.png" width="200" height="200">
+				<img alt="4" src="02-resolution-4.png" width="200" height="200">
+				<figcaption>Mesh resolution 1, 2, 3, and 4.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>While our vertices and triangles are all good now, Unity keeps complaining that our material's shader wants some stuff that our mesh doesn't have.</p>
+				<p>Because the default diffuse shader has a texture to show, it needs to know how to map it onto our mesh. We can either add UV coordinates to our mesh, or use a shader that doesn't need them. As it is quite easy to add them, let's just do so.</p>
+			</div>
+			
+			<pre translate="no">		Vector3[] vertices = new Vector3[(resolution + 1) * (resolution + 1)];
+		<mark>Vector2[] uv = new Vector2[vertices.Length];</mark>
+		float stepSize = 1f / resolution;
+		for (int v = 0, y = 0; y &lt;= resolution; y++) {
+			for (int x = 0; x &lt;= resolution; x++, v++) {
+				vertices[v] = new Vector3(x * stepSize - 0.5f, y * stepSize - 0.5f);
+				<mark>uv[v] = new Vector2(x * stepSize, y * stepSize);</mark>
+			}
+		}
+		mesh.vertices = vertices;
+		<mark>mesh.uv = uv;</mark></pre>
+			
+			<div class="instructions">
+				<p>The other missing elements are the normal vectors. These vectors are used for lighting calculations and are (0,0,1) by default, which is why the counter-clockwise triangle was light while the clockwise ones are dark. If we set them all to (0,0,-1) our grid should be light too when viewed head-on with the scene view's default lighting.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-normals" id="q-normals">How to normals work?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">		Vector3[] vertices = new Vector3[(resolution + 1) * (resolution + 1)];
+		<mark>Vector3[] normals = new Vector3[vertices.Length];</mark>
+		Vector2[] uv = new Vector2[vertices.Length];
+		float stepSize = 1f / resolution;
+		for (int v = 0, y = 0; y &lt;= resolution; y++) {
+			for (int x = 0; x &lt;= resolution; x++, v++) {
+				vertices[v] = new Vector3(x * stepSize - 0.5f, y * stepSize - 0.5f);
+				<mark>normals[v] = Vector3.back;</mark>
+				uv[v] = new Vector2(x * stepSize, y * stepSize);
+			}
+		}
+		mesh.vertices = vertices;
+		<mark>mesh.normals = normals;</mark>
+		mesh.uv = uv;</pre>
+			
+			<figure>
+				<img src="02-normals.png" width="200" height="200">
+				<figcaption>Normals pointing at you.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>You can also assign colors to vertices, which will be interpolated across triangles, just like bilinear filtering for a texture.</p>
+			</div>
+			
+			<pre translate="no">		Vector3[] vertices = new Vector3[(resolution + 1) * (resolution + 1)];
+		<mark>Color[] colors = new Color[vertices.Length];</mark>
+		Vector3[] normals = new Vector3[vertices.Length];
+		Vector2[] uv = new Vector2[vertices.Length];
+		float stepSize = 1f / resolution;
+		for (int v = 0, y = 0; y &lt;= resolution; y++) {
+			for (int x = 0; x &lt;= resolution; x++, v++) {
+				vertices[v] = new Vector3(x * stepSize - 0.5f, y * stepSize - 0.5f);
+				<mark>colors[v] = Color.black;</mark>
+				normals[v] = Vector3.back;
+				uv[v] = new Vector2(x * stepSize, y * stepSize);
+			}
+		}
+		mesh.vertices = vertices;
+		<mark>mesh.colors = colors;</mark></pre>
+			
+			<div class="instructions">
+				<p>Strangely, the mesh remains white even when it has black color data. This is because the default diffuse shader does not use the vertex colors. So let's make a shader that does use them.</p>
+				<p>Create a new shader and set our surface material to use it, either by dragging the shader on it or by selecting our shader from the shader list.</p>
+			</div>
+			
+			<figure>
+				<img alt="shader" src="02-shader.png" width="232" height="150">
+				<img alt="material" src="02-material.png" width="320" height="120">
+				<figcaption>Using a custom shader.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>The mesh will still look the same, because the new shader is the same as the default diffuse shader, except that it doesn't have a main color property. When selecting the shader, the inspector view will show some information about the imported shader object. Note that under <i>Geometry</i> it mentions position, normal, and uv, but not color.</p>
+			</div>
+			
+			<figure>
+				<img src="02-shader-info.png" width="320" height="330">
+				<figcaption>Shader info.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Our custom shader contains Unity's default code for a surface shader. In this case surface does not mean our mesh surface, it refers to Unity's shader solution that takes care of most of the details of multiplatform multipass shader programming for us. What's left is to set some material properties, like albedo. Here is the default code.</p>
+			</div>
+			
+			<pre translate="no">Shader "Custom/Surface Shader" {
+	Properties {
+		_MainTex ("Base (RGB)", 2D) = "white" {}
+	}
+	SubShader {
+		Tags { "RenderType"="Opaque" }
+		LOD 200
+		
+		CGPROGRAM
+		#pragma surface surf Lambert
+
+		sampler2D _MainTex;
+
+		struct Input {
+			float2 uv_MainTex;
+		};
+
+		void surf (Input IN, inout SurfaceOutput o) {
+			half4 c = tex2D (_MainTex, IN.uv_MainTex);
+			o.Albedo = c.rgb;
+			o.Alpha = c.a;
+		}
+		ENDCG
+	} 
+	FallBack "Diffuse"
+}</pre>
+			
+			<div class="instructions">
+				<p>The <code>surf</code> method is where the material's properties are set, other than its position and normal. We see that the main texture is used as input and used to set the albedo and alpha. To include color, we have to add it to the input structure and factor it into the result. Let's just use the same data type that's used for the texture sample. The only special thing we need to do is indicate that our color input should link to the vertex color data.</p>
+			</div>
+			
+			<pre translate="no">		struct Input {
+			float2 uv_MainTex;
+			<mark>half4 color : COLOR;</mark>
+		};
+
+		void surf (Input IN, inout SurfaceOutput o) {
+			half4 c = tex2D (_MainTex, IN.uv_MainTex);
+			o.Albedo = c.rgb <mark>* IN.color.rgb</mark>;
+			o.Alpha = c.a <mark>* IN.color.a</mark>;
+		}</pre>
+			
+			<figure>
+				<img alt="black mesh" src="02-black.png" width="200" height="200">
+				<img alt="shader with color" src="02-shader-color.png" width="320" height="150">
+				<figcaption>Shader using vertex colors.</figcaption>
+			</figure>
+			
+			<h2>Making a Noisy Surface</h2>
+			
+			<div class="instructions">
+				<p>It's time to make some noise again! Let's just copy the same noise configuration variables that we used for <code>TextureCreator</code>.</p>
+			</div>
+			
+			<pre translate="no">	<mark>public float frequency = 1f;</mark>
+	
+	<mark>[Range(1, 8)]</mark>
+	<mark>public int octaves = 1;</mark>
+	
+	<mark>[Range(1f, 4f)]</mark>
+	<mark>public float lacunarity = 2f;</mark>
+	
+	<mark>[Range(0f, 1f)]</mark>
+	<mark>public float persistence = 0.5f;</mark>
+	
+	<mark>[Range(1, 3)]</mark>
+	<mark>public int dimensions = 3;</mark>
+	
+	<mark>public NoiseMethodType type;</mark>
+	
+	<mark>public Gradient coloring;</mark></pre>
+			
+			<figure>
+				<img src="03-noise-settings.png" width="320" height="188">
+				<figcaption>Noise settings.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>We also use the same approach to sample the noise, with some slight tweaks because we're working with vertex data instead of pixels.</p>
+			</div>
+			
+			<pre translate="no">	public void Refresh () {
+		if (resolution != currentResolution) {
+			CreateGrid();
+		}
+		<mark>Vector3 point00 = transform.TransformPoint(new Vector3(-0.5f,-0.5f));</mark>
+		<mark>Vector3 point10 = transform.TransformPoint(new Vector3( 0.5f,-0.5f));</mark>
+		<mark>Vector3 point01 = transform.TransformPoint(new Vector3(-0.5f, 0.5f));</mark>
+		<mark>Vector3 point11 = transform.TransformPoint(new Vector3( 0.5f, 0.5f));</mark>
+		
+		<mark>NoiseMethod method = Noise.methods[(int)type][dimensions - 1];</mark>
+		<mark>float stepSize = 1f / resolution;</mark>
+		<mark>for (int v = 0, y = 0; y &lt;= resolution; y++) {</mark>
+			<mark>Vector3 point0 = Vector3.Lerp(point00, point01, y * stepSize);</mark>
+			<mark>Vector3 point1 = Vector3.Lerp(point10, point11, y * stepSize);</mark>
+			<mark>for (int x = 0; x &lt;= resolution; x++, v++) {</mark>
+				<mark>Vector3 point = Vector3.Lerp(point0, point1, x * stepSize);</mark>
+				<mark>float sample = Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);</mark>
+				<mark>if (type != NoiseMethodType.Value) {</mark>
+					<mark>sample = sample * 0.5f + 0.5f;</mark>
+				<mark>}</mark>
+				<mark>colors[v] = coloring.Evaluate(sample);</mark>
+			<mark>}</mark>
+		<mark>}</mark>
+		<mark>mesh.colors = colors;</mark>
+	}</pre>
+			
+			<div class="instructions">
+				<p>For this to work we need to promote <code>colors</code> to a class variable instead of only defining it inside <code>CreateGrid</code>. Let's go ahead and do this for <code>vertices</code> and <code>normals</code> as well.</p>
+			</div>
+			
+			<pre translate="no">	<mark>private Vector3[] vertices;</mark>
+	<mark>private Vector3[] normals;</mark>
+	<mark>private Color[] colors;</mark>
+	
+	private void CreateGrid () {
+		currentResolution = resolution;
+		mesh.Clear();
+		<mark>vertices</mark> = new Vector3[(resolution + 1) * (resolution + 1)];
+		<mark>colors</mark> = new Color[vertices.Length];
+		<mark>normals</mark> = new Vector3[vertices.Length];
+		Vector2[] uv = new Vector2[vertices.Length];
+		&hellip;
+	}</pre>
+			
+			<figure>
+				<img alt="10" src="03-resolution-10.png" width="200" height="200">
+				<img alt="20" src="03-resolution-20.png" width="200" height="200">
+				<img alt="40" src="03-resolution-40.png" width="200" height="200">
+				<img alt="80" src="03-resolution-80.png" width="200" height="200">
+				<figcaption>Sampled vertex colors at resolution 10, 20, 40, and 80.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Now you might want to move the noise sampling away from the origin, but we haven't put in code that checks for a transform change yet, so the mesh won't be refreshed when moving it. We could put this code in to make it behave just like <code>TextureCreator</code>, but this is not really convenient. Instead, let's keep our mesh in a fixed position and add an offset to the noise instead.</p>
+			</div>
+			
+			<pre translate="no">	<mark>public Vector3 offset;</mark>
+	
+	public void Refresh () {
+		if (resolution != currentResolution) {
+			CreateGrid();
+		}
+		<mark>Vector3 point00 = new Vector3(-0.5f,-0.5f) + offset;</mark>
+		<mark>Vector3 point10 = new Vector3( 0.5f,-0.5f) + offset;</mark>
+		<mark>Vector3 point01 = new Vector3(-0.5f, 0.5f) + offset;</mark>
+		<mark>Vector3 point11 = new Vector3( 0.5f, 0.5f) + offset;</mark>
+		&hellip;
+	}</pre>
+			
+			<div class="instructions">
+				<p>Let's add support for rotation as well. We use a vector to configure angular rotations, but we'll use a quaternion to actually transform our positions. If we multiply the quaternion with our original positions and then offset the result, we act the same as a <code>Transform</code> component would.</p>
+			</div>
+			
+			<pre translate="no">	<mark>public Vector3 rotation;</mark>
+	
+	public void Refresh () {
+		if (resolution != currentResolution) {
+			CreateGrid();
+		}
+		<mark>Quaternion q = Quaternion.Euler(rotation);</mark>
+		Vector3 point00 = <mark>q *</mark> new Vector3(-0.5f, -0.5f) + offset;
+		Vector3 point10 = <mark>q *</mark> new Vector3( 0.5f, -0.5f) + offset;
+		Vector3 point01 = <mark>q *</mark> new Vector3(-0.5f, 0.5f) + offset;
+		Vector3 point11 = <mark>q *</mark> new Vector3( 0.5f, 0.5f) + offset;
+		&hellip;
+	}</pre>
+			
+			<figure>
+				<img alt="offset and rotation" src="03-offset-rotation.png" width="320" height="256">
+				<img alt="transformed noise" src="03-transformed.png" width="200" height="200">
+				<figcaption>Noise with offset and rotation.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>To perturb the shape of our surface, we can simply displace the vertices along the Z axis using our noise samples.</p>
+			</div>
+			
+			<pre translate="no">		for (int v = 0, y = 0; y &lt;= resolution; y++) {
+			Vector3 point0 = Vector3.Lerp(point00, point01, y * stepSize);
+			Vector3 point1 = Vector3.Lerp(point10, point11, y * stepSize);
+			for (int x = 0; x &lt;= resolution; x++, v++) {
+				Vector3 point = Vector3.Lerp(point0, point1, x * stepSize);
+				float sample = Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);
+				if (type != NoiseMethodType.Value) {
+					sample = sample * 0.5f + 0.5f;
+				}
+				<mark>vertices[v].z = sample;</mark>
+				colors[v] = coloring.Evaluate(sample);
+			}
+		}
+		<mark>mesh.vertices = vertices;</mark>
+		mesh.colors = colors;</pre>
+			
+			<figure>
+				<img src="03-displacement.png" width="250" height="250">
+				<figcaption>Displaced surface.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>We are now displacing a vertical surface, which is a bit awkward to work with. It is easier to work with a horizontal surface, because then it would resemble a terrain, which is something we are all very familiar with.</p>
+				<p>We could rotate our mesh to make it horizontal, but we can also change its construction so is horizontal to begin with.</p>
+			</div>
+			
+			<pre translate="no">	private void CreateGrid () {
+		&hellip;
+		for (int v = 0, <mark>z</mark> = 0; <mark>z</mark> &lt;= resolution; <mark>z</mark>++) {
+			for (int x = 0; x &lt;= resolution; x++, v++) {
+				vertices[v] = new Vector3(x * stepSize - 0.5f, <mark>0f, z * stepSize</mark> - 0.5f);
+				colors[v] = Color.black;
+				normals[v] = <mark>Vector3.up</mark>;
+				uv[v] = new Vector2(x * stepSize, <mark>z</mark> * stepSize);
+			}
+		}
+		&hellip;
+	}</pre>
+			
+			<div class="instructions">
+				<p>We could also change <code>Refresh</code> so it sample from XZ instead of XY, but then it won't work for 2D noise because that's defined in XY, so we leave our sampling unchanged. We just use the sample to displace Y instead of Z.</p>
+				<p>While we're at it, as our surface goes from -&frac12; to &frac12; in both horizontal directions, it makes sense for the displaced surface to have the same range vertically. That way it can theoretically be defined anywhere inside a unit cube, but not outside of it. That means we have to subtract half a unit from Value noise and halve Perlin noise.</p>
+			</div>
+			
+			<pre translate="no">				Vector3 point = Vector3.Lerp(point0, point1, x * stepSize);
+				float sample = Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);
+				<mark>sample = type == NoiseMethodType.Value ? (sample - 0.5f) : (sample * 0.5f);</mark>
+				vertices[v].<mark>y</mark> = sample;
+				colors[v] = coloring.Evaluate(sample <mark>+ 0.5f</mark>);</pre>
+			
+			<figure>
+				<img alt="value" src="03-horizontal-value.png" width="300" height="256">
+				<img alt="perlin" src="03-horizontal-perlin.png" width="300" height="256">
+				<figcaption>Horizontal surface displaced with Value and Perlin noise.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Now when you use a coloring that somewhat resembles terrain strata, you end up with a result that looks a lot like a landscape. For example, I'm using the colors (1,25,34) at 0%, (32,111,139) at 30%, (121,159,61) at 50%, (231,190,129) at 70%, and white at 100%.</p>
+			</div>
+			
+			<figure>
+				<img alt="terrain settings" src="03-terrain-coloring.png" width="320" height="256">
+				<img alt="terrain mesh" src="03-terrain-flat-normals.png" width="320" height="270">
+				<figcaption>Colored terrain.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>However, this terrain looks rather flat, because all the vertex normals are still pointing straight up, causing the lighting to behave as if it were. The easiest way to get proper normals is to invoke <code>Mesh.RecalculateNormals</code> after we changed all vertices, so let's do that.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-recalculate-normals" id="q-recalculate-normals">How are normals recalculated?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">	public void Refresh () {
+		&hellip;
+		mesh.vertices = vertices;
+		mesh.colors = colors;
+		<mark>mesh.RecalculateNormals();</mark>
+	}</pre>
+			
+			<figure>
+				<img alt="100" src="03-terrain-calculated-normals-100.png" width="320" height="270">
+				<img alt="200" src="03-terrain-calculated-normals-200.png" width="320" height="270">
+				<figcaption>Normals calculated by the mesh, at resolution 100 and 200.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>The default scene view light always shines in the direction that you're looking, which isn't very interesting. So go ahead and add a directional light so you can change the light's direction. A handy trick is to position yourself in the scene view as if you were a light, and then use <i>GameObject / Align With View</i> with the light selected. That way your current view direction becomes the light's direction as well.</p>
+			</div>
+			
+			<figure>
+				<img alt="light without shadows" src="03-terrain-with-light.png" width="320" height="270">
+				<img alt="light with shadows" src="03-terrain-with-shadows.png" width="320" height="270">
+				<figcaption>Light coming from a different direction, without and with shadows.</figcaption>
+			</figure>
+			
+			<h2>Scaling the Displacement</h2>
+			
+			<div class="instructions">
+				<p>Right now the noise results in quite strong displacement of our surface. But often we desire a more subtle displacement, so let's add a variable to control the strength of the noise with a range of 0&ndash;1.</p>
+			</div>
+			
+			<pre translate="no">	<mark>[Range(0f, 1f)]</mark>
+	<mark>public float strength = 1f;</mark></pre>
+			
+			<div class="instructions">
+				<p>Inside <code>Refresh</code>, we have to scale our sample after it has been brought into the -&frac12;&ndash;&frac12; range.</p>
+			</div>
+			
+			<pre translate="no">				Vector3 point = Vector3.Lerp(point0, point1, x * stepSize);
+				float sample = Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);
+				sample = type == NoiseMethodType.Value ? (sample - 0.5f) : (sample * 0.5f);
+				<mark>sample *= strength;</mark>
+				vertices[v].y = sample;
+				colors[v] = coloring.Evaluate(sample + 0.5f);</pre>
+			
+			<figure>
+				<img alt="strength" src="04-strength.png" width="320" height="274"><br>
+				<img alt="1.00" src="04-strength-100.png" width="190" height="150">
+				<img alt="0.75" src="04-strenght-075.png" width="190" height="150">
+				<img alt="0.50" src="04-strength-050.png" width="190" height="150">
+				<img alt="0.25" src="04-strength-025.png" width="190" height="150">
+				<figcaption>Strength 1, &frac34;, &frac12;, and &frac14;.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Of course this means that as strength decreases, you'll see less of the gradient. This is fine if that's what you want, but if it's not then you'll have to evaluate the gradient before scaling the sample. To allow a choice, add a boolean variable named <i>coloringForStrength</i>.</p>
+			</div>
+			
+			<pre translate="no">	<mark>public bool coloringForStrength;</mark>
+			
+	public void Refresh () {
+		&hellip;
+				sample = type == NoiseMethodType.Value ? (sample - 0.5f) : (sample * 0.5f);
+				<mark>if (coloringForStrength) {</mark>
+					<mark>colors[v] = coloring.Evaluate(sample + 0.5f);</mark>
+					<mark>sample *= strength;</mark>
+				<mark>}</mark>
+				<mark>else {</mark>
+					sample *= strength;
+					colors[v] = coloring.Evaluate(sample + 0.5f);
+				<mark>}</mark>
+				vertices[v].y = sample;
+		&hellip;
+	}</pre>
+			
+			<figure>
+				<img alt="strength" src="04-strength-coloring.png" width="320" height="292"><br>
+				<img alt="0.75" src="04-strength-coloring-75.png" width="190" height="150">
+				<img alt="0.50" src="04-strength-coloring-50.png" width="190" height="150">
+				<img alt="0.25" src="04-strength-coloring-25.png" width="190" height="150">
+				<figcaption>Coloring for strength, at &frac34;, &frac12;, and &frac14;.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>There is another phenomenon that we might want to do something about. If we increase the frequency of the noise, the surface deformation becomes a lot more extreme. This happens because the same vertical displacement happens much faster, which basically means that the energy level of our system has increased. If we want to keep the rate of change at a constant level, we have to decrease the amplitude of the noise, just like we do when we sum noise octaves. Let's make this optional with a <i>dampen</i> boolean. If it's on, we divide the strength by the frequency before applying it.</p>
+			</div>
+			
+			<pre translate="no">	<mark>public bool damping;</mark>
+			
+	public void Refresh () {
+		&hellip;
+		<mark>float amplitude = damping ? strength / frequency : strength;</mark>
+		for (int v = 0, y = 0; y &lt;= resolution; y++) {
+			Vector3 point0 = Vector3.Lerp(point00, point01, y * stepSize);
+			Vector3 point1 = Vector3.Lerp(point10, point11, y * stepSize);
+			for (int x = 0; x &lt;= resolution; x++, v++) {
+				Vector3 point = Vector3.Lerp(point0, point1, x * stepSize);
+				float sample = Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);
+				sample = type == NoiseMethodType.Value ? (sample - 0.5f) : (sample * 0.5f);
+				if (coloringForStrength) {
+					colors[v] = coloring.Evaluate(sample + 0.5f);
+					sample *= <mark>amplitude</mark>;
+				}
+				else {
+					sample *= <mark>amplitude</mark>;
+					colors[v] = coloring.Evaluate(sample + 0.5f);
+				}
+				vertices[v].y = sample;
+			}
+		}
+		&hellip;
+	}</pre>
+			
+			<figure>
+				<img alt="damping" src="04-damping.png" width="320" height="310"><br>
+				<img alt="2 without" src="04-no-damping-2.png" width="170" height="160">
+				<img alt="4 without" src="04-no-damping-4.png" width="170" height="160">
+				<img alt="8 without" src="04-no-damping-8.png" width="170" height="160"><br>
+				<img alt="2 with" src="04-damping-2.png" width="170" height="130">
+				<img alt="4 with" src="04-damping-4.png" width="170" height="130">
+				<img alt="8 with" src="04-damping-8.png" width="170" height="130">
+				<figcaption>Frequency 2, 4, and 8, without damping vs. with damping.</figcaption>
+			</figure>
+			
+			<h2>Calculating Normals</h2>
+			
+			<div class="instructions">
+				<p>Instead of relying on <code>RecalculateNormals</code>, we could also calculate the normals ourselves. Our advantage is that we know the topology of our grid, which means that we can be more efficient. But first, let's add an option to show the normal vectors when we have our mesh selected in the scene view. We can do that by adding another boolean variable and utilizing Unity's <code>OnDrawGizmosSelected</code> event method.</p>
+				<p>Inside <code>OnDrawGizmosSelected</code>, we simply loop through all vertices and draw a gizmo ray using their position and normal. But we only do this when we want to, and also only if the vertex array exists. This extra check is necessary because the gizmos event method can end up being called by Unity before our component has awoken.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-gizmos" id="q-gizmos">What are gizmos?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">	<mark>public bool showNormals;</mark>
+			
+	<mark>private void OnDrawGizmosSelected () {</mark>
+		<mark>if (showNormals &amp;&amp; vertices != null) {</mark>
+			<mark>Gizmos.color = Color.yellow;</mark>
+			<mark>for (int v = 0; v &lt; vertices.Length; v++) {</mark>
+				<mark>Gizmos.DrawRay(vertices[v], normals[v]);</mark>
+			<mark>}</mark>
+		<mark>}</mark>
+	<mark>}</mark></pre>
+			
+			<figure>
+				<img alt="show gizmos" src="05-show-gizmos.png" width="320" height="328">
+				<img alt="gizmos" src="05-large-gizmos.png" width="230" height="230">
+				<figcaption>Showing quite large gizmos.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>These gizmos are so large that they're unusable, they should be scaled down. It makes sense to scale based on the resolution of our mesh, that way a vector of unit length becomes as long as the horizontal width of one quad in the mesh.</p>
+			</div>
+			
+			<pre translate="no">	private void OnDrawGizmosSelected () {
+		<mark>float scale = 1f / resolution;</mark>
+		if (showNormals &amp;&amp; vertices != null) {
+			Gizmos.color = Color.yellow;
+			for (int v = 0; v &lt; vertices.Length; v++) {
+				Gizmos.DrawRay(vertices[v], normals[v] <mark>* scale</mark>);
+			}
+		}
+	}</pre>
+			
+			<figure>
+				<img alt="05" src="05-gizmos-05.png" width="200" height="160">
+				<img alt="05" src="05-gizmos-10.png" width="200" height="160">
+				<img alt="05" src="05-gizmos-20.png" width="200" height="160">
+				<figcaption>Scaling gizmos at resolution 5, 10, and 20.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Right now we're seeing vectors that point straight up. Shouldn't we see the normals of our mesh? No, we're seeing the vectors in our normals array, but these are not the same as the normals currently being used by the mesh. When assigning data to the mesh object, it actually copies what's in our arrays to its own data structures. We're assigning to mesh properties, not variables. That's why we have to assign &ndash; actually copy &ndash; our arrays again when we change them. Likewise, if the mesh changes its own data, we have to extract it to update our own arrays.
+			</div>
+			
+			<pre translate="no">	public void Refresh () {
+		&hellip;
+		mesh.RecalculateNormals();
+		<mark>normals = mesh.normals;</mark>
+	}</pre>
+			
+			<figure>
+				<img src="05-mesh-normals.png" width="380" height="230">
+				<figcaption>Normals calculated by the mesh itself.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>To calculate normals ourselves, we have to loop through all vertices and figure out the normal of each one. Because our mesh is a grid, most vertices have four neighbors. If you connect opposite neighbors, you get two lines that form a cross. Those two lines define a plane, which we can consider an approximation of the tangent plane of the slope at the center vertex. If we take the cross product of those two vectors and normalize it, we end up with the normal of that slope.</p>
+				<p>As we consider the two lines lines tangent to the slope at our vertex, then if we scale them so that their X or Z component is 1, then their Y component is the proper rate of change in that direction. Let's go one step at a time, and misuse our normals to show the rate of change &ndash; the derivative &ndash; of the X direction only. For that reason we won't assign our normals to the mesh just yet.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-cross-product" id="q-cross-product">What is the cross product?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">	public void Refresh () {
+		&hellip;
+		mesh.RecalculateNormals();
+		<mark>CalculateNormals();</mark>
+	}
+	
+	<mark>private void CalculateNormals () {</mark>
+		<mark>for (int v = 0, z = 0; z &lt;= resolution; z++) {</mark>
+			<mark>for (int x = 0; x &lt;= resolution; x++, v++) {</mark>
+				<mark>normals[v] = Vector3.up * GetXDerivative(x, z);</mark>
+			<mark>}</mark>
+		<mark>}</mark>
+	<mark>}</mark></pre>
+			
+			<div class="instructions">
+				<p>To get the derivative along the X axis, we have to take the difference between the height to the left and to the right of a vertex, so right minus left. We then have to divide this by the distance between the left and right vertices, which is twice the mesh resolution.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-vertex-index" id="q-vertex-index">How to get the vertex index for x and z?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">	<mark>private float GetXDerivative (int x, int z) {</mark>
+		<mark>int rowOffset = z * (resolution + 1);</mark>
+		<mark>float left, right, distance;</mark>
+		<mark>left = vertices[rowOffset + x - 1].y;</mark>
+		<mark>right = vertices[rowOffset + x + 1].y;</mark>
+		<mark>distance = 2f / resolution;</mark>
+		<mark>return (right - left) / distance;</mark>
+	<mark>}</mark></pre>
+			
+			<div class="instructions">
+				<p>As we're now dividing by a division, we might as well convert it into a multiplication.</p>
+			</div>
+			
+			<pre translate="no">	private float GetXDerivative (int x, int z) {
+		int rowOffset = z * (resolution + 1);
+		float left, right, <mark>scale</mark>;
+		left = vertices[rowOffset + x - 1].y;
+		right = vertices[rowOffset + x + 1].y;
+		<mark>scale</mark> = <mark>0.5f *</mark> resolution;
+		return (right - left) <mark>* scale</mark>;
+	}</pre>
+			
+			<div class="instructions">
+				<p>But this approach will only work for vertices that aren't on the edge of the grid. The edge vertices will lack either a left or a right neighbor. In those cases the best we can do is take the difference between the vertex and its single neighbor. As that halves the distance covered, we also have to double the scale.</p>
+			</div>
+			
+			<pre translate="no">	private float GetXDerivative (int x, int z) {
+		int rowOffset = z * (resolution + 1);
+		float left, right, scale;
+		<mark>if (x > 0) {</mark>
+			left = vertices[rowOffset + x - 1].y;
+			<mark>if (x &lt; resolution) {</mark>
+				right = vertices[rowOffset + x + 1].y;
+				scale = 0.5f * resolution;
+			<mark>}</mark>
+			<mark>else {</mark>
+				<mark>right = vertices[rowOffset + x].y;</mark>
+				<mark>scale = resolution;</mark>
+			<mark>}</mark>
+		<mark>}</mark>
+		<mark>else {</mark>
+			<mark>left = vertices[rowOffset + x].y;</mark>
+			<mark>right = vertices[rowOffset + x + 1].y;</mark>
+			<mark>scale = resolution;</mark>
+		<mark>}</mark>
+		return (right - left) * scale;
+	}</pre>
+			
+			<figure>
+				<img src="05-x-derivative.png" width="380" height="220">
+				<figcaption>Rate of vertical change in the X direction.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>To turn this into tangent lines, we have to use vectors of the form (1, derivative, 0).</p>
+			</div>
+			
+			<pre translate="no">				normals[v] = <mark>new Vector3(1f,</mark> GetXDerivative(x, z)<mark>, 0f)</mark>;</pre>
+			
+			<figure>
+				<img src="05-x-tangent.png" width="400" height="220">
+				<figcaption>Tangent lines in the X direction.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>We can do the same thing for the Z direction.</p>
+			</div>
+			
+			<pre translate="no">	<mark>private float GetZDerivative (int x, int z) {</mark>
+		<mark>int rowLength = resolution + 1;</mark>
+		<mark>float back, forward, scale;</mark>
+		<mark>if (z > 0) {</mark>
+			<mark>back = vertices[(z - 1) * rowLength + x].y;</mark>
+			<mark>if (z &lt; resolution) {</mark>
+				<mark>forward = vertices[(z + 1) * rowLength + x].y;</mark>
+				<mark>scale = 0.5f * resolution;</mark>
+			<mark>}</mark>
+			<mark>else {</mark>
+				<mark>forward = vertices[z * rowLength + x].y;</mark>
+				<mark>scale = resolution;</mark>
+			<mark>}</mark>
+		<mark>}</mark>
+		<mark>else {</mark>
+			<mark>back = vertices[z * rowLength + x].y;</mark>
+			<mark>forward = vertices[(z + 1) * rowLength + x].y;</mark>
+			<mark>scale = resolution;</mark>
+		<mark>}</mark>
+		<mark>return (forward - back) * scale;</mark>
+	<mark>}</mark>
+
+	private void CalculateNormals () {
+		for (int v = 0, z = 0; z &lt;= resolution; z++) {
+			for (int x = 0; x &lt;= resolution; x++, v++) {
+				normals[v] = new Vector3(<mark>0f</mark>, <mark>GetZDerivative</mark>(x, z), <mark>1f</mark>);
+			}
+		}
+	}</pre>
+			
+			<figure>
+				<img src="05-z-tangent.png" width="380" height="220">
+				<figcaption>Tangent lines in the Z direction.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Now if we take the cross product of these two tangent vectors, we'll get a vector pointing along our surface's normal. We have to perform Z-tangent &times; X-tangent to get them to point upward instead of downward.</p>
+			</div>
+			
+			<pre translate="no">				normals[v] = <mark>Vector3.Cross(</mark>
+					<mark>new Vector3(0f, GetZDerivative(x, z), 1f),</mark>
+					<mark>new Vector3(1f, GetXDerivative(x, z), 0f))</mark>;</pre>
+			
+			<div class="instructions">
+				<p>Because of the nature of our vectors, quite a few parts of the cross product are constant. In fact, we only have to flip the signs of the derivatives. The final step is to normalize the result, so it becomes a proper normal vector for our mesh. Now we can use our own code instead of relying on <code>Mesh.RecalculateNormals</code>. Note that both approaches produce slightly different normals.</p>
+			</div>
+			
+			<pre translate="no">	public void Refresh () {
+		&hellip;
+		mesh.vertices = vertices;
+		mesh.colors = colors;
+		CalculateNormals();
+		<mark>mesh.normals = normals;</mark>
+	}
+	
+	private void CalculateNormals () {
+		for (int v = 0, z = 0; z &lt;= resolution; z++) {
+			for (int x = 0; x &lt;= resolution; x++, v++) {
+				normals[v] = <mark>new Vector3(-</mark>GetXDerivative(x, z)<mark>, 1f, -</mark>GetZDerivative(x, z)<mark>).normalized</mark>;
+			}
+		}
+	}
+	</pre>
+			
+			<figure>
+				<img src="05-normals.png" width="390" height="220">
+				<figcaption>Calculated by us in yellow vs. calculated by the mesh in red.</figcaption>
+			</figure>
+			
+			<h2>Using Analytical Derivatives</h2>
+			
+			<div class="instructions">
+				<p>What we've done so far is approximate the partial derivatives of our noise function. They're partial because we consider the change in the X and Z direction indepdently, while keeping the other constant. Specifically, we're performing numerical differentiation using the finite difference formula <b>(f(x + h) - f(x - h)) / 2h</b> for all vertices except those along edges, for which we use <b>(f(x + h) - f(x)) / h</b> instead.</p>
+				<p>In our case <b>h</b> is 1 / resolution, which is quite large. Using a smaller value for <b>h</b> will produce results that are closer to the true derivative. We could do that, but then we can no longer use the values of adjacent vertices. We'd have to sample the noise four additional times per vertex for most vertices. While that's possible, we must take care that we don't use too small a value for <b>h</b>. Because we're using floating-point numbers, we only have limited numerical precision. If <b>h</b> is too small, <b>x</b> and <b>x + h</b> become hard or even impossible to distinguish, which leads to significant rounding errors.</p>
+				<p>Instead of taking more samples and approximate the derivatives, it is also possible to compute the analytical derivatives directly. We already know the derivative of the smoothing function we're using for our noise, why not figure out the derivative function for the entire noise as well? We get the best possible result, and it should be cheaper to compute than sampling five times.</p>
+				<p>This means that our noise methods will have to return both their value and their derivative. So let's create a convenient struct that contains both.</p>
+			</div>
+			
+			<pre translate="no"><mark>using UnityEngine;</mark>
+
+<mark>public struct NoiseSample {</mark>
+
+	<mark>public float value;</mark>
+	<mark>public Vector3 derivative;</mark>
+<mark>}</mark></pre>
+			
+			<figure>
+				<img src="06-noise-sample.png" width="232" height="86">
+				<figcaption>Structure for noise samples.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Then we change the return type of our <code>NoiseMethod</code> delegate type that we defined at the top of our noise script.</p>
+			</div>
+			
+			<pre translate="no">public delegate <mark>NoiseSample</mark> NoiseMethod (Vector3 point, float frequency);</pre>
+			
+			<div class="instructions">
+				<p>Now all six noise methods need to be updated so they return a <code>NoiseSample</code> instead of a float. For now, simply assign their result to a sample's value and set all the sample's derivative components to zero.</p>
+				<p>However, before we worry about how the compute the derivatives, we already know that when the frequency is increased, slopes become steeper, which means the derivatives become larger. This is actually because of the chain rule. So we have to multiply the derivative by the frequency, so let's put that in already.</p>
+				
+				<p>Only the change for <code>Value1D</code> is shown below, but you have to adjust the other five methods in the same way as well.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-chain-rule" id="q-chain-rule">What's the chain rule?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">	public static <mark>NoiseSample</mark> Value1D (Vector3 point, float frequency) {
+		point *= frequency;
+		int i0 = Mathf.FloorToInt(point.x);
+		float t = point.x - i0;
+		i0 &amp;= hashMask;
+		int i1 = i0 + 1;
+
+		int h0 = hash[i0];
+		int h1 = hash[i1];
+
+		t = Smooth(t);
+		<mark>NoiseSample sample;</mark>
+		<mark>sample.value =</mark> Mathf.Lerp(h0, h1, t) * (1f / hashMask);
+		<mark>sample.derivative.x = 0f;</mark>
+		<mark>sample.derivative.y = 0f;</mark>
+		<mark>sample.derivative.z = 0f;</mark>
+		<mark>sample.derivative *= frequency;</mark>
+		return <mark>sample;</mark>
+	}</pre>
+			
+			<div class="instructions">
+				<p>With that out of the way, the next method that needs updating is <code>Sum</code>.</p>
+			</div>
+			
+			<pre translate="no">	public static <mark>NoiseSample</mark> Sum (
+		NoiseMethod method, Vector3 point, float frequency, int octaves, float lacunarity, float persistence
+	) {
+		<mark>NoiseSample</mark> sum = method(point, frequency);
+		float amplitude = 1f;
+		float range = 1f;
+		for (int o = 1; o &lt; octaves; o++) {
+			frequency *= lacunarity;
+			amplitude *= persistence;
+			range += amplitude;
+			sum += method(point, frequency) * amplitude;
+		}
+		return sum / range;
+	}</pre>
+			
+			<div class="instructions">
+				<p>Unfortunately this naive conversion doesn't work, because we're now trying to perform addition, multiplication, and dividision with entire noise samples. As it would be very convenient if this just worked &ndash; and it makes mathematical sense &ndash; why not make it so?</p>
+				<p>We're going to define what addition does when performed with two <code>NoiseSample</code> values. We do this by adding a static method to <code>NoiseSample</code> and declare that is overloads the plus operator.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-operator-methods" id="q-operator-methods">How do operator methods work?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">	<mark>public static NoiseSample operator + (NoiseSample a, NoiseSample b) {</mark>
+	<mark>}</mark></pre>
+			
+			<div class="instructions">
+				<p>Addition of the value is straightforward. And because <b>(f + g)' = f' + g'</b> the derivatives can also simply be added together.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-adding-derivatives" id="q-adding-derivatives">Can derivatives really be added?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">	public static NoiseSample operator + (NoiseSample a, NoiseSample b) {
+		<mark>a.value += b.value;</mark>
+		<mark>a.derivative += b.derivative;</mark>
+		<mark>return a;</mark>
+	}</pre>
+			
+			<div class="instructions">
+				<p>As it's also possible to add a single float to our sample, we should support that as well. Because the derivative of a constant is zero, we don't need to change the derivate in this case. Also, because the operands could be placed in any order, we should be tidy and support both options.</p>
+			</div>
+			
+			<pre translate="no">	<mark>public static NoiseSample operator + (NoiseSample a, float b) {</mark>
+		<mark>a.value += b;</mark>
+		<mark>return a;</mark>
+	<mark>}</mark>
+
+	<mark>public static NoiseSample operator + (float a, NoiseSample b) {</mark>
+		<mark>b.value += a;</mark>
+		<mark>return b;</mark>
+	<mark>}</mark></pre>
+			
+			<div class="instructions">
+				<p>We also perform subtractions, so that operator needs to go in as well. Again, we should support all versions.</p>
+			</div>
+			
+			<pre translate="no">	<mark>public static NoiseSample operator - (NoiseSample a, float b) {</mark>
+		<mark>a.value -= b;</mark>
+		<mark>return a;</mark>
+	<mark>}</mark>
+	
+	<mark>public static NoiseSample operator - (float a, NoiseSample b) {</mark>
+		<mark>b.value = a - b.value;</mark>
+		<mark>b.derivative = -b.derivative;</mark>
+		<mark>return b;</mark>
+	<mark>}</mark>
+	
+	<mark>public static NoiseSample operator - (NoiseSample a, NoiseSample b) {</mark>
+		<mark>a.value -= b.value;</mark>
+		<mark>a.derivative -= b.derivative;</mark>
+		<mark>return a;</mark>
+	<mark>}</mark></pre>
+			
+			<div class="instructions">
+				<p>Next up is multiplication. Because a constant factor is simply passed on to the derivative &ndash; meaning that <b>(cf)' = cf'</b> &ndash; we simply apply multiplication with a float to both the value and the derivative. </p>
+			</div>
+			
+			<pre translate="no">	<mark>public static NoiseSample operator * (NoiseSample a, float b) {</mark>
+		<mark>a.value *= b;</mark>
+		<mark>a.derivative *= b;</mark>
+		<mark>return a;</mark>
+	<mark>}</mark>
+
+	<mark>public static NoiseSample operator * (float a, NoiseSample b) {</mark>
+		<mark>b.value *= a;</mark>
+		<mark>b.derivative *= a;</mark>
+		<mark>return b;</mark>
+	<mark>}</mark></pre>
+			
+			<div class="instructions">
+				<p>To be complete, we should also support the multiplication of two noise samples. In that case we have to apply the product rule to get the final derivative.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-product-rule" id="q-product-rule">What's the product rule?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">	<mark>public static NoiseSample operator * (NoiseSample a, NoiseSample b) {</mark>
+		<mark>a.derivative = a.derivative * b.value + b.derivative * a.value;</mark>
+		<mark>a.value *= b.value;</mark>
+		<mark>return a;</mark>
+	<mark>}</mark></pre>
+			
+			<div class="instructions">
+				<p>Let's not bother with division now and just rewrite <code>Sum</code> so it uses a multiplication instead.</p>
+			</div>
+			
+			<pre translate="no">	public static NoiseSample Sum (
+		NoiseMethod method, Vector3 point, float frequency, int octaves, float lacunarity, float persistence
+	) {
+		NoiseSample sum = method(point, frequency);
+		float amplitude = 1f;
+		float range = 1f;
+		for (int o = 1; o &lt; octaves; o++) {
+			frequency *= lacunarity;
+			amplitude *= persistence;
+			range += amplitude;
+			sum += method(point, frequency) * amplitude;
+		}
+		return sum <mark>* (1f / range)</mark>;
+	}</pre>
+			
+			<div class="instructions">
+				<p>Now we have to adjust how we use the result of <code>Sum</code> in <code>TextureCreator.FillTexture</code>. As we don't use derivatives there we can simply grab the sample's value.</p>
+			</div>
+			
+			<pre translate="no">				float sample =
+					Noise.Sum(method, point, frequency, octaves, lacunarity, persistence)<mark>.value</mark>;</pre>
+			
+			<div class="instructions">
+				<p>We do want to keep the whole sample inside <code>SurfaceCreator.Refresh</code>, so we turn <code>sample</code> into a <code>NoiseSample</code> instead of a float and extract its value when needed for the vertex color and offset.</p>
+			</div>
+			
+			<pre translate="no">				Vector3 point = Vector3.Lerp(point0, point1, x * stepSize);
+				<mark>NoiseSample</mark> sample =
+					Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);
+				sample = type == NoiseMethodType.Value ? (sample - 0.5f) : (sample * 0.5f);
+				if (coloringForStrength) {
+					colors[v] = coloring.Evaluate(sample<mark>.value</mark> + 0.5f);
+					sample *= amplitude;
+				}
+				else {
+					sample *= amplitude;
+					colors[v] = coloring.Evaluate(sample<mark>.value</mark> + 0.5f);
+				}
+				vertices[v].y = sample<mark>.value</mark>;
+</pre>
+			
+			<div class="instructions">
+				<p>We can use the same approach as before to turn the derivative into a normal. The only difference is that we have to use the derivative's Y component instead of its Z component, because we're sampling in XY instead of in XZ.</p>
+			</div>
+			
+			<pre translate="no">				vertices[v].y = sample.value;
+				<mark>normals[v] = new Vector3(-sample.derivative.x, 1f, -sample.derivative.y).normalized;</mark></pre>
+			
+			<div class="instructions">
+				<p>Now we can choose whether to use analyitical derivatives or stick with our numerical approach to define our normals. Let's add an option to choose between them so their results can be easily compared.</p>
+			</div>
+			
+			<pre translate="no">	<mark>public bool analyticalDerivatives;</mark>
+			
+	public void Refresh () {
+		&hellip;
+				vertices[v].y = sample.value;
+				<mark>if (analyticalDerivatives) {</mark>
+					normals[v] =
+						new Vector3(-sample.derivative.x, 1f, -sample.derivative.y).normalized;
+				<mark>}</mark>
+			}
+		}
+		mesh.vertices = vertices;
+		mesh.colors = colors;
+		<mark>if (!analyticalDerivatives) {</mark>
+			CalculateNormals();
+		<mark>}</mark>
+		mesh.normals = normals;
+	}</pre>
+			
+			<figure>
+				<img src="06-analytical.png" width="320" height="346">
+				<figcaption>Using analytical derivatives. Or not.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Or course our sampled derivatives are still zero, so the resulting normals all point straight up. So it's time to start calculating analytical derivatives!</p>
+				<p>The first thing to consider is the <code>Noise.Smooth</code> method, which computes <b>6<i>t</i><sup>5</sup> - 15<i>t</i><sup>4</sup> + 10<i>t</i><sup>3</sup></b>. It's derivative is <b>30<i>t</i><sup>4</sup> - 60<i>t</i><sup>3</sup> + 30<i>t</i><sup>2</sup></b>, so add a method to calculate that as well.</p>
+			</div>
+			
+			<pre translate="no">	<mark>private static float SmoothDerivative (float t) {</mark>
+		<mark>return 30f * t * t * (t * (t - 2f) + 1f);</mark>
+	<mark>}</mark></pre>
+			
+			<div class="instructions">
+				<p>We first consider the most simple noise method that we have, which is <code>Value1D</code>. To recap, it determines two hash values, interpolates between them using the smooth function, and scales the result.</p>
+			</div>
+			
+			<pre translate="no">	public static NoiseSample Value1D (Vector3 point, float frequency) {
+		point *= frequency;
+		int i0 = Mathf.FloorToInt(point.x);
+		float t = point.x - i0;
+		i0 &amp;= hashMask;
+		int i1 = i0 + 1;
+
+		int h0 = hash[i0];
+		int h1 = hash[i1];
+
+		t = Smooth(t);
+		NoiseSample sample;
+		sample.value = Mathf.Lerp(h0, h1, t) * (1f / hashMask);
+		sample.derivative.x = 0f;
+		sample.derivative.y = 0f;
+		sample.derivative.z = 0f;
+		sample.derivative *= frequency;
+		return sample;
+	}</pre>
+			
+			<div class="instructions">
+				<p>As the scaling applies to the derivative as well, we can perform the multiplication with the whole sample just before we return it.</p>
+			</div>
+			
+			<pre translate="no">		sample.value = Mathf.Lerp(h0, h1, t)<mark>;</mark>
+		sample.derivative.x = 0f;
+		sample.derivative.y = 0f;
+		sample.derivative.z = 0f;
+		sample.derivative *= frequency;
+		return sample <mark>* (1f / hashMask)</mark>;</pre>
+			
+			<div class="instructions">
+				<p>To get the derivative of <code>Smooth(t)</code>, we simply invoke <code>SmoothDerivative(t)</code> with the unsmoothed <code>t</code> and hold on to it.</p>
+			</div>
+			
+			<pre translate="no">		<mark>float dt = SmoothDerivative(t);</mark>
+		t = Smooth(t);</pre>
+			
+			<div class="instructions">
+				<p>But how do we deal with the linear interpolation? Remember that linear interpolation is just a simple function. We could have directly programmed <b>h<sub>0</sub> + (h<sub>1</sub> - h<sub>0</sub>)<i>t</i></b> instead of using <code>Mathf.Lerp</code>. As <b>h<sub>0</sub></b> and <b>h<sub>1</sub></b> are hash values, they are constants. Let's make that explicit by putting all constant components of the function into variables.</p>
+			</div>
+			
+			<pre translate="no">		float dt = SmoothDerivative(t);
+		t = Smooth(t);
+
+		<mark>float a = h0;</mark>
+		<mark>float b = h1 - h0;</mark>
+
+		NoiseSample sample;
+		sample.value = <mark>a + b * t</mark>;</pre>
+			
+			<div class="instructions">
+				<p>The derivative of <b>a + b<i>t</i></b> is simply <b>b<i>t</i>'</b>, so that becomes our partial derivative for X. As there's no change in the Y and Z directions, those components remain zero.</p>
+			</div>
+			
+			<pre translate="no">		sample.derivative.x = <mark>b * dt</mark>;</pre>
+			
+			<div class="instructions">
+				<p>You'll notice that the numerical approach produces normals that don't always follow the shape of the mesh. The numerical normals produce more extreme results. This is so because they adhere to the actual shape of the noise, regardless of the resolution of the mesh. This difference becomes larger as the mesh resolution decreases, or as the frequency of the noise increases. If the resolution is too low, the result will look wrong.</p>
+				<p>This is a pretty good reason for using the actual mesh topology to compute the normals, instead of relying on analytical derivatives. No matter how badly the mesh approximates the noise, at least its normals always look reasonable. An advantage of analytical derivatives is that the edges aren't treated differently, which means you can break the terrain into multiple meshes without causing normal seams.</p>
+			</div>
+			
+			<figure>
+				<img alt="analytical" src="06-analytical-20.png" width="320" height="170">
+				<img alt="mesh" src="06-numerical-20.png" width="320" height="170">
+				<figcaption>Mutiple octaves of 1D Value noise at resolution 20, analytical vs. numerical normals.</figcaption>
+			</figure>
+			
+			<figure>
+				<img alt="analytical" src="06-analytical-05.png" width="290" height="170">
+				<img alt="mesh" src="06-numerical-05.png" width="290" height="170">
+				<figcaption>The same noise at resolution 5, analytical vs. numerical normals.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>While our normal calculation seems correct, it goes wrong when we rotate the noise. This is because the derivative calculation doesn't care what direction X points to, but we do. So when supplying a rotated point to our noise, we have to rotate the derivative vector in the opposite direction to get the correct result from our frame of reference. We do this by multiplying with the inverse of our rotation quaterion.</p>
+			</div>
+			
+			<pre translate="no">	public void Refresh () {
+		&hellip;
+		Quaternion q = Quaternion.Euler(rotation);
+		<mark>Quaternion qInv = Quaternion.Inverse(q);</mark>
+		&hellip;
+		
+				<mark>sample.derivative = qInv * sample.derivative;</mark>
+				if (analyticalDerivatives) {
+					normals[v] =
+						new Vector3(-sample.derivative.x, 1f, -sample.derivative.y).normalized;
+				}
+		&hellip;
+	}</pre>
+			
+			<figure>
+				<img alt="not rotated" src="06-normals-not-rotated.png" width="220" height="210">
+				<img alt="rotated" src="06-normals-rotated.png" width="220" height="210">
+				<figcaption>Rotated 1D Value noise, using unrotated vs. rotated derivatives.</figcaption>
+			</figure>
+			
+			<h2>Dealing with More Dimensions</h2>
+			
+			<div class="instructions">
+				<p>When computing the derivatives for <code>Value2D</code>, we have to take interpolation over two dimensions into account. We can replace the use of the nested <code>Mathf.Lerp</code> invocations with the large function <b>h<sub>00</sub> + (h<sub>10</sub> - h<sub>00</sub>)<i>t<sub>x</sub></i> + (h<sub>01</sub> + (h<sub>11</sub> - h<sub>01</sub>)<i>t<sub>x</sub></i> - (h<sub>00</sub> + (h<sub>10</sub> - h<sub>00</sub>)<i>t<sub>x</sub></i>))<i>t<sub>y</sub></i></b>, which can be rewritten to get <b>h<sub>00</sub> + (h<sub>10</sub> - h<sub>00</sub>)<i>t<sub>x</sub></i> + (h<sub>01</sub> - h<sub>00</sub>)<i>t<sub>y</sub></i> + (h<sub>11</sub> - h<sub>01</sub> - h<sub>10</sub> + h<sub>00</sub>)<i>t<sub>x</sub>t<sub>y</sub></i></b>. Then we turn the hash values into constants, and end up with <b>a + b<i>t<sub>x</sub></i> + c<i>t<sub>y</sub></i> + d<i>t<sub>x</sub>t<sub>y</sub></i></b>, which is a lot more manageable.</p>
+				<p>Note that we can rewrite our new function to <b>a + c<i>t<sub>y</sub></i> + (b + d<i>t<sub>y</sub></i>)<i>t<sub>x</sub></i></b>. Because <b>t<sub>y</sub></b> is held constant when determining the partial derivative for X, it simply becomes <b>(b + d<i>t<sub>y</sub></i>)<i>t<sub>x</sub></i>'</b>.</p>
+				<p>As we can also rewrite our function to <b>a + b<i>t<sub>x</sub></i> + (c + d<i>t<sub>x</sub></i>)<i>t<sub>y</sub></i></b>, the partial derivative for Y becomes the function <b>(c + d<i>t<sub>x</sub></i>)<i>t<sub>y</sub></i>'</b>.</p>
+			</div>
+			
+			<pre translate="no">	public static NoiseSample Value2D (Vector3 point, float frequency) {
+		&hellip;
+
+		<mark>float dtx = SmoothDerivative(tx);</mark>
+		<mark>float dty = SmoothDerivative(ty);</mark>
+		tx = Smooth(tx);
+		ty = Smooth(ty);
+
+		<mark>float a = h00;</mark>
+		<mark>float b = h10 - h00;</mark>
+		<mark>float c = h01 - h00;</mark>
+		<mark>float d = h11 - h01 - h10 + h00;</mark>
+
+		NoiseSample sample;
+		sample.value = <mark>a + b * tx + (c + d * tx) * ty</mark>;
+		sample.derivative.x = <mark>(b + d * ty) * dtx</mark>;
+		sample.derivative.y = <mark>(c + d * tx) * dty</mark>;
+		sample.derivative.z = 0f;
+		sample.derivative *= frequency;
+		return sample <mark>* (1f / hashMask)</mark>;
+	}</pre>
+			
+			<figure>
+				<img alt="analytical" src="07-value-2d-analytical.png" width="350" height="240">
+				<img alt="numerical" src="07-value-2d-numerical.png" width="350" height="240">
+				<figcaption>2D Value noise, using analytical vs. numerical normals.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>When you apply the same approach to <code>Value3D</code>, you'll end up with a quite large function of the form <b>a + b<i>t<sub>x</sub></i> + c<i>t<sub>y</sub></i> + d<i>t<sub>z</sub></i> + e<i>t<sub>x</sub>t<sub>y</sub></i> + f<i>t<sub>x</sub>t<sub>z</sub></i> + g<i>t<sub>y</sub>t<sub>z</sub></i> + h<i>t<sub>x</sub>t<sub>y</sub>t<sub>z</sub></i></b>.</p>
+				<p>In this case the partial derivative for X is <b>(b + e<i>t<sub>y</sub></i> + (f + h<i>t<sub>y</sub></i>)<i>t<sub>z</sub></i>)<i>t<sub>x</sub></i>'</b> and the other two partial derivatives look similar. You might think that we don't actually use the partial derivative of Z for our mesh, but we will when we rotate the noise around the X or Y axis.</p>
+			</div>
+			
+			<pre translate="no">	public static NoiseSample Value3D (Vector3 point, float frequency) {
+		&hellip;
+		
+		<mark>float dtx = SmoothDerivative(tx);</mark>
+		<mark>float dty = SmoothDerivative(ty);</mark>
+		<mark>float dtz = SmoothDerivative(tz);</mark>
+		tx = Smooth(tx);
+		ty = Smooth(ty);
+		tz = Smooth(tz);
+
+		<mark>float a = h000;</mark>
+		<mark>float b = h100 - h000;</mark>
+		<mark>float c = h010 - h000;</mark>
+		<mark>float d = h001 - h000;</mark>
+		<mark>float e = h110 - h010 - h100 + h000;</mark>
+		<mark>float f = h101 - h001 - h100 + h000;</mark>
+		<mark>float g = h011 - h001 - h010 + h000;</mark>
+		<mark>float h = h111 - h011 - h101 + h001 - h110 + h010 + h100 - h000;</mark>
+
+		NoiseSample sample;
+		sample.value = <mark>a + b * tx + (c + e * tx) * ty + (d + f * tx + (g + h * tx) * ty) * tz</mark>;
+		sample.derivative.x = <mark>(b + e * ty + (f + h * ty) * tz) * dtx</mark>;
+		sample.derivative.y = <mark>(c + e * tx + (g + h * tx) * tz) * dty</mark>;
+		sample.derivative.z = <mark>(d + f * tx + (g + h * tx) * ty) * dtz</mark>;
+		sample.derivative *= frequency;
+		return sample <mark>* (1f / hashMask)</mark>;
+	}</pre>
+			
+			<figure>
+				<img alt="analytical" src="07-value-3d-analytical.png" width="350" height="240">
+				<img alt="numerical" src="07-value-3d-numerical.png" width="350" height="240">
+				<figcaption>3D Value noise, using analytical vs. numerical normals.</figcaption>
+			</figure>
+			
+			<h2>Computing the Derivatives of Perlin Noise</h2>
+			
+			<div class="instructions">
+				<p>How about the analytical derivatives of Perlin noise? Let's start by doing the same for <code>Perlin1D</code> that we did for <code>Value1D</code>, except that we're now using gradient values instead of hash values.</p>
+			</div>
+			
+			<pre translate="no">	public static NoiseSample Perlin1D (Vector3 point, float frequency) {
+		point *= frequency;
+		int i0 = Mathf.FloorToInt(point.x);
+		float t0 = point.x - i0;
+		float t1 = t0 - 1f;
+		i0 &amp;= hashMask;
+		int i1 = i0 + 1;
+		
+		float g0 = gradients1D[hash[i0] &amp; gradientsMask1D];
+		float g1 = gradients1D[hash[i1] &amp; gradientsMask1D];
+
+		float v0 = g0 * t0;
+		float v1 = g1 * t1;
+
+		<mark>float dt = SmoothDerivative(t0);</mark>
+		float t = Smooth(t0);
+
+		<mark>float a = v0;</mark>
+		<mark>float b = v1 - v0;</mark>
+
+		NoiseSample sample;
+		sample.value = <mark>a + b * t</mark>;
+		sample.derivative.x = <mark>b * dt</mark>;
+		sample.derivative.y = 0f;
+		sample.derivative.z = 0f;
+		sample.derivative *= frequency;
+		return sample <mark>* 2f</mark>;
+	}</pre>
+			
+			<figure>
+				<img src="08-perlin-1d-wrong.png" width="300" height="180">
+				<figcaption>1D Perlin noise with incorrect analytical normals.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>The result is clearly wrong. This is because we are treating <b>a</b> and <b>b</b> as constants, while they are not. They are composed of gradients multiplied by <b>t<sub>0</sub></b> and <b>t<sub>1</sub></b>, which means that we have to get their derivatives as well. Fortunately, this is easy.</p>
+				<p>The derivative of <b>v<sub>0</sub></b> is simply <b>(g<sub>0</sub><i>t<sub>0</sub></i>)' = g<sub>0</sub></b>. And for <b>v<sub>1</sub></b> we have <b>(g<sub>1</sub><i>t<sub>1</sub></i>)' = (g<sub>1</sub>(<i>t<sub>0</sub></i> - 1))' = g<sub>1</sub></b>. These are simply the gradient directions, which makes sense.</p>
+				<p>The final derivative now becomes more complex. Because <b><i>a</i></b>, <b><i>b</i></b>, and <b><i>t</i></b> are all functions of <b><i>t<sub>0</sub></i></b> we can no longer eliminate anything and we have to apply the product rule. Specifically, we now have <b>(<i>a</i> + <i>bt</i>)' = <i>a</i>' + <i>b</i>'<i>t</i> + <i>bt</i>'</b>.</p>
+			</div>
+			
+			<pre translate="no">		<mark>float da = g0;</mark>
+		<mark>float db = g1 - g0;</mark>
+
+		NoiseSample sample;
+		sample.value = a + b * t;
+		sample.derivative.x = <mark>da + db * t +</mark> b * dt;</pre>
+			
+			<figure>
+				<img alt="analytical" src="08-perlin-1d-analytical.png" width="320" height="180">
+				<img alt="numerical" src="08-perlin-1d-numerical.png" width="320" height="180">
+				<figcaption>1D Perlin noise, using analytical vs. numerical normals.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Compared to the Value noise derivative, what we've effectively done is add the original noise formula, but with <b><i>a</i></b> and <b><i>b</i></b> replaced by their derivatives. Technically, we could also do this for Value noise, as they become zeros in that case and it has no effect.</p>
+				<p>Now consider the two-dimensional case. We calculate the noise with <b><i>a</i> + <i>b</i><i>t<sub>x</sub></i> + (<i>c</i> + <i>dt<sub>x</sub></i>)<i>t<sub>y</sub></i></b> and for Value noise the partial derivative for X is <b>(<i>b</i> + <i>dt<sub>y</sub></i>)<i>t<sub>x</sub></i>'</b>. To turn this into the correct derivative for Perlin noise, we have to add the gradient formula <b><i>a</i>' + <i>b</i>'<i>t<sub>x</sub></i> + (<i>c</i>' + <i>d</i>'<i>t<sub>x</sub></i>)<i>t<sub>y</sub></i></b> to it.</p>
+				<p>Of course the 2D gradients are 2D vectors. We have to add the X component of the gradient formula to the partial derivate of X, and its Y component to the partial derivative of Y.</p>
+			</div>
+			
+			<pre translate="no">	public static NoiseSample Perlin2D (Vector3 point, float frequency) {
+		&hellip;
+
+		<mark>float dtx = SmoothDerivative(tx0);</mark>
+		<mark>float dty = SmoothDerivative(ty0);</mark>
+		float tx = Smooth(tx0);
+		float ty = Smooth(ty0);
+
+		<mark>float a = v00;</mark>
+		<mark>float b = v10 - v00;</mark>
+		<mark>float c = v01 - v00;</mark>
+		<mark>float d = v11 - v01 - v10 + v00;</mark>
+
+		<mark>Vector2 da = g00;</mark>
+		<mark>Vector2 db = g10 - g00;</mark>
+		<mark>Vector2 dc = g01 - g00;</mark>
+		<mark>Vector2 dd = g11 - g01 - g10 + g00;</mark>
+
+		NoiseSample sample;
+		sample.value = <mark>a + b * tx + (c + d * tx) * ty</mark>;
+		<mark>sample.derivative = da + db * tx + (dc + dd * tx) * ty;</mark>
+		sample.derivative.x <mark>+= (b + d * ty) * dtx</mark>;
+		sample.derivative.y <mark>+= (c + d * tx) * dty</mark>;
+		sample.derivative.z = 0f;
+		sample.derivative *= frequency;
+		return sample <mark>* sqr2</mark>;
+	}</pre>
+			
+			<figure>
+				<img alt="analytical" src="08-perlin-2d-analytical.png" width="370" height="260">
+				<img alt="numerical" src="08-perlin-2d-numerical.png" width="370" height="260">
+				<figcaption>2D Perlin noise, using analytical vs. numerical normals.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>The partial derivatives for 3D Perlin noise become quite long, but are found using the same simple procedure.</p>
+			</div>
+			
+			<pre translate="no">	public static NoiseSample Perlin3D (Vector3 point, float frequency) {
+		&hellip;;
+		
+		<mark>float dtx = SmoothDerivative(tx0);</mark>
+		<mark>float dty = SmoothDerivative(ty0);</mark>
+		<mark>float dtz = SmoothDerivative(tz0);</mark>
+		float tx = Smooth(tx0);
+		float ty = Smooth(ty0);
+		float tz = Smooth(tz0);
+
+		<mark>float a = v000;</mark>
+		<mark>float b = v100 - v000;</mark>
+		<mark>float c = v010 - v000;</mark>
+		<mark>float d = v001 - v000;</mark>
+		<mark>float e = v110 - v010 - v100 + v000;</mark>
+		<mark>float f = v101 - v001 - v100 + v000;</mark>
+		<mark>float g = v011 - v001 - v010 + v000;</mark>
+		<mark>float h = v111 - v011 - v101 + v001 - v110 + v010 + v100 - v000;</mark>
+
+		<mark>Vector3 da = g000;</mark>
+		<mark>Vector3 db = g100 - g000;</mark>
+		<mark>Vector3 dc = g010 - g000;</mark>
+		<mark>Vector3 dd = g001 - g000;</mark>
+		<mark>Vector3 de = g110 - g010 - g100 + g000;</mark>
+		<mark>Vector3 df = g101 - g001 - g100 + g000;</mark>
+		<mark>Vector3 dg = g011 - g001 - g010 + g000;</mark>
+		<mark>Vector3 dh = g111 - g011 - g101 + g001 - g110 + g010 + g100 - g000;</mark>
+
+		NoiseSample sample;
+		sample.value = <mark>a + b * tx + (c + e * tx) * ty + (d + f * tx + (g + h * tx) * ty) * tz</mark>;
+		<mark>sample.derivative = da + db * tx + (dc + de * tx) * ty + (dd + df * tx + (dg + dh * tx) * ty) * tz;</mark>
+		sample.derivative.x <mark>+= (b + e * ty + (f + h * ty) * tz) * dtx</mark>;
+		sample.derivative.y <mark>+= (c + e * tx + (g + h * tx) * tz) * dty</mark>;
+		sample.derivative.z <mark>+= (d + f * tx + (g + h * tx) * ty) * dtz</mark>;
+		sample.derivative *= frequency;
+		return sample;
+	}</pre>
+			
+			<figure>
+				<img alt="analytical" src="08-perlin-3d-analytical.png" width="370" height="260">
+				<img alt="numerical" src="08-perlin-3d-numerical.png" width="370" height="260">
+				<figcaption>3D Perlin noise, using analytical vs. numerical normals.</figcaption>
+			</figure>
+			
+			<h2>Flowing Through Noise</h2>
+			
+			<div class="instructions">
+				<p>Because the noise derivative is a 3D vector, we could interpret it as a velocity map, which could represent stuff like movement of a liquid or gas. Let's create a <code>SurfaceFlow</code> component that visualizes the flow along our surface with a particle system.</p>
+				<p>It should get a reference to our surface, so it can know what noise settings are used. It also needs its own particle system and an array to hold the particles that it will be manipulating.</p>
+			</div>
+			
+			<pre translate="no"><mark>using UnityEngine;</mark>
+
+<mark>[RequireComponent(typeof(ParticleSystem))]</mark>
+<mark>public class SurfaceFlow : MonoBehaviour {</mark>
+
+	<mark>public SurfaceCreator surface;</mark>
+
+	<mark>private ParticleSystem system;</mark>
+	<mark>private ParticleSystem.Particle[] particles;</mark>
+<mark>}</mark></pre>
+			
+			<figure>
+				<img src="09-surface-flow.png" width="786" height="336">
+				<figcaption>Surface flow object.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>To make the system fit our surface area, set its shape to a unit cube. As this defines the particle spawn area and elevation will be determined by the terrain, I made the cube flat. The other settings don't matter that much, use whatever looks good to you.</p>
+			</div>
+			
+			<figure>
+				<img alt="settings" src="09-particle-settings-1.png" width="302" height="440">
+				<img alt="more settings" src="09-particle-settings-2.png" width="302" height="370">
+				<img alt="particles" src="09-particles.png" width="230" height="190">
+				<figcaption>Particle system settings.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>We'll leave the management of particles to the particle system. What we'll do is fetch the data of all living particles each update, manipulate their positions, and push that data back to the system. We do this via the <code>GetParticles</code> and <code>SetParticles</code> methods of <code>ParticleSystem</code>. The first method copies particle data into an array that we provide and returns how many living particles were copied. The second method is used to do the opposite. Of course we also have to grab the particle system component first and guarantee that our array can hold all the particles.</p>
+				<p>Actually, we'll use a <code>LateUpdate</code> method instead of <code>Update</code>. This is an alternative update method that will be invoked after regular update methods and physics calculations. We do this because we want to mess with the particles after the system has done its thing. If we don't, we might get some popping artifacts, as newborn particles won't have the correct values during their first frame.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-particles" id="q-particles">Why do I see no particles?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">	<mark>private void LateUpdate () {</mark>
+		<mark>if (system == null) {</mark>
+			<mark>system = GetComponent&lt;ParticleSystem>();</mark>
+		<mark>}</mark>
+		<mark>if (particles == null || particles.Length &lt; system.maxParticles) {</mark>
+			<mark>particles = new ParticleSystem.Particle[system.maxParticles];</mark>
+		<mark>}</mark>
+		<mark>int particleCount = system.GetParticles(particles);</mark>
+		<mark>PositionParticles();</mark>
+		<mark>system.SetParticles(particles, particleCount);</mark>
+	<mark>}</mark>
+	
+	<mark>private void PositionParticles () {</mark>
+	<mark>}</mark></pre>
+			
+			<div class="instructions">
+				<p>To make the particles adhere to the surface, we have to sample the noise the exact same way as <code>SurfaceCreator</code> does. Only in this case we loop through all particles and use their 2D positions as input, instead of going through a vertex grid.</p>
+			</div>
+			
+			<pre translate="no">	private void PositionParticles () {
+		<mark>Quaternion q = Quaternion.Euler(surface.rotation);</mark>
+		<mark>Quaternion qInv = Quaternion.Inverse(q);</mark>
+		<mark>NoiseMethod method = Noise.methods[(int)surface.type][surface.dimensions - 1];</mark>
+		<mark>float amplitude = surface.damping ? surface.strength / surface.frequency : surface.strength;</mark>
+		<mark>for (int i = 0; i &lt; particles.Length; i++) {</mark>
+			<mark>Vector3 position = particles[i].position;</mark>
+			<mark>Vector3 point = q * new Vector3(position.x, position.z) + surface.offset;</mark>
+			<mark>NoiseSample sample = Noise.Sum(method, point,</mark>
+				<mark>surface.frequency, surface.octaves, surface.lacunarity, surface.persistence);</mark>
+			<mark>sample = surface.type == NoiseMethodType.Value ? (sample - 0.5f) : (sample * 0.5f);</mark>
+			<mark>sample *= amplitude;</mark>
+			<mark>sample.derivative = qInv * sample.derivative;</mark>
+			<mark>position.y = sample.value;</mark>
+			<mark>particles[i].position = position;</mark>
+		<mark>}</mark>
+	}</pre>
+			
+			<figure>
+				<img alt="flat" src="09-particles-flat.png" width="350" height="250">
+				<img alt="adhering to surface" src="09-particles-adhering.png" width="350" height="250">
+				<figcaption>Particles ignoring vs. adhering to the surface.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Because the particles have a size they are now partially clipped by our surface. We can solve this by simply moving them upward a bit.</p>
+			</div>
+			
+			<pre translate="no">		position.y = sample.value <mark>+ system.startSize</mark>;</pre>
+			
+			<figure>
+				<img src="09-particles-offset.png" width="350" height="250">
+				<figcaption>Particles with vertical offset.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>What would happen if we used the derivate of our noise as a velocity? We can do so by simply adding it to the current particle position, multiplied by the time delta. By setting the vertical position after this movement, we effectively ignore the Z component of the derivative. In that case the noise sample gives us the altitude where the partical was, not what it would have after it moved. But if the movement is not too large this shoudln't be much of a problem.</p>
+			</div>
+			
+			<pre translate="no">			<mark>position += sample.derivative * Time.deltaTime;</mark>
+			position.y = sample.value + system.startSize;</pre>
+			
+			<figure>
+				<img src="09-derivative-100.png" width="330" height="290">
+				<figcaption>Using the derivate as velocity.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>This causes the particles to immediately clump and become quite jittery, so it looks like the resulting displacement is too large. Also, because the particles are not constrained to their spawn area, they also move beyond the surface edge. Let's add a <code>flowStrenth</code> setting so we can bring this down to a reasonable level.</p>
+			</div>
+			
+			<pre translate="no">	<mark>public float flowStrength;</mark>
+			
+	private void PositionParticles () {
+		&hellip;
+			position += sample.derivative * Time.deltaTime <mark>* flowStrength</mark>;
+		&hellip;
+		}
+	}</pre>
+			
+			<figure>
+				<img alt="flow strength" src="09-flow-strength.png" width="320" height="80"><br>
+				<img alt="0.10" src="09-derivative-010.png" width="330" height="290">
+				<img alt="0.01" src="09-derivative-001.png" width="330" height="290">
+				<figcaption>Flow strength 0.10 and 0.01.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>When using a lower strength the clumping happens again, but slow enough that we can actually see what is happening. Indeed, there are areas that the particles quickly leave and areas where they clump until they expire. If we interpret this as gas or liquid flow, then these areas are sources and sinks where matter is added to and removed from the system. Alternatively, the matter expands and compresses.</p>
+				<p>While this already produces an interesting effect, to make something that looks more realistic we have to get rid of the sources and sinks and instead simulate the flow of a noncompressible fluid. We can do this by performing the 2D curl operation on our noise, which gives us a smoothly flowing vector field. When using this field  to set the velocities of our particles, they will end up flowing around the slopes of our surface.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-curl" id="q-curl">What's the curl operator?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">			<mark>Vector3 curl = new Vector3(sample.derivative.y, 0f, -sample.derivative.x);</mark>
+			position += <mark>curl</mark> * Time.deltaTime * flowStrength;
+</pre>
+			
+			<figure>
+				<img alt="0.10" src="09-curl-25.png" width="380" height="310">
+				<img alt="0.01" src="09-curl-10.png" width="380" height="310">
+				<figcaption>2D curl at strength 0.25 and 0.10.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>If you don't like that the particles move out of the surface's area, you can simply eliminate them when they do so by setting their remaining lifetime to zero. That will recude the number of particles on the surface as well though, because some of the particles that leave the surface would have eventually returned to it.</p>
+			</div>
+			
+			<pre translate="no">			particles[i].position = position;
+			<mark>if (position.x &lt; -0.5f || position.x > 0.5f || position.z &lt; -0.5f || position.z > 0.5f) {</mark>
+				<mark>particles[i].lifetime = 0f;</mark>
+			<mark>}</mark></pre>
+			
+			<figure>
+				<img src="09-particles-contained.png" width="400" height="310">
+				<figcaption>Particles no longer escape.</figcaption>
+			</figure>
+			
+			<h2>Flowing in 3D</h2>
+			
+			<div class="instructions">
+				<p>We've now seen 2D curl noise in action, but what would it look like in 3D? Let's make a new scene to find out!</p>
+				<p>Create a <code>Flow3D</code> component, to distinguish it from our surface flow component. It has the same particle system logic, and it also needs its own noise settings. It doesn't need a separate flow strength variable, as the noise strength serves the same purpose.</p>
+			</div>
+			
+			<pre translate="no"><mark>using UnityEngine;</mark>
+
+<mark>[RequireComponent(typeof(ParticleSystem))]</mark>
+<mark>public class Flow3D : MonoBehaviour {</mark>
+	
+	<mark>public Vector3 offset;</mark>
+	<mark>public Vector3 rotation;</mark>
+	
+	<mark>[Range(0f, 1f)]</mark>
+	<mark>public float strength = 1f;</mark>
+	
+	<mark>public bool damping;</mark>
+	
+	<mark>public float frequency = 1f;</mark>
+	
+	<mark>[Range(1, 8)]</mark>
+	<mark>public int octaves = 1;</mark>
+	
+	<mark>[Range(1f, 4f)]</mark>
+	<mark>public float lacunarity = 2f;</mark>
+	
+	<mark>[Range(0f, 1f)]</mark>
+	<mark>public float persistence = 0.5f;</mark>
+	
+	<mark>[Range(1, 3)]</mark>
+	<mark>public int dimensions = 3;</mark>
+	
+	<mark>public NoiseMethodType type;</mark>
+	
+	<mark>private ParticleSystem system;</mark>
+	<mark>private ParticleSystem.Particle[] particles;</mark>
+	
+	<mark>private void LateUpdate () {</mark>
+		<mark>if (system == null) {</mark>
+			<mark>system = GetComponent&lt;ParticleSystem>();</mark>
+		<mark>}</mark>
+		<mark>if (particles == null || particles.Length &lt; system.maxParticles) {</mark>
+			<mark>particles = new ParticleSystem.Particle[system.maxParticles];</mark>
+		<mark>}</mark>
+		<mark>int particleCount = system.GetParticles(particles);</mark>
+		<mark>PositionParticles();</mark>
+		<mark>system.SetParticles(particles, particleCount);</mark>
+	<mark>}</mark>
+	
+	<mark>private void PositionParticles () {</mark>
+	<mark>}</mark>
+<mark>}</mark></pre>
+			
+			<figure>
+				<img alt="object" src="10-flow.png" width="786" height="330">
+				<img alt="particle system settings" src="10-particle-system.png" width="314" height="508">
+				<figcaption>3D Flow object.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>This time, don't directly set the position of the particles, instead set their velocity and let the particle system figure it out from there. That way you can configure the system to color and stretch the particles based on their speed, which looks nice. I chose a gradient that makes it look like particles start to glow as they move faster, but you can use whatever settings you like. I also now use a sphere for the spawn shape.</p>
+			</div>
+			
+			<pre translate="no">	private void PositionParticles () {
+		<mark>Quaternion q = Quaternion.Euler(rotation);</mark>
+		<mark>Quaternion qInv = Quaternion.Inverse(q);</mark>
+		<mark>NoiseMethod method = Noise.methods[(int)type][dimensions - 1];</mark>
+		<mark>float amplitude = damping ? strength / frequency : strength;</mark>
+		<mark>for (int i = 0; i &lt; particles.Length; i++) {</mark>
+			<mark>Vector3 position = particles[i].position;</mark>
+			<mark>Vector3 point = q * position + offset;</mark>
+			<mark>NoiseSample sample = Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);</mark>
+			<mark>sample *= amplitude;</mark>
+			<mark>sample.derivative = qInv * sample.derivative;</mark>
+			<mark>particles[i].velocity = sample.derivative;</mark>
+		<mark>}</mark>
+	}</pre>
+			
+			<figure>
+				<img alt="Value" src="10-value-derivatives.png" width="280" height="280">
+				<img alt="Perlin" src="10-perlin-derivatives.png" width="280" height="280">
+				<figcaption>Using derivatives of Value and Perlin noise as velocities.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Of course we need to apply the curl operation to get a proper flow. Let's start naive and use only one noise sample to compute it.</p>
+			</div>
+			
+			<pre translate="no">			<mark>Vector3 curl;</mark>
+			<mark>curl.x = sample.derivative.y - sample.derivative.z;</mark>
+			<mark>curl.y = sample.derivative.z - sample.derivative.x;</mark>
+			<mark>curl.z = sample.derivative.x - sample.derivative.y;</mark>
+			particles[i].velocity = <mark>curl</mark>;</pre>
+			
+			<figure>
+				<img alt="flat noise" src="10-flat.png" width="320" height="320">
+				<img alt="looking from the side" src="10-flat-sideways.png" width="320" height="320">
+				<figcaption>Flattened noise, shown head-on and from the side.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>While this does appear nice from a certain viewpoint, when observing the resulting noise from multiple angles it becomes clear that the result is flat. All particles move in a plane that has (1,1,1) as its normal, which makes sense because all three components of our source vector fields are equal so we end up with a 1D rotation.</p>
+				<p>So we have to take three noise samples. To make them different, we simply add offsets in different directions.</p>
+			</div>
+			
+			<pre translate="no">			Vector3 point = q * position + offset;
+			NoiseSample <mark>sampleX</mark> = Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);
+			<mark>sampleX</mark> *= amplitude;
+			<mark>sampleX</mark>.derivative = qInv * <mark>sampleX</mark>.derivative;
+			<mark>point = q * new Vector3(position.x + 100f, position.y, position.z) + offset;</mark>
+			<mark>NoiseSample sampleY = Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);</mark>
+			<mark>sampleY *= amplitude;</mark>
+			<mark>sampleY.derivative = qInv * sampleY.derivative;</mark>
+			<mark>point = q * new Vector3(position.x, position.y + 100f, position.z) + offset;</mark>
+			<mark>NoiseSample sampleZ = Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);</mark>
+			<mark>sampleZ *= amplitude;</mark>
+			<mark>sampleZ.derivative = qInv * sampleZ.derivative;</mark>
+			<mark>Vector3 curl;</mark>
+			curl.x = <mark>sampleZ</mark>.derivative.y - <mark>sampleY</mark>.derivative.z;
+			curl.y = <mark>sampleX</mark>.derivative.z - <mark>sampleZ</mark>.derivative.x;
+			curl.z = <mark>sampleY</mark>.derivative.x - <mark>sampleX</mark>.derivative.y;
+			particles[i].velocity = curl;</pre>
+			
+			<figure>
+				<img alt="Value" src="10-value-curl.png" width="320" height="320">
+				<img alt="Perlin" src="10-perlin-curl.png" width="320" height="320">
+				<figcaption>3D Curl, using frequency 1 Value and Perlin noise.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>It is possible to swap components of our sample points &ndash; transforming the noise result as well &ndash; as long as we also swap them in the curl calculation. For example, we can swap the X and Z components for <code>Sample1</code>.</p>
+			</div>
+			
+			<pre translate="no">			Vector3 point = q * <mark>new Vector3(position.z, position.y, position.x)</mark> + offset;
+			NoiseSample sampleX = Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);
+			&hellip;
+			curl.x = sampleZ.derivative.y - sampleY.derivative.z;
+			curl.y = <mark>sampleX.derivative.x</mark> - sampleZ.derivative.x;
+			curl.z = sampleY.derivative.x - sampleX.derivative.y;
+			</pre>
+			
+			<div class="instructions">
+				<p>This doesn't seem very useful, but we can do it for all three samples so that the curl is computed using X and Y components only.</p>
+			</div>
+			
+			<pre translate="no">			Vector3 point = q * new Vector3(position.z, position.y, position.x) + offset;
+			NoiseSample sampleX = Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);
+			sampleX *= amplitude;
+			sampleX.derivative = qInv * sampleX.derivative;
+			point = q * new Vector3(position.x + 100f, <mark>position.z</mark>, <mark>position.y</mark>) + offset;
+			NoiseSample sampleY = Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);
+			sampleY *= amplitude;
+			sampleY.derivative = qInv * sampleY.derivative;
+			point = q * new Vector3(<mark>position.y</mark>, <mark>position.x</mark> + 100f, position.z) + offset;
+			NoiseSample sampleZ = Noise.Sum(method, point, frequency, octaves, lacunarity, persistence);
+			sampleZ *= amplitude;
+			sampleZ.derivative = qInv * sampleZ.derivative;
+			Vector3 curl;
+			curl.x = <mark>sampleZ.derivative.x</mark> - <mark>sampleY.derivative.y</mark>;
+			curl.y = sampleX.derivative.x - <mark>sampleZ.derivative.y</mark>;
+			curl.z = sampleY.derivative.x - sampleX.derivative.y;</pre>
+			
+			<div class="instructions">
+				<p>This means that we could technically get away with three samples of 2D noise, which is a lot cheaper to compute, especially when using multiple octaves. Even though this means that part of the equation does not vary in each direction, combining three 2D samples still leads to acceptable results.</p>
+			</div>
+			
+			<figure>
+				<img alt="Value" src="10-value-2d.png" width="320" height="320">
+				<img alt="Perlin" src="10-perlin-2d.png" width="320" height="320">
+				<figcaption>3D Curl, using 2D Value and Perlin noise.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>You can also create a flow that changes over time by adding an increasing offset to the noise. Adding to the Z component of 3D noise is an obvious choise. You typically want to keep the morph speed slow so the flow evolves slowly and smoothly.</p>
+				<p>We implement our offset by incrementing a variable each update. As we'll get numerical precision problems if it would grow too large, we wrap it at 256, which coincides with the period of our noise.</p>
+			</div>
+			
+			<pre translate="no">	<mark>public float morphSpeed;</mark>
+			
+	<mark>private float morphOffset;</mark>
+	
+	private void PositionParticles () {
+		&hellip;
+		<mark>morphOffset += Time.deltaTime * morphSpeed;</mark>
+		<mark>if (morphOffset > 256f) {</mark>
+			<mark>morphOffset -= 256f;</mark>
+		<mark>}</mark>
+		&hellip;
+			Vector3 point = q * new Vector3(position.z, position.y, position.x <mark>+ morphOffset</mark>) + offset;
+			&hellip;
+			point = q * new Vector3(position.x + 100f, position.z, position.y <mark>+ morphOffset</mark>) + offset;
+			&hellip;
+			point = q * new Vector3(position.y, position.x + 100f, position.z <mark>+ morphOffset</mark>) + offset;
+		&hellip;
+	}</pre>
+			
+			<figure>
+				<img src="10-morph-speed.png" width="320" height="274">
+				<figcaption>Morph speed.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Another fun thing you can do is manipulate the vector field before applying the curl operator. As long as it remains smooth, the curl operation will produce a divergence-free field. For example, we could adjust the field so that we end up with a vertical velocity. But we might as well directly add this velocity. We could even make it decrease with height, so upward movement dominates at the bottom but the noise dominates at the top. If you decrease the size of the spawn area &ndash; say to 0.1 &ndash; you'll get a focused flow of particles that branches outward the higher it gets.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-add-velocity" id="q-add-velocity">Can we really just add the velocity?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">			curl.x = sampleZ.derivative.x - sampleY.derivative.y;
+			curl.y = sampleX.derivative.x - sampleZ.derivative.y <mark>+ (1f / (1f + position.y))</mark>;
+			curl.z = sampleY.derivative.x - sampleX.derivative.y;</pre>
+			
+			<figure>
+				<img alt="Perlin one octave" src="10-column-perlin-1.png" width="230" height="340">
+				<img alt="Perlin two octaves" src="10-column-perlin-2.png" width="230" height="340"><br>
+				<img alt="Value one octave" src="10-column-value-1.png" width="180" height="300">
+				<img alt="Value two octaves" src="10-column-value-2.png" width="180" height="300">
+				<figcaption>Rising particles using Perlin and Value noise, one and two octaves.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>That's it! Have fun cooking up nice terrains and flows.</p>
+				<p>Enjoyed the tutorial? <a href="https://www.patreon.com/catlikecoding">Help me make more by becoming a patron!</a></p>
+			</div>
+			
+			<aside class="share"></aside>
+			
+			<h2>Downloads</h2>
+
+			<dl>
+				<dt><a href="noise-derivatives-01.unitypackage" onclick="_gaq.push(['_trackEvent', 'Tutorial Download', 'Noise Derivatives', '01']);" target="_blank" download rel="nofollow">noise-derivatives-01.unitypackage</a></dt>
+				<dd>The project after Setting the Scene.</dd>
+				<dt><a href="noise-derivatives-02.unitypackage" onclick="_gaq.push(['_trackEvent', 'Tutorial Download', 'Noise Derivatives', '02']);" target="_blank" download rel="nofollow">noise-derivatives-02.unitypackage</a></dt>
+				<dd>The project after Creating a Mesh.</dd>
+				<dt><a href="noise-derivatives-03.unitypackage" onclick="_gaq.push(['_trackEvent', 'Tutorial Download', 'Noise Derivatives', '03']);" target="_blank" download rel="nofollow">noise-derivatives-03.unitypackage</a></dt>
+				<dd>The project after Making a Noisy Surface.</dd>
+				<dt><a href="noise-derivatives-04.unitypackage" onclick="_gaq.push(['_trackEvent', 'Tutorial Download', 'Noise Derivatives', '04']);" target="_blank" download rel="nofollow">noise-derivatives-04.unitypackage</a></dt>
+				<dd>The project after Scaling the Displacement.</dd>
+				<dt><a href="noise-derivatives-05.unitypackage" onclick="_gaq.push(['_trackEvent', 'Tutorial Download', 'Noise Derivatives', '05']);" target="_blank" download rel="nofollow">noise-derivatives-05.unitypackage</a></dt>
+				<dd>The project after Calculating Normals.</dd>
+				<dt><a href="noise-derivatives-06.unitypackage" onclick="_gaq.push(['_trackEvent', 'Tutorial Download', 'Noise Derivatives', '06']);" target="_blank" download rel="nofollow">noise-derivatives-06.unitypackage</a></dt>
+				<dd>The project after Using Analytical Derivatives.</dd>
+				<dt><a href="noise-derivatives-07.unitypackage" onclick="_gaq.push(['_trackEvent', 'Tutorial Download', 'Noise Derivatives', '07']);" target="_blank" download rel="nofollow">noise-derivatives-07.unitypackage</a></dt>
+				<dd>The project after Dealing with More Dimensions.</dd>
+				<dt><a href="noise-derivatives-08.unitypackage" onclick="_gaq.push(['_trackEvent', 'Tutorial Download', 'Noise Derivatives', '08']);" target="_blank" download rel="nofollow">noise-derivatives-08.unitypackage</a></dt>
+				<dd>The project after Computing the Derivatives of Perlin Noise.</dd>
+				<dt><a href="noise-derivatives-09.unitypackage" onclick="_gaq.push(['_trackEvent', 'Tutorial Download', 'Noise Derivatives', '09']);" target="_blank" download rel="nofollow">noise-derivatives-09.unitypackage</a></dt>
+				<dd>The project after Flowing Through Noise.</dd>
+				<dt><a href="noise-derivatives-finished.unitypackage" onclick="_gaq.push(['_trackEvent', 'Tutorial Download', 'Noise Derivatives', 'Final']);" target="_blank" download rel="nofollow">noise-derivatives-finished.unitypackage</a></dt>
+				<dd>The finished project.</dd>
+			</dl>
+		</article>
+		
+		<dl class="questions-answers">
+			<dt><a href="index.html#q-mesh" id="a-mesh">What's a <code>Mesh</code>?</a></dt>
+			<dd>
+				<p>Conceptually, a <code>Mesh</code> is a construct used by the graphics hardware to draw complex stuff. It contains at least a collection of points in 3D space plus a set of triangles &ndash; the most basic 2D shapes &ndash; defined by these points. The triangles form the surface of whatever the mesh respresents. Often, you won't realize that you're looking at a bunch of triangles instead of a real object.</p>
+			</dd>
+			<dt><a href="index.html#q-require-component" id="a-require-component">What does <code>RequireComponent</code> do?</a></dt>
+			<dd>
+				<p>You can add the <code>RequireComponent</code> attribute to a component to indicate that you need another type of component to be attached to the same game object that your own component is. Unity will check whether this is the case when adding yours, and if not will add the required ones first.</p>
+				<p>Unity will also disallow removal of required components via the editor. However, you could still destroy them through scripts, so there's no hard guarantee they'll always exist.</p>
+				<p>The attribute has a version with one and two arguments. If you require more components, you'll have to add the attribute multiple times.</p>
+			</dd>
+			<dt><a href="index.html#q-normals" id="a-normals">How do normals work?</a></dt>
+			<dd>
+				<p>A normal is vector that is perpendicular to a surface. We always use normals of unit length and they point to the outside of its surface, not to the inside.</p>
+				<p>Normal vectors can be used to determine the angle at which a light ray hits a surface, which is used to determine the diffuse term of the lighting calculation. Specifically, it is the dot product of the normal and the light direction, as long as the result is positive. A negative result means that light is coming from behind it, in which case the surface is unlit. The normal is also used for other parts of the light calculation, in more complex shaders.</p>
+				<p>As a triangle is always flat, there shouldn't be a need to provide separate information about normals. However, by doing so we can cheat. In reality vertices don't have normals, triangles do. By attaching custom normals to vertices and interpolating between them across triangles, we can pretend that we have a smoothly curving surface instead of a bunch of flat triangles. This illusion is convincing, as long as you don't pay attention to the sharp silhouette of the mesh.</p>
+			</dd>
+			<dt><a href="index.html#q-recalculate-normals" id="a-recalculate-normals">How are normals recalculated?</a></dt>
+			<dd>
+				<p>The <code>Mesh.RecalculateNormals</code> method basically computes the normal of each vertex by figuring out which triangles use the vertex, determining the normals of those triangles, averaging them, and normalizing the result. This gives pretty good results that fit the mesh topology well. However, in the case of a grid the vertices along the edges are used by fewer triangles, so their normals are not as balanced as the other normals.</p>
+			</dd>
+			<dt><a href="index.html#q-gizmos" id="a-gizmos">What are gizmos?</a></dt>
+			<dd>
+				<p>Gizmos are visual cues that you can use in the editor. By default they're visible in the scene view and not in the game view, but you can adjust this via their toolbars.</p>
+				<p>The <code>Gizmos</code> utility class allows you to draw icons, lines, and some other things. Like with <code>Handles</code>, they are drawn directly in world space, so you have to manually transform vectors into the local space of objects to have them move along with them. I neglected to do that for our surface because I'll never move it, so its local space is the same as world space.</p>
+			</dd>
+			<dt><a href="index.html#q-cross-product" id="a-cross-product">What is the cross product?</a></dt>
+			<dd>
+				<p>The cross product of two vectors is an operation that produces a vector that has two interesting properties. First, it is perpendicular to the plane formed by both vectors. Second, its length is equal to the surface area of the parallelogram that has the vectors as edges. For example, the cross product of unit vectors pointing right and forward also has unit length and points either down or up, depending on the order of the operands.</p>
+				<p>Mathematically, the dot product for 3D vectors is defined as <b>(x, y, z) &times; (a, b, c) = (yc - zb, za - xc, xb - ya)</b>.</p>
+			</dd>
+			<dt><a href="index.html#q-vertex-index" id="a-vertex-index">How to get the vertex index for x and z?</a></dt>
+			<dd>
+				<p>How can we index our one-dimensional vertex array based on (x,z) coordinates? Because we defined the vertices as successive rows along the X axis, the indices of the first row of vertices are simply x. So the indices of the second row are also x, plus an offset equal to the length of a row. The third row adds twice that offset, and so on. In general, the vertex index is <b>zr + x</b>, where <b>r</b> is the vertex row length, which is resolution + 1.</p>
+			</dd>
+			<dt><a href="index.html#q-chain-rule" id="a-chain-rule">What's the chain rule?</a></dt>
+			<dd>
+				<p>The chain rule states that <b>f(g)' = f'(g)g'</b>. For example, consider <b>f = 2<i>t</i><sup>3</sup> - <i>t</i></b>. Its derivative is <b>f' =  6<i>t</i><sup>2</sup> - 1</b>. Now consider that <b>g = 2<i>t</i></b> and we're using <b>g</b> as input for <b>f</b> instead of <b><i>t</i></b>. Then we have <b>2g<sup>3</sup> - g = 2(2<i>t</i>)<sup>3</sup> - 2<i>t</i> = 16<i>t</i><sup>3</sup> - 2<i>t</i></b>. The derivative of that is <b>48<i>t</i><sup>2</sup> - 2</b>. If we use the chain rule instead, we get <b>(6(2<i>t</i>)<sup>2</sup> - 1)2</b>, which rewrites to the same result.</p>
+				<p>Applied to noise samples, it means that if we multiply our sample point by the frequency, the derivative of that is the frequency itself, so we have to multiply the sampled derivative by the frequency to get the correct result.</p>
+				<p>You could define the sample point's components in more exotic ways. For example, you could use <b>(<i>x</i>, 2<i>y</i>, <i>z</i><sup>2</sup>)</b>, in which case you'd have to multiply the partial derivatives by <b>1</b>, <b>2</b>, and <b>2<i>z</i></b>, respectively. However, the partial derivatives are computed by keeping the other dimensions static. So our approach will fail for sample points like <b>(<i>x</i> + <i>y</i>, <i>y</i>, <i>z</i>)</b>.</p>
+			</dd>
+			<dt><a href="index.html#q-operator-methods" id="a-operator-methods">How do operator methods work?</a></dt>
+			<dd>
+				<p>Operator methods are simply static methods that masquerade as an operator, just like properties are methods that pretend to be variables. Yes, methods are hidden everywhere. You're able to directly add <code>Vector3</code> values together because Unity has defined an operator method for it.</p>
+				<p>You should only overload operators this way if the result is obvious and makes sense, just like a method named <i>Add</i> should add stuff. For example, Unity has no multiplication method for two vectors, because there is no universal interpretation of what that should do.</p>
+				<p>Note that because <code>a += b</code> is shorthand for <code>a = a + b</code>, both cases are covered when overriding such an operator.</p>
+			</dd>
+			<dt><a href="index.html#q-adding-derivatives" id="a-adding-derivatives">Can derivatives really be added?</a></dt>
+			<dd>
+				<p>Yes they can, because the parts of a function are differentiated independently. For example, <b><i>(t</i><sup>3</sup> + 2<i>t</i>)' = 3<i>t</i><sup>2</sup> + 2</b>. In this case we can consider <b>f = <i>t</i><sup>3</sup></b> and <b>g = 2<i>t</i></b>.</p>
+			</dd>
+			<dt><a href="index.html#q-product-rule" id="a-product-rule">What's the product rule?</a></dt>
+			<dd>
+				<p>The product rule states that <b>(fg)' = f'g + fg'</b>. As an example, consider the case <b>f = <i>t</i><sup>3</sup> - 5</b> and <b>g = 2<i>t</i><sup>2</sup></b>. In that case we have <b>f' = 3<i>t</i><sup>2</sup></b> and <b>g' = 4<i>t</i></b>. Then <b>f'g + fg' = (3<i>t</i><sup>2</sup>)(2<i>t</i><sup>2</sup>) + (<i>t</i><sup>3</sup> - 5)(4<i>t</i>) = 6<i>t</i><sup>4</sup> + (4<i>t</i><sup>4</sup> - 20<i>t</i>) = 10<i>t</i><sup>4</sup> - 20<i>t</i></b>.</p>
+				<p>If we don't use the product rule then <b>(fg)' = ((<i>t</i><sup>3</sup> - 5)2<i>t</i><sup>2</sup>)' = (2<i>t</i><sup>5</sup> - 10<i>t</i><sup>2</sup>)' = 10<i>t</i><sup>4</sup> - 20<i>t</i></b>, which is the same result.</p>
+			</dd>
+			<dt><a href="index.html#q-particles" id="a-particles">Why do I see no particles?</a></dt>
+			<dd>
+				<p>If you end up in a situation where the particle system doesn't show anything, it's turned off. You turn it back on by clicking the <i>Simulate</i> button in the <i>Particle Effect</i> panel. It is visible in the scene view when you have the particle system selected.</p>
+			</dd>
+			<dt><a href="index.html#q-curl" id="a-curl">What's the curl operator?</a></dt>
+			<dd>
+				<p>The curl operator measures the rotation inside a vector field. Imagine that you are floating in a river. If all the water around you flows forward equally fast, then you are simply pushed forward as well. But if the water on your left happens to flow faster than the water on your right, you will be pushed forward harder on your left side than on your right side. You will start to rotate clockwise. Of course, sideways water movement influences the rotation as well.</p>
+				<p>That the curl operator gives us a measure of rotation is nice, but the main point is that when applied to a smooth vector field, the result is divergence-free, meaning that it gives us an incompressible velocity field.</p>
+				
+				<p>In three dimensions, given some vector field <b>F = (F<sub>x</sub>, F<sub>y</sub>, F<sub>z</sub>)</b>, the curl operation yields a 3D rotation vector and is defined as <b>(&delta;F<sub>z</sub>/&delta;<i>y</i> - &delta;F<sub>y</sub>/&delta;<i>z</i>, &delta;F<sub>x</sub>/&delta;<i>z</i> - &delta;F<sub>z</sub>/&delta;<i>x</i>, &delta;F<sub>y</sub>/&delta;<i>x</i> - &delta;F<sub>x</sub>/&delta;<i>y</i>)</b>. Here <b>&delta;</b> (delta) means rate of change. So the Y component is equal to the rate of change of <b>F<sub>x</sub></b> along <b><i>z</i></b> minus the rate of change of <b>F<sub>z</sub></b> along <b><i>x</i></b>, which matches our water example.</p>
+				<p>If we use noise samples for <b>F<sub>x</sub></b>, <b>F<sub>y</sub></b>, and <b>F<sub>z</sub></b>, then our noise derivatives directly give use the rates of change that we need. Note that we cannot directly use the noise derviate vector for <b>F</b>. Well, we could, but then we'd still need to figure out the derivatives of all its components in all three directions, so there's no point in doing that.</p>
+				<p>If we are only interested in a 2D result, then we can eliminate the third component and <b>&delta;<i>z</i></b> from the equation, so we end up with <b>(&delta;F<sub>z</sub>/&delta;<i>y</i>, -&delta;F<sub>z</sub>/&delta;<i>x</i>)</b>. As we are only using one component of <b>F</b> now, we can suffice with a single noise sample.</p>
+				<p>The use of the curl operator to simulate fluid flow was first mentioned in a paper by Robert Bridson et al.</p>
+			</dd>
+			<dt><a href="index.html#q-add-velocity" id="a-add-velocity">Can we really just add the velocity?</a></dt>
+			<dd>
+				<p>Yes. We want to add some vertical velocity to the result. That means we have to increase the Y component of the curl result, which is <b>&delta;F<sub>x</sub>/&delta;<i>z</i> - &delta;F<sub>z</sub>/&delta;<i>x</i></b>. We could do that by increasing <b>&delta;F<sub>x</sub>/&delta;<i>z</i></b>. So we add a vector field to <b>F<sub>x</sub></b> that smoothly increases in the Z direction and is contant in the other two directions.</p>
+				<p>For example, we could add <b>(0,0,<i>z</i>)</b> to <b>F<sub>x</sub></b>, which is smooth so <b>F<sub>x</sub> + (0,0,<i>z</i>)</b> is smooth as well. This means we add <b>(0,0,1)</b> to <b>&delta;F<sub>x</sub></b>, which leads to <b>(0,1,0)</b> being added to the curl result.</p>
+				<p>We can add a different field and end up adding <b>(0,1 / (1 + <i>y</i>),0)</b>, we just don't bother figuring out what it is. But if you insist, <b>(0,0,ln(1 + <i>y</i>))</b> is a suitable field.</p>
+			</dd>
+		</dl>
+		
+		<footer></footer>
+		<script src="../../jquery.js"></script>
+		<script src="../../default.js"></script>
+	</body>
+</html>

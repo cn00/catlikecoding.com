@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/transparency/">
+		<meta property="og:type" content="article">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/transparency/tutorial-image.jpg">
+		<meta property="og:title" content="Transparency">
+		<meta property="og:description" content="A Unity Scriptable Render Pipeline tutorial about supporting transparency with a single-pass forward renderer.">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta name="viewport" content="width=768">
+		<title>Transparency</title>
+		<link href="../../tutorials.css" rel="stylesheet">
+
+				<link rel="manifest" href="https://catlikecoding.com/site.webmanifest">
+		<link rel="mask-icon" href="https://catlikecoding.com/safari-pinned-tab.svg" color="#aa0000">
+
+		<script type="application/ld+json">{
+			"@context": "http://schema.org",
+			"@type": "WebPage",
+			"mainEntity": {
+				"@type": "TechArticle",
+				"@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/transparency/#article",
+				"headline": "Transparency",
+				"alternativeHeadline": "Clipping and Fading",
+				"datePublished": "2019-02-28",
+				"author": { "@type": "Person", "name": "Jasper Flick", "@id": "https://catlikecoding.com/jasper-flick/#person" },
+				"publisher": { "@type": "Organization", "name": "Catlike Coding", "@id": "https://catlikecoding.com/#organization" },
+				"description": "A Unity Scriptable Render Pipeline tutorial about supporting transparency with a single-pass forward renderer.",
+				"image": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/transparency/tutorial-image.jpg",
+				"dependencies": "Unity 2018.3.0f2",
+				"proficiencyLevel": "Expert"
+			},
+			"breadcrumb": {
+				"@type": "BreadcrumbList",
+				"itemListElement": [
+					{ "@type": "ListItem", "position": 1, "item": { "@id": "https://catlikecoding.com/unity/", "name": "Unity" }},
+					{ "@type": "ListItem", "position": 2, "item": { "@id": "https://catlikecoding.com/unity/tutorials/", "name": "Tutorials" }},
+					{ "@type": "ListItem", "position": 3, "item": { "@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/", "name": "Scriptable Render Pipeline" }}
+				]
+			}
+		}</script>
+		<script>
+			var customTypes = {
+				ClipMode: 1,
+				DoubleSidedMeshMenuItem: 1,
+				InstancedColor: 1,
+				LitShaderGUI: 1,
+				MyPipeline: 1,
+				MyPipelineAsset: 1,
+				MyPipelineAssetEditor: 1,
+				ShadowCascades: 1,
+				ShadowMapSize: 1
+			};
+		</script>
+	</head>
+	<body>
+		<header>
+			<a href="https://catlikecoding.com"><img src="https://catlikecoding.com/catlike-coding-logo.svg" alt="Catlike Coding" width="45" height="45"></a>
+			<nav>
+				<ol>
+					<li><a href="https://catlikecoding.com">Catlike Coding</a></li>
+					<li><a href="https://catlikecoding.com/unity/">Unity</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/">Tutorials</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">Scriptable Render Pipeline</a></li>
+				</ol>
+			</nav>
+		</header>
+		
+		<main>
+			<article>
+				<header>
+					<h1>Transparency</h1>
+					<p>Clipping and Fading</p>
+					<ul>
+						<li>Perform alpha clipping.</li>
+						<li>Render both sides of a mesh.</li>
+						<li>Support different blend modes.</li>
+						<li>Generate a double-sided mesh.</li>
+						<li>Create a shader GUI with presets.</li>
+					</ul>
+				</header>
+				
+				<p>This is the sixth installment of a tutorial series covering Unity's <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">scriptable render pipeline</a>. It's about adding support for alpha clipping and semi-transparent materials.</p>
+				
+				<p>This tutorial is made with Unity 2018.3.0f2.</p>
+				
+				<figure>
+					<img src="tutorial-image.jpg" width="512" height="256">
+					<figcaption>A mix of opaque, clip, and fade materials, all casting and receiving shadows.</figcaption>
+				</figure>
+				
+				<section>
+					<h2>Alpha Clipping</h2>
+					
+					<p>As explained in <a href="https://catlikecoding.com/unity/tutorials/rendering/part-11/">Rendering 11, Transparency</a>, it's possible to cut holes in geometry by discarding fragments based on an alpha map. This technique is known as alpha clipping, alpha testing, or cutout rendering. Besides that, it's exactly the same as rendering opaque geometry. So to support alpha clipping we only have to adjust our shader.</p>
+					
+					<section>
+						<h3>Alpha Maps</h3>
+						
+						<p>Alpha clipping is only useful when a material's alpha varies across its surface. The most straightforward way to achieve this is with an alpha map. Here are two textures for that, <a href="alpha-clipping/square-alpha-map.png">one</a> for square geometry like quads and cubes, and <a href="alpha-clipping/sphere-alpha-map.png">one</a> for spheres.</p>
+						
+						<figure>
+							<img src="alpha-clipping/square-alpha-map.png" width="256" height="256" alt="square" style="background: black">
+							<img src="alpha-clipping/sphere-alpha-map.png" width="512" height="256" alt="sphere" style="background: black">
+							<figcaption>Alpha maps for square and sphere, with black background.</figcaption>
+						</figure>
+						
+						<p>Import these textures and indicate that their alpha channel represents transparency. Their RGB channels are uniform white so won't affects the material's appearance.</p>
+						
+						<figure>
+							<img src="alpha-clipping/texture-import-settings.png" width="320" height="56">
+							<figcaption>Alpha is transparency.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Texturing</h3>
+						
+						<p>Add a main texture property to the <em translate="no">Lit</em> shader. We'll use is as the source for albedo and alpha, with solid white as the default.</p>
+						
+						<pre class="shader" translate="no">	Properties {
+		_Color ("Color", Color) = (1, 1, 1, 1)
+		<ins>_MainTex("Albedo &amp; Alpha", 2D) = "white" {}</ins>
+	}</pre>
+						
+						<p>Create two new materials, one for lit alpha-clipped spheres and one for lit clipped squares, using the appropriate textures.</p>
+						
+						<figure>
+							<img src="alpha-clipping/lit-clip-sphere.png" width="320" height="212">
+							<figcaption>Lit clip sphere material.</figcaption>
+						</figure>
+						
+						<p>In the <em translate="no">Lit</em> include file, add declarations for the main texture and its sampler state. This works like for the shadow map, but uses the <code class="shader">TEXTURE2D</code> and <code class="shader">SAMPLER</code> macros instead.</p>
+						
+						<pre class="shader" translate="no">TEXTURE2D_SHADOW(_CascadedShadowMap);
+SAMPLER_CMP(sampler_CascadedShadowMap);
+
+<ins>TEXTURE2D(_MainTex);</ins>
+<ins>SAMPLER(sampler_MainTex);</ins></pre>
+						
+						<p>We need UV texture coordinates for sampling, which are part of the mesh data. So add them to the vertex input and output structs.</p>
+						
+						<pre class="shader" translate="no">struct VertexInput {
+	float4 pos : POSITION;
+	float3 normal : NORMAL;
+	<ins>float2 uv : TEXCOORD0;</ins>
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+struct VertexOutput {
+	float4 clipPos : SV_POSITION;
+	float3 normal : TEXCOORD0;
+	float3 worldPos : TEXCOORD1;
+	float3 vertexLighting : TEXCOORD2;
+	<ins>float2 uv : TEXCOORD3;</ins>
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};</pre>
+						
+						<p>To apply the tiling and offset of the texture, add the required <code class="shader">_MainTex_ST</code> shader variable, in a <code class="shader">UnityPerMaterial</code> buffer. Then we can use the <code class="shader">TRANSFORM_TEX</code> macro when transferring the UV coordinates in <code class="shader">LitPassVertex</code>.</p>
+						
+						<pre class="shader" translate="no"><ins>CBUFFER_START(UnityPerMaterial)</ins>
+	<ins>float4 _MainTex_ST;</ins>
+<ins>CBUFFER_END</ins>
+
+&hellip;
+
+VertexOutput LitPassVertex (VertexInput input) {
+	&hellip;
+	
+	<ins>output.uv = TRANSFORM_TEX(input.uv, _MainTex);</ins>
+	return output;
+}</pre>
+						
+						<p>We can now sample the main map in <code>LitPassFragment</code> with the <code class="shader">SAMPLE_TEXTURE2D</code> macro to retrieve the albedo and alpha data, which we when multiply with the color data. We'll also return the alpha value from now on. That's not needed right now, but will be used later.</p>
+						
+						<pre class="shader" translate="no">float4 LitPassFragment (VertexOutput input) : SV_TARGET {
+	UNITY_SETUP_INSTANCE_ID(input);
+	input.normal = normalize(input.normal);
+	<del>//float3 albedo = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color).rgb;</del>
+	<ins>float4 albedoAlpha = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);</ins>
+	<ins>albedoAlpha *= UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color);</ins>
+	
+	&hellip;
+	float3 color = diffuseLight * <ins>albedoAlpha.rgb</ins>;
+	return float4(color, <ins>albedoAlpha.a</ins>);
+}</pre>
+					</section>
+					
+					<section>
+						<h3>Discarding Fragments</h3>
+						
+						<p>Alpha clipping is done by discarding fragments when their alpha value falls below some cutoff threshold. The cutoff value lies between 0 and 1 and is configurable, so add a shader property for it, with &frac12; as the default.</p>
+						
+						<pre class="shader" translate="no">	Properties {
+		_Color ("Color", Color) = (1, 1, 1, 1)
+		_MainTex("Albedo & Alpha", 2D) = "white" {}
+		<ins>_Cutoff ("Alpha Cutoff", Range(0, 1)) = 0.5</ins>
+	}</pre>
+						
+						<p>Add the corresponding variable to the <code class="shader">UnityPerMaterial</code> buffer. Then invoke the <code class="shader">clip</code> function with the fragment's alpha value minus the threshold. That will cause all fragments that end up below the threshold to be discarded, which means that they don't get rendered.</p>
+						
+						<pre class="shader" translate="no">CBUFFER_START(UnityPerMaterial)
+	float4 _MainTex_ST;
+	<ins>float _Cutoff;</ins>
+CBUFFER_END
+
+&hellip;
+
+float4 LitPassFragment (VertexOutput input) : SV_TARGET {
+	&hellip;
+	albedoAlpha *= UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color);
+	
+	<ins>clip(albedoAlpha.a - _Cutoff);</ins>
+	
+	&hellip;
+}</pre>
+						
+						<figure>
+							<img src="alpha-clipping/alpha-clipping.png" width="340" height="240">
+							<figcaption>Alpha clipping a sphere and cube.</figcaption>
+						</figure>
+						
+						<p>Objects with an alpa-clipped material are now rendered with holes in them. The size of the holes depends on the cutoff value. However, that's only true for the object surface itself. The shadows that they cast are still solid, because we haven't adjusted those yet.</p>
+					</section>
+					
+					<section>
+						<h3>Clipped Shadows</h3>
+						
+						<p>Clipping shadows works exactly like clipping in the lit pass, so adjust the <em translate="no">ShadowCaster</em> include file accordingly. Because the final alpha value depends on both the main map and the material color, we now also have to sample the instanced color in <code class="shader">ShadowCasterPassFragment</code>, so we have to pass the instance ID along as well.</p>
+						
+						<pre class="shader" translate="no"><ins>CBUFFER_START(UnityPerMaterial)</ins>
+	<ins>float4 _MainTex_ST;</ins>
+	<ins>float _Cutoff;</ins>
+<ins>CBUFFER_END</ins>
+
+CBUFFER_START(_ShadowCasterBuffer)
+	float _ShadowBias;
+CBUFFER_END
+
+<ins>TEXTURE2D(_MainTex);</ins>
+<ins>SAMPLER(sampler_MainTex);</ins>
+
+#define UNITY_MATRIX_M unity_ObjectToWorld
+
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
+
+<ins>UNITY_INSTANCING_BUFFER_START(PerInstance)</ins>
+	<ins>UNITY_DEFINE_INSTANCED_PROP(float4, _Color)</ins>
+<ins>UNITY_INSTANCING_BUFFER_END(PerInstance)</ins>
+
+struct VertexInput {
+	float4 pos : POSITION;
+	<ins>float2 uv : TEXCOORD0;</ins>
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+struct VertexOutput {
+	float4 clipPos : SV_POSITION;
+	<ins>float2 uv : TEXCOORD0;</ins>
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+VertexOutput ShadowCasterPassVertex (VertexInput input) {
+	VertexOutput output;
+	UNITY_SETUP_INSTANCE_ID(input);
+	<ins>UNITY_TRANSFER_INSTANCE_ID(input, output);</ins>
+	&hellip;
+	
+	<ins>output.uv = TRANSFORM_TEX(input.uv, _MainTex);</ins>
+	return output;
+}
+
+float4 ShadowCasterPassFragment (VertexOutput input) : SV_TARGET {
+	<ins>UNITY_SETUP_INSTANCE_ID(input);</ins>
+	<ins>float alpha = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv).a;</ins>
+	<ins>alpha *= UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color).a;</ins>
+	<ins>clip(alpha - _Cutoff);</ins>
+	return 0;
+}</pre>
+						<figure>
+							<img src="alpha-clipping/clipped-shadows.png" width="340" height="240">
+							<figcaption>Clipped shadows.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Double-Sided Rendering</h3>
+						
+						<p>Because only the front side of geometry gets rendered, our alpha-clipped objects are missing their back sides. This is obvious when rotating the view around them. Also, their shadows don't match what we see, because only the front side relative to the light source casts a shadow. The solution to this is to render both sides of the geometry, which allows us to see the inside of the object surfaces and makes the inside surface cast shadows.</p>
+						
+						<p>Which sides get rendered is controlled by a shader's cull mode. Either no culling takes place, all front-facing triangles are culled, or all back-facing triangles are culled. We can add a float shader property that represents an enum value, with 2 as the default, corresponding to the usual back-face culling.</p>
+						
+						<pre class="shader" translate="no">	Properties {
+		_Color ("Color", Color) = (1, 1, 1, 1)
+		_MainTex("Albedo & Alpha", 2D) = "white" {}
+		_Cutoff ("Alpha Cutoff", Range(0, 1)) = 0.5
+		<ins>_Cull ("Cull", Float) = 2</ins>
+	}</pre>
+						
+						<p>We can expose this property via an enum popup, by adding the <code class="shader">Enum</code> attribute to the property. The desired enum type can be supplied as an argument, which in this case is <code>CullMode</code> from the <code>UnityEngine.Rendering</code> namespace.</p>
+						
+						<pre class="shader" translate="no">		<ins>[Enum(UnityEngine.Rendering.CullMode)]</ins> _Cull ("Cull", Float) = 2</pre>
+						
+						<figure>
+							<img src="alpha-clipping/cull-off.png" width="340" height="40">
+							<figcaption>Culling disabled.</figcaption>
+						</figure>
+						
+						<p>Although we have defined it as a shader property, the cull mode is not directly used by the shader programs. It's used by the GPU to decide which triangles are passed to the fragment programs and which are discarded. We control this via a <code class="shader">Cull</code> statement in the shader pass. If we used a fixed cull mode, them we could suffice with something like <code class="shader">Cull Off</code>, but we can also make it depend on our shader property, by writing <code class="shader">Cull [_Cull]</code>. Do this for both passes.</p>
+						
+						<pre class="shader" translate="no">		Pass {
+			<ins>Cull [_Cull]</ins>
+			
+			HLSLPROGRAM
+			
+			&hellip;
+			
+			ENDHLSL
+		}
+		
+		Pass {
+			Tags {
+				"LightMode" = "ShadowCaster"
+			}
+			
+			<ins>Cull [_Cull]</ins>
+			
+			HLSLPROGRAM
+			
+			&hellip;
+			
+			ENDHLSL
+		}</pre>
+						
+						<figure>
+							<img src="alpha-clipping/doubled-sided.png" width="340" height="240">
+							<figcaption>Double-sided rendering.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Flipping Normals for Backfaces</h3>
+						
+						<p>We're now seeing both sides of the geometry, but the inside isn't lit correctly. This is easiest to see by having our materials cull the front faces, so we only see the insides.</p>
+						
+						<figure>
+							<img src="alpha-clipping/backfaces-incorrect.png" width="340" height="240">
+							<figcaption>Backfaces only, incorrect lighting.</figcaption>
+						</figure>
+						
+						<p>It turns out that the lighting is flipped. What's lit should be dark, and vice versa. That's because the normal vectors are meant to be used for the outside, not the inside. So we have to negate the normal vectors when rendering back faces.</p>
+						
+						<p>The GPU can tell the fragment program whether it's shading a fragment of a front or a back face. We can access this information by adding an additional parameter to <code class="shader">LitPassFragment</code>. The type and semantic of this parameter depend on the API, but we can use the <code class="shader">FRONT_FACE_TYPE</code> and <code class="shader">FRONT_FACE_SEMANTIC</code> macros from the Core library. Likewise, we can use the <code class="shader">IS_FRONT_VFACE</code> macro to choose between two alternatives based on whether we're dealing with a front or a back face. Use this to negate the normal vector when necessary.</p>
+						
+						<pre class="shader" translate="no">float4 LitPassFragment (
+	VertexOutput input<ins>, FRONT_FACE_TYPE isFrontFace : FRONT_FACE_SEMANTIC</ins>
+) : SV_TARGET {
+	UNITY_SETUP_INSTANCE_ID(input);
+	input.normal = normalize(input.normal);
+	<ins>input.normal = IS_FRONT_VFACE(isFrontFace, input.normal, -input.normal);</ins>
+	
+	&hellip;
+}</pre>
+						<figure>
+							<img src="alpha-clipping/backfaces-correct.png" width="340" height="240" alt="backfaces">
+							<img src="alpha-clipping/double-sided-correct.png" width="340" height="240" alt="all faces">
+							<figcaption>Backfaces and all faces, correct lighting.</figcaption>
+						</figure>
+						
+						<p>The inside surface now gets shaded correctly, although it still ends up darker than the outside because of self-shadowing.</p>
+						
+						<aside>
+							<h3>Why do shadows sometimes ignore the clip mode?</h3>
+							<div>
+								<p>The clip mode always gets applied when rendering shadows. However, Unity aggressively batches shadow casters, even if objects have different materials, and ignores the clip mode when doing so. This means that when you mix shadow casters that are identical except for their clip mode, it is arbitrary which clip mode gets used for the entire batch. Because clip mode is set per shader, it cannot vary per instance.</p>
+								
+								<p>You can avoid the problem by disabling instancing and batching when rendering shadows. But that shouldn't be necessary, because materials with a different clip mode likely have other relevant properties that differ too, which prevents them from getting batched. Just a slightly different cutoff value will prevent incorrect batching.</p>
+							</div>
+						</aside>
+					</section>
+					
+					<section>
+						<h3>Optional Clipping</h3>
+						
+						<p>When alpha clipping is used the GPU can no longer assume that the entire triangle gets rendered, which makes some optimizations impossible. So it's best to only enable alpha clipping when necessary. So we'll create two shader variants: one with and one without clipping. We can do that with a shader keyword, like the pipeline controls whether shadows are used, except this time we'll control it via a material property.</p>
+						
+						<p>Add a toggle property to control clipping to the shader. It has to be a float, with a default value of zero. Give it a <code class="shader">Toggle</code> attribute, which will make it show up as a checkbox. Besides that, the attribute can be supplied with a keyword that it enables or disables when the property is changed. We'll use the <em translate="no">_CLIPPING</em> keyword.</p>
+						
+						<pre class="shader" translate="no">		<ins>[Toggle(_CLIPPING)] _Clipping ("Alpha Clipping", Float) = 0</ins>
+		_Cutoff ("Alpha Cutoff", Range(0, 1)) = 0.5</pre>
+						
+						<figure>
+							<img src="alpha-clipping/clipping-enabled.png" width="320" height="40">
+							<figcaption>Clipping enabled.</figcaption>
+						</figure>
+						
+						<p>We can now add another multi-compile statement, but the expectation is that this toggle won't change during play but only when editing material assets. So we don't need to always generate shader variants for both options. We can do that by using the <code class="shader">#pragma shader_feature</code> directive instead. In case of a single toggle keyword, we can suffice with just listing that keyword and nothing else. Do this for both passes.</p>
+						
+						<pre class="shader" translate="no">			#pragma instancing_options assumeuniformscaling
+			
+			<ins>#pragma shader_feature _CLIPPING</ins></pre>
+						
+						<aside>
+							<h3>What's the advantage of using a shader feature?</h3>
+							<div>
+								<p>All multi-compile shader variants have to always be included, both when shaders are compiled in the editor and when putting them in a build. The shader feature alternative only includes the variants that are actually needed, as far as the Unity editor can determine. This can significantly reduce shader compilation time and the size of builds.</p>
+								
+								<p>The only reason to use the multi-compile approach is when which keywords are enabled changes during play. An example of this are the shadow keywords, but can also be true if you configure materials during play.</p>
+							</div>
+						</aside>
+						
+						<p>Now we can make sure that we only clip in <em translate="no">Lit</em> if the <em translate="no">_CLIPPING</em> keyword is defined.</p>
+						
+						<pre class="shader" translate="no">	<ins>#if defined(_CLIPPING)</ins>
+		clip(albedoAlpha.a - _Cutoff);
+	<ins>#endif</ins></pre>
+						
+						<p>And the same goes for <em translate="no">ShadowCaster</em>.</p>
+						
+						<pre class="shader" translate="no">	<ins>#if defined(_CLIPPING)</ins>
+		float alpha = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv).a;
+		alpha *= UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color).a;
+		clip(alpha - _Cutoff);
+	<ins>#endif</ins></pre>
+						
+						<p>Note that we could optimize further by eliminating the UV coordinates too, but that optimization is less important so I won't cover that. Likewise, you could use a shader feature to only check the triangle facing when clipping is off, which is another optimization I skip.</p>
+					</section>
+					
+					<section>
+						<h3>Alpha-Test Render Queue</h3>
+						
+						<p>Besides potentially discarding fragments, alpha-clipped rendering works the same as opaque rendering and both can be mixed without issue. But because alpha clipping prevents some GPU optimizations it is typical to first render all purely opaque objects before rendering all alpha-clipped objects. That enables the most GPU optimization, potentially limits the amount of alpha-clipped fragments as more end up hidden behind opaque geometry, and can also reduce the amount of batches. All this can be done by simply setting the alpha-clipped materials to use a later render queue. The default material inspector exposes the queue, so we can manually change it. The default queue for alpha-clipped materials is 2450, corresponding to the <em translate="no">AlphaTest</em> option from the dropdown menu.</p>
+						
+						<figure>
+							<img src="alpha-clipping/alpha-test-queue.png" width="320" height="40">
+							<figcaption>Using the alpha-test queue.</figcaption>
+						</figure>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Semi-Transparency</h2>
+					
+					<p>If a fragment doesn't get clipped it is fully opaque. So alpha-clipping can be used to cut holes in objects, but it cannot represent semi-transparent surfaces. We have some more work to do before our shader supports semi-transparency.</p>
+					
+					<section>
+						<h3>Blend Modes</h3>
+						
+						<p>When something is semi-transparent, at least some of what's behind it shines through. To achieve that with a shader we have to change how a fragment's own color gets blended with the color that got rendered earlier. We can do that by changing the blend mode of the shader.</p>
+						
+						<p>The blend mode is controlled like the cull mode, but with two weighing options that are used to blend the new and old color. The first is known as the source&mdash;what we're rendering now&mdash;and the second as the destination&mdash;what was rendered before. For example, the default blend mode is <code class="shader">Blend One Zero</code>, which means that the new color completely replaces the old one.</p>
+						
+						<aside>
+							<h3>Aren't there also separate options for the alpha channel?</h3>
+							<div>
+								<p>Yes, but those are rarely used. Without explicitly specifying blends modes for alpha, all four channels are blended the same way.</p>
+							</div>
+						</aside>
+						
+						<p>Add two shader properties for the source and destination blend, just like for culling, except with the <code>BlendMode</code> enum type. Set their default values to one and zero.
+						
+						<pre class="shader" translate="no">		[Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
+		<ins>[Enum(UnityEngine.Rendering.BlendMode)] _SrcBlend ("Src Blend", Float) = 1</ins>
+		<ins>[Enum(UnityEngine.Rendering.BlendMode)] _DstBlend ("Dst Blend", Float) = 0</ins></pre>
+						
+						<p>Add a blend statement to the lit pass only. The <em translate="no">ShadowCaster</em> pass only cares about depth so blend modes don't affect it.</p>
+						
+						<pre class="shader" translate="no">		Pass {
+			<ins>Blend [_SrcBlend] [_DstBlend]</ins>
+			Cull [_Cull]
+			
+			&hellip;
+		}</pre>
+						
+						<p>The simplest form of semi-transparency is fading a fragment based on its alpha value. That's done by using the source's alpha as the weight for the source and one minus the source's alpha as the weight for the destination. We can select those options from the dropdown menus. Do this for new fade materials, and also turn off culling for them.</p>
+						
+						<figure>
+							<img src="semi-transparency/fade-blend-modes.png" width="320" height="230" alt="material"><br>
+							<img src="semi-transparency/fading-wrong-queue.png" width="340" height="240" alt="scene">
+							<figcaption>Blend modes set for fading, with incorrect results.</figcaption>
+						</figure>
+						
+						<p>There are a lot of other blend modes too. Most are rarely used but some are used for different kinds of transparency. For example, pre-multiplied blending uses one for the source instead of the source's alpha. That makes it possible to keep specular reflections&mdash;to represent surfaces like glass&mdash;but requires some shader changes too which I won't cover here.</p>
+					</section>
+					
+					<section>
+						<h3>Transparent Render Queue</h3>
+						
+						<p>Fading only works if there's already something behind what's getting rendered. Our pipeline already takes care of that, first rendering the opaque queues, then the skybox, and finally the transparent queues. Our fade materials just have to use the correct queue. The default <em translate="no">Transparent</em> option is fine.</p>
+						
+						<figure>
+							<img src="semi-transparency/transparent-render-queue.png" width="320" height="24" alt="material"><br>
+							<img src="semi-transparency/fading-z-write.png" width="340" height="240" alt="scene">
+							<figcaption>Moved to transparent queue, still not correct.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Not Writing Depth</h3>
+						
+						<p>Semi-transparency now sometimes works as it should, but also produces weird results. This is especially noticeable because we're still casting shadows as if the surfaces were opaque. This happens because we're not culling, so both sides of the surfaces get rendered. Which part gets rendered first depends on the triangle order of the mesh. When a font-facing triangle gets rendered first, there isn't a back side to blend with yet. And the back won't get rendered because it's behind something that already got rendered.</p>
+						
+						<p>The same problem also happens when two separate transparent objects are close to each other. Unity sorts transparent objects back-to-front, which is correct but can only consider the object position, not shape. Part of an object that's drawn first can still end up in front of an object that gets drawn later. For example, put two two mostly-overlapping quads in the scene, one a bit above the other, and adjust the view until the top one gets rendered first.</p>
+						
+						<figure>
+							<img src="semi-transparency/quads-with-zwrite.png" width="280" height="230">
+							<figcaption>The top quad gets rendered first.</figcaption>
+						</figure>
+						
+						<p>We cannot avoid this except by carefully controlling the placement of semitransparent objects or using materials with different render queues. In case of intersecting objects or a double-sided material with arbitrary triangle order, it will always go wrong. But what we can do is disable writing to the depth buffer for transparent materials. That way what gets rendered first will never block what gets rendered later.</p>
+						
+						<p>Add another float shader property to control Z writing, which is on by default. We could again use a toggle, but that will always produce a keyword, which we don't need in this case. So instead we'll make it a custom enumeration with an off and on state, by writing <code class="shader">[Enum(Off€, 0, On€, 1)]</code>.</p>
+						
+						<pre class="shader" translate="no">		[Enum(UnityEngine.Rendering.BlendMode)] _DstBlend ("Dst Blend", Float) = 0
+		<ins>[Enum(Off€, 0, On€, 1)] _ZWrite ("Z Write", Float) = 1</ins></pre>
+						
+						<p>Add a <code class="shader">ZWrite</code> control to the lit pass only, as once again this doesn't concern shadows.</p>
+						
+						<pre class="shader" translate="no">			Blend [_SrcBlend] [_DstBlend]
+			Cull [_Cull]
+			<ins>ZWrite [_ZWrite]</ins></pre>
+						
+						<figure>
+							<img src="semi-transparency/no-z-write.png" width="320" height="24" alt="material"><br>
+							<img src="semi-transparency/quads-without-zwrite.png" width="280" height="230" alt="scene">
+							<figcaption>Not writing to depth buffer.</figcaption>
+						</figure>
+						
+						<p>Now both quads get fully rendered, even when their draw order is incorrect. However, the bottom quad still gets drawn after the top quad, so it's still not correct. This is exacerbated by the solid shadows of the quads. It is also very obvious when the draw order flips. This is a limitation of transparent rendering that you have to keep in mind when designing a scene.</p>
+					</section>
+					
+					<section>
+						<h3>Double-Sided with Semi-Transparency</h3>
+						
+						<p>With Z writing disabled, the insides of objects always get rendered when culling is off. However, the draw order is still determined by the triangle order of the mesh. This is guaranteed to produce incorrect results when using the default sphere and cube.</p>
+						
+						<figure>
+							<img src="semi-transparency/fading-no-culling.png" width="340" height="240">
+							<figcaption>Double-sided without writing to depth buffer.</figcaption>
+						</figure>
+						
+						<p>With an arbitrary mesh the only way to ensure that the back faces are drawn first is to duplicate the object and use two materials, one that  culls front an another that culls back. Then adjust the render queues so that the inside is drawn first.</p>
+						
+						<figure>
+							<img src="semi-transparency/inside-outside.png" width="340" height="240">
+							<figcaption>Separate objects and materials for inside and outside.</figcaption>
+						</figure>
+						
+						<p>That works for an individual object, but not when multiple such objects are visually overlapping. In that case all outsides gets drawn on top of all insides.</p>
+						
+						<figure>
+							<img src="semi-transparency/cube-on-top.png" width="190" height="190">
+							<figcaption>Cube outside on top of sphere inside.</figcaption>
+						</figure>
+						
+					</section>
+					
+					<section>
+						<h3>Making a Double-Sided Mesh</h3>
+						
+						<p>The best way to render double-sided semi-transparent surfaces is to use a mesh specifically created for this purpose. The mesh must contain separate triangles for its inside and outside, ordered so that the inside is drawn first. Even then, this only reliably works for concave objects that never visually overlap themselves.</p>
+						
+						<p>You can create a double-sided mesh with a separate 3D modeler, but we can also make a simple tool in Unity to quickly generate a double-sided variant of any source mesh. To do so, create a static <code>DoubleSidedMeshMenuItem</code> class and put its asset file in an <em translate="no">Editor</em> folder. We'll use to it add the <em translate="no">Assets/Create/Double-Sided Mesh</em> item to Unity's menu. That's done by adding the <code>MenuItem</code> attribute to a static method, with the desired item path as an argument.</p>
+						
+						<pre translate="no"><ins>using UnityEditor;</ins>
+<ins>using UnityEngine;</ins>
+
+<ins>public static class DoubleSidedMeshMenuItem {</ins>
+
+	<ins>[MenuItem("Assets/Create/Double-Sided Mesh")]</ins>
+	<ins>static void MakeDoubleSidedMeshAsset () {}</ins>
+<ins>}</ins></pre>
+						
+						<p>The idea is that the user first selects a mesh and then activates the menu item, then we'll create its double-sided equivalent. So the first step is to get a reference to the selected mesh, which is done via <code>Selection.activeObject</code>. If there isn't a selected mesh, instruct the user to select one and abort.</p>
+						
+						<pre translate="no">	static void MakeDoubleSidedMeshAsset () {
+		<ins>var sourceMesh = Selection.activeObject as Mesh;</ins>
+		<ins>if (sourceMesh == null) {</ins>
+			<ins>Debug.Log("You must have a mesh asset selected.");</ins>
+			<ins>return;</ins>
+		<ins>}</ins>
+	}</pre>
+						
+						<aside>
+							<h3>What does <code>as</code> do?</h3>
+							<div>
+								<p>It performs a cast to the specified type, if possible. Otherwise, the result is <code>null</code>. Note that this only works for reference types.</p>
+							</div>
+						</aside>
+						
+						<p>We begin by creating the inside portion of the mesh. Clone the source mesh by instantiating it, retrieve its triangles, reverse their order via <code>System.Array.Reverse</code>, and assign the result back to it. That flips the facing of all triangles.</p>
+						
+						<pre translate="no">		if (sourceMesh == null) {
+			Debug.Log("You must have a mesh asset selected.");
+			return;
+		}
+		
+		<ins>Mesh insideMesh = Object.Instantiate(sourceMesh);</ins>
+		<ins>int[] triangles = insideMesh.triangles;</ins>
+		<ins>System.Array.Reverse(triangles);</ins>
+		<ins>insideMesh.triangles = triangles;</ins></pre>
+						
+						<p>Next, retrieve the normals, negate them, and assign them back.</p>
+						
+						<pre translate="no">		insideMesh.triangles = triangles;
+		
+		<ins>Vector3[] normals = insideMesh.normals;</ins>
+		<ins>for (int i = 0; i &lt; normals.Length; i++) {</ins>
+			<ins>normals[i] = -normals[i];</ins>
+		<ins>}</ins>
+		<ins>insideMesh.normals = normals;</ins></pre>
+						
+						<p>Then create a new mesh and invoke <code>CombineMeshes</code> on it. Its first argument is an array of <code>CombineInstance</code> structs, which just need a reference to relevant mesh. First comes the inside mesh, then the source mesh. That guarantees that the inside triangles get drawn first. After that come three boolean arguments. The first needs to be <code>true</code>, indicating that the meshes must be merged into a single mesh, instead of defining multiple sub-meshes. The other two refer to matrices and lightmap data, which we don't need.</p>
+						
+						<pre translate="no">		insideMesh.normals = normals;
+
+		<ins>var combinedMesh = new Mesh();</ins>
+		<ins>combinedMesh.CombineMeshes(</ins>
+			<ins>new CombineInstance[] {</ins>
+				<ins>new CombineInstance { mesh = insideMesh },</ins>
+				<ins>new CombineInstance { mesh = sourceMesh }</ins>
+			<ins>},</ins>
+			<ins>true, false, false</ins>
+		<ins>);</ins></pre>
+						
+						<p>Once that's done we no longer need the inside mesh, so destroy it immediately.</p>
+						
+						<pre translate="no">		combinedMesh.CombineMeshes(
+			&hellip;
+		);
+
+		<ins>Object.DestroyImmediate(insideMesh);</ins></pre>
+						
+						<p>Finally, create a mesh asset by invoking <code>AssetDatabase.CreateAsset</code>. Its first argument is the combined mesh and the second its asset path. We'll simply put it in the asset root folder and give it the same name as the source mesh with <em translate="no">Double-Sided</em> appended to it. The path and file name can be combined via the <code>System.IO.Path.Combine</code> method, so it works no matter which path separator your operating system uses. And we have to use <em translate="no">asset</em> as the file extension.</p>
+						
+						<pre translate="no">		Object.DestroyImmediate(insideMesh);
+
+		<ins>AssetDatabase.CreateAsset(</ins>
+			<ins>combinedMesh,</ins>
+			<ins>System.IO.Path.Combine(</ins>
+				<ins>"Assets", sourceMesh.name + " Double-Sided.asset"</ins>
+			<ins>)</ins>
+		<ins>);</ins></pre>
+						
+						<p>Now we can select any mesh and create a double-sided variant of it. You can select the default sphere or cube by selecting a game object that uses that mesh and double-clicking on its reference in the mesh renderer component. The resulting assets don't look like imported meshes because they're custom assets, but they work fine. So we can use those meshes for transparent objects and switch our fade materials to back-face culling.</p>
+						
+						<figure>
+							<img src="semi-transparency/double-sided-mesh-assets.png" width="228" height="50" alt="assets"><br>
+							<img src="semi-transparency/double-sided-meshes.png" width="190" height="190" alt="scene">
+							<figcaption>Using double-sided meshes.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Alpha-Clipped Shadows</h3>
+						
+						<p>Up to this point we have ignored shadows, so our semi-transparent objects still cast shadows are if they were opaque. They also receive shadows, but that's fine.</p>
+						
+						<aside>
+							<h3>Can transparent objects receive shadows?</h3>
+							<div>
+								<p>Yes. All that's needed to receive shadows is to determine whether there's a shadow caster between a fragment and the light source, which the shadow map tells us. Whether the fragment is for an opaque or transparent surface is irrelevant. Having said that, Unity doesn't support shadow-receiving for transparent surfaces in combination with cascaded shadow maps. That's because Unity samples the cascaded shadow map in a separate full-screen pass, which relies on the depth buffer, thus cannot work in combination with transparency. As we sample all shadows per fragment we don't have that limitation.</p>
+							</div>
+						</aside>
+						
+						<p>Shadow maps cannot represent partial shadows. The best that we can do is use alpha-clipped shadows. Currently, alpha clipping can be enabled for a transparent material, but that also affects the surface itself.</p>
+						
+						<figure>
+							<img src="semi-transparency/fading-clipping.png" width="340" height="240">
+							<figcaption>Both fading and clipping.</figcaption>
+						</figure>
+						
+						<p>It is possible to only perform alpha clipping for shadows. We can support that by replacing the clipping toggle with three options: off, on, and shadows. First, turn off clipping for all materials that current use it, so the <em translate="no">_CLIPPING</em> keyword gets cleared. Then replace the toggle with a <code class="shader">KeywordEnum</code> with the three options as arguments.</p>
+						
+						<pre class="shader" translate="no">		<del>//[Toggle(_CLIPPING)] _Clipping ("Alpha Clipping", Float) = 0</del>
+		<ins>[KeywordEnum(Off€, On€, Shadows)] _Clipping ("Alpha Clipping", Float) = 0</ins></pre>
+						
+						<p>Now you can turn clipping back on. We did that because <code class="shader">KeywordEnum</code> uses different keywords. The keywords that we now use are formed by taking the shader property name followed by an underscore and then each option separately, all uppercase. So in the lit pass we have to change our shader feature to rely on <em translate="no">_CLIPPING_ON</em> instead.</p>
+						
+						<pre class="shader" translate="no">			<del>//#pragma shader_feature _CLIPPING</del>
+			<ins>#pragma shader_feature _CLIPPING_ON</ins></pre>
+						
+						<p>Adjust the keyword check as well.</p>
+						
+						<pre class="shader" translate="no">	#if defined(<ins>_CLIPPING_ON</ins>)
+		clip(albedoAlpha.a - _Cutoff);
+	#endif</pre>
+						
+						<p>The <em translate="no">ShadowCaster</em> pass must now use clipping when it's either on or set to shadows. In other words, it shouldn't clip when it's off. We'll use the latter criteria for the shader feature, so we rely solely on <em translate="no">_CLIPPING_OFF</em>.</p>
+						
+						<pre class="shader" translate="no">			<del>//#pragma shader_feature _CLIPPING</del>
+			<ins>#pragma shader_feature _CLIPPING_OFF</ins></pre>
+						
+						<p>So we must now check whether <em translate="no">_CLIPPING_OFF</em> is not defined.</p>
+						
+						<pre class="shader" translate="no">	<del>//#if defined(_CLIPPING)</del>
+	<ins>#if !defined(_CLIPPING_OFF)</ins>
+		float alpha = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv).a;
+		alpha *= UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color).a;
+		clip(alpha - _Cutoff);
+	#endif</pre>
+						
+						<p>This makes it possible for transparent materials to cast alpha-clipped shadows. It's not a perfect match, but it was easy to support and might be good enough in some cases.</p>
+						
+						<figure>
+							<img src="semi-transparency/shadow-clipping-cutoff-075.png" width="320" height="40" alt="material"><br>
+							<img src="semi-transparency/fading-shadow-clipping.png" width="340" height="240" alt="scene">
+							<figcaption>Fading with shadow clipping; cutoff 0.75.</figcaption>
+						</figure>
+						
+						<p>You can turn off shadow casting per object if you don't want them. We'll also make that possible per material later.</p>
+						
+						<aside>
+							<h3>Isn't there a way to create semi-transparent shadows?</h3>
+							<div>
+								<p>Unity's legacy pipeline has an option to render semi-transparent shadows, which is described in <a href="https://catlikecoding.com/unity/tutorials/rendering/part-12/">Rendering 12, Semitransparent Shadows</a>. It fakes semi-transparency by dithering shadows, clipping them based on alpha and a screen-space dither pattern, relying on filtering to smudge the results. It can produce convincing shadows in some limited cases, but in general the results are so bad that it's unusable.</p>
+							</div>
+						</aside>
+					</section>
+					
+					<section>
+						<h3>Receiving Shadows</h3>
+						
+						<p>Transparent surfaces receive shadows just fine, but that might not be desirable. So let's make it optional, by adding a shader property toggle linked to the <em translate="no">_RECEIVE_SHADOWS</em> keyword, turned on by default.</p>
+						
+						<pre class="shader" translate="no">		[Enum(Off, 0, On, 1)] _ZWrite ("Z Write", Float) = 1
+		<ins>[Toggle(_RECEIVE_SHADOWS)] _ReceiveShadows ("Receive Shadows", Float) = 1</ins></pre>
+						
+						<p>Add a shader feature for it to the lit pass.</p>
+						
+						<pre class="shader" translate="no">			#pragma shader_feature _CLIPPING_ON
+			<ins>#pragma shader_feature _RECEIVE_SHADOWS</ins></pre>
+						
+						<p>Simply return 1 in <code class="shader">ShadowAttenuation</code> and <code class="shader">CascadedShadowAttenuation</code> when the <em translate="no">_RECEIVE_SHADOWS</em> keyword isn't defined.</p>
+						
+						<pre class="shader" translate="no">float ShadowAttenuation (int index, float3 worldPos) {
+	#if <ins>!defined(_RECEIVE_SHADOWS)</ins>
+		<ins>return 1.0;</ins>
+	<ins>#elif</ins> !defined(_SHADOWS_HARD) && !defined(_SHADOWS_SOFT)
+		return 1.0;
+	#endif
+	&hellip;
+}
+
+&hellip;
+
+float CascadedShadowAttenuation (float3 worldPos) {
+	#if <ins>!defined(_RECEIVE_SHADOWS) ||</ins>
+		<ins>return 1.0;</ins>
+	<ins>#elif</ins> !defined(_CASCADED_SHADOWS_HARD) && !defined(_CASCADED_SHADOWS_SOFT)
+		return 1.0;
+	#endif
+	&hellip;
+}</pre>
+						
+						<p>All shadows will disappear after making these changes, even though the materials all have shadows enabled. That happens because adding a new property to the shader doesn't automatically enable the relevant keyword. Selecting all materials and toggling the option will synchronize the property and its keyword. In contrast, when a new material is created all its keywords linked to attributes will immediately be set correctly.</p>
+						
+						<figure>
+							<img src="semi-transparency/not-receiving-shadows.png" width="320" height="40" alt="material"><br>
+							<img src="semi-transparency/casting-not-receiving.png" width="340" height="240" alt="scene">
+							<figcaption>Casting but not receiving shadows.</figcaption>
+						</figure>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Shader GUI</h2>
+					
+					<p>While it's now possible to create both opaque and transparent materials with our shader, we have to manually select the correct blend modes and so on. Unity's shader inspectors hide these details and instead show a dropdown menu for the supported surface types. We can do something similar, by creating a custom shader GUI for our material.</p>
+					
+					<section>
+						<h3>Lit Shader GUI</h3>
+						
+						<p>Create a <code>LitShaderGUI</code> class that extends <code>ShaderGUI</code> and put it in an <em translate="no">Editor</em> folder. We need to use the <code>UnityEditor</code> namespace for that, and also the <code>UnityEngine.Rendering</code> namespace to use the <code>BlendMode</code> and <code>CullMode</code> enum types later.</p>
+						
+						<pre translate="no"><ins>using UnityEditor;</ins>
+<ins>using UnityEngine;</ins>
+<ins>using UnityEngine.Rendering;</ins>
+
+<ins>public class LitShaderGUI : ShaderGUI {}</ins></pre>
+						
+						<p><code>ShaderGUI</code> defines an <code>OnGUI</code> method that gets invoked to create a material's inspector. It has a <code>MaterialEditor</code> parameter, which is the underlying object that tracks the materials that are being edited. It also has a <code>MaterialProperty</code> array parameter that contains references to all the shader properties of the selected materials. We have to override this method to create our own GUI, but we won't replace the default GUI, just add to it. So our method will invoke the base <code>OnGUI</code> implementation of <code>ShaderGUI</code>.</p>
+						
+						<pre translate="no">	<ins>public override void OnGUI (</ins>
+		<ins>MaterialEditor materialEditor, MaterialProperty[] properties</ins>
+	<ins>) {</ins>
+		<ins>base.OnGUI(materialEditor, properties);</ins>
+	<ins>}</ins></pre>
+						
+						<aside>
+							<h3>Why is there a separate material editor?</h3>
+							<div>
+								<p>Originally, the way to create a custom inspector for a material was by extending <code>MaterialEditor</code>. The <code>ShaderGUI</code> approach came later and is more straightforward and specific to materials. However, the original editor functionality is still used to generate the inspector. It just invokes the appropriate methods of the shader GUI. The editor is provided via a parameter because it's needed for direct manipulation of the selected materials.</p>
+							</div>
+						</aside>
+						
+						<p>To use our custom GUI we have to add a <code class="shader">CustomEditor</code> statement to our <em translate="no">Lit</em> shader, followed by a string containing the name of our class.</p>
+						
+						<pre class="shader" translate="no">Shader "My Pipeline/Lit" {
+	
+	&hellip;
+	
+	<ins>CustomEditor "LitShaderGUI"</ins>
+}</pre>
+						
+						<p>To do our custom work we'll need to use the editor, properties, and selected materials, so let's keep track of those with fields. Because we'll support multi-material editing, we'll have to work with an array of selected materials. Those can be retrieved via the <code>targets</code> property of the editor. However, because the editor is generic we get an <code>Object</code> array, not a <code>Material</code> array.</p>
+						
+						<pre translate="no">	<ins>MaterialEditor editor;</ins>
+	<ins>Object[] materials;</ins>
+	<ins>MaterialProperty[] properties;</ins>
+	
+	public override void OnGUI (
+		MaterialEditor materialEditor, MaterialProperty[] properties
+	) {
+		base.OnGUI(materialEditor, properties);
+
+		<ins>editor = materialEditor;</ins>
+		<ins>materials = materialEditor.targets;</ins>
+		<ins>this.properties = properties;</ins>
+	}</pre>
+						
+					</section>
+					
+					<section>
+						<h3>Casting Shadows</h3>
+						
+						<p>Let's begin by making it possible to disable shadow casting per material. That's done by disabling the <em translate="no">ShadowCaster</em> pass for all selected materials. We can do that by looping through the materials array and invoking <code>SetShaderPassEnabled</code> on each, with a pass name and whether it should be enabled. Put that code in a <code>SetPassEnabled</code> method with a pass and the enabled state as parameters.</p>
+						
+						<pre translate="no">	<ins>void SetPassEnabled (string pass, bool enabled) {</ins>
+		<ins>foreach (Material m in materials) {</ins>
+			<ins>m.SetShaderPassEnabled(pass, enabled);</ins>
+		<ins>}</ins>
+	<ins>}</ins></pre>
+						
+						<aside>
+							<h3>How does <code>foreach</code> work?</h3>
+							<div>
+								<p>It's a convenient alternative of a <code>for</code> loop. In this case, it's the same as the following code:</p>
+								
+								<pre translate="no">		for (int i = 0; i &lt; materials.Length; i++) {
+			var m = materials[i] as Material;
+			m.SetShaderPassEnabled(pass, enabled);
+		}</pre>
+								
+								<p>In general, <code>foreach</code> relies on iterator objects to do its work, so allocates temporary memory. However, it doesn't do this when explicitly looping through an array. In that case the code effectively gets converted to a simple for loop, as per the example above.</p>
+							</div>
+						</aside>
+						
+						<p>Besides that, we need to determine whether shadow casting is enabled. We can check that by invoking <code>GetShaderPassEnabled</code> on a material. Create another method for that, checking the first material of the selection.</p>
+						
+						<pre translate="no">	<ins>bool IsPassEnabled (string pass) {</ins>
+		<ins>return ((Material)materials[0]).GetShaderPassEnabled(pass);</ins>
+	<ins>}</ins></pre>
+						
+						<p>But if multiple materials are selected we can end up with mixed results. We cannot represent that with a single boolean. So let's return a nullable boolean instead. Then we can loop through all additional materials and if we find an inconsistency we'll return <code>null</code>.</p>
+						
+						<pre translate="no">	<ins>bool?</ins> IsPassEnabled (string pass) {
+		<ins>bool enabled =</ins> ((Material)materials[0]).GetShaderPassEnabled(pass);
+		<ins>for (int i = 1; i &lt; materials.Length; i++) {</ins>
+			<ins>if (enabled != ((Material)materials[i]).GetShaderPassEnabled(pass)) {</ins>
+				<ins>return null;</ins>
+			<ins>}</ins>
+		<ins>}</ins>
+		<ins>return enabled;</ins>
+	}</pre>
+						
+						<aside>
+							<h3>What's a nullable type?</h3>
+							<div>
+								<p>A nullable variant of a struct type can be created by writing a question mark after its type name. That wraps the struct in another struct that has an additional boolean to indicate whether it is considered to have a value. So it cannot really be set to <code>null</code>, but there's syntactic sugar that allows us to assign <code>null</code> to it, which flags it as not having a value.</p>
+								
+								<p>In our case, we end up with a struct that has two booleans, something like the following code, plus custom assignment operators:</p>
+								
+								<pre translate="no">struct NullableBool {
+
+	public bool Value { &hellip; }
+	
+	public bool HasValue { &hellip; }
+}</pre>
+							</div>
+						</aside>
+						
+						<p>Now we can create a method that takes care of showing a toggle option for casting shadows. First, check whether the <em translate="no">ShadowCaster</em> pass in enabled. If we didn't get a value, then set <code>EditorGUI.showMixedValue</code> to <code>true</code> to signal that input controls should draw a mixed-value representation of themselves. We also have to set the enabled state to something, which can be anything so just use <code>false</code>. And at the end of the method we should disable the mixed value representation.</p>
+						
+						<pre translate="no">	<ins>void CastShadowsToggle () {</ins>
+		<ins>bool? enabled = IsPassEnabled("ShadowCaster");</ins>
+		<ins>if (!enabled.HasValue) {</ins>
+			<ins>EditorGUI.showMixedValue = true;</ins>
+			<ins>enabled = false;</ins>
+		<ins>}</ins>
+		
+		<ins>EditorGUI.showMixedValue = false;</ins>
+	<ins>}</ins></pre>
+						
+						<p>The checkbox can be shown by invoking <code>EditorGUILayout.Toggle</code> with the <em translate="no">Cast Shadows</em> label and the enabled value. Assign its result back to the enabled state.</p>
+						
+						<pre translate="no">		if (!enabled.HasValue) {
+			EditorGUI.showMixedValue = true;
+			enabled = false;
+		}
+		<ins>enabled = EditorGUILayout.Toggle("Cast Shadows", enabled.Value);</ins>
+		EditorGUI.showMixedValue = false;</pre>
+						
+						<p>That only changes our variable. To adjust the materials we have to invoke <code>SetPassEnabled</code>. But we must only do that when the user changed the state. We can ensure that by invoking <code>EditorGUI.BeginChangeCheck</code> before the toggle and <code>EditorGUI.EndChangeCheck</code> after it. The latter invocation returns whether a change was made in between. If so, invoke <code>SetPassEnabled</code>.</p>
+						
+						<pre translate="no">		<ins>EditorGUI.BeginChangeCheck();</ins>
+		enabled = EditorGUILayout.Toggle("Cast Shadows", enabled.Value);
+		<ins>if (EditorGUI.EndChangeCheck()) {</ins>
+			<ins>SetPassEnabled("ShadowCaster", enabled.Value);</ins>
+		<ins>}</ins></pre>
+						
+						<p>Because we directly change the material assets, an undo step won't automatically get generated. We have to do that ourselves, by invoking <code>RegisterPropertyChangeUndo</code> on the editor with a label argument, before making the change.</p>
+						
+						<pre translate="no">		if (EditorGUI.EndChangeCheck()) {
+			<ins>editor.RegisterPropertyChangeUndo("Cast Shadows");</ins>
+			SetPassEnabled("ShadowCaster", enabled.Value);
+		}</pre>
+						
+						<p>Finally, invoke the method to show the toggle at the end of <code>OnGUI</code>. That causes the toggle to appear at the bottom of our material's inspector.</p>
+						
+						<pre translate="no">	public override void OnGUI (
+		MaterialEditor materialEditor, MaterialProperty[] properties
+	) {
+		&hellip;
+
+		<ins>CastShadowsToggle();</ins>
+	}</pre>
+						
+						<figure>
+							<img src="shader-gui/not-casting-shadows.png" width="320" height="40" alt="material"><br>
+							<img src="shader-gui/no-shadows.png" width="340" height="240" alt="scene">
+							<figcaption>Not casting shadows, controlled per material.</figcaption>
+						</figure>
+						
+					</section>
+					
+					<section>
+						<h3>Setting Shader Properties</h3>
+						
+						<p>Changing from opaque to clipped or faded surfaces requires changing multiple shader properties. We're going to make this convenient by adding setter properties for those that we need. The cull, blend, and z-write properties are straightforward. Use the appropriate types for the properties, invoke <code>FindProperty</code> with their name and the properties array as arguments, and assign to their <code>floatValue</code> property.</p>
+						
+						<pre translate="no">	<ins>CullMode Cull {</ins>
+		<ins>set {</ins>
+			<ins>FindProperty("_Cull", properties).floatValue = (float)value;</ins>
+		<ins>}</ins>
+	<ins>}</ins>
+
+	<ins>BlendMode SrcBlend {</ins>
+		<ins>set {</ins>
+			<ins>FindProperty("_SrcBlend", properties).floatValue = (float)value;</ins>
+		<ins>}</ins>
+	<ins>}</ins>
+
+	<ins>BlendMode DstBlend {</ins>
+		<ins>set {</ins>
+			<ins>FindProperty("_DstBlend", properties).floatValue = (float)value;</ins>
+		<ins>}</ins>
+	<ins>}</ins>
+
+	<ins>bool ZWrite {</ins>
+		<ins>set {</ins>
+			<ins>FindProperty("_ZWrite", properties).floatValue = value ? 1 : 0;</ins>
+		<ins>}</ins>
+	<ins>}</ins></pre>
+						
+						<p>The clip mode and shadow-receiving properties require more work, because they needs to be synchronized with shader keywords. A keyword can be enabled for a material by invoking <code>EnableKeyword</code> on the material. Disabling it requires invoking <code>DisableKeyword</code>. We have to do that for all selected materials. Create a convenient method for this, with a keyword name and enabled state as parameters.</p>
+						
+						<pre translate="no">	<ins>void SetKeywordEnabled (string keyword, bool enabled) {</ins>
+		<ins>if (enabled) {</ins>
+			<ins>foreach (Material m in materials) {</ins>
+				<ins>m.EnableKeyword(keyword);</ins>
+			<ins>}</ins>
+		<ins>}</ins>
+		<ins>else {</ins>
+			<ins>foreach (Material m in materials) {</ins>
+				<ins>m.DisableKeyword(keyword);</ins>
+			<ins>}</ins>
+		<ins>}</ins>
+	<ins>}</ins></pre>
+						
+						<p>Now we can add setter properties for clipping and shadow-receiving, invoking <code>SetKeywordEnabled</code> for all relevant keywords. Also create an enum for our custom clip mode.</p>
+						
+						<pre translate="no">	<ins>enum ClipMode {</ins>
+		<ins>Off, On, Shadows</ins>
+	<ins>}</ins>
+
+	<ins>ClipMode Clipping {</ins>
+		<ins>set {</ins>
+			<ins>FindProperty("_Clipping", properties).floatValue = (float)value;</ins>
+			<ins>SetKeywordEnabled("_CLIPPING_OFF", value == ClipMode.Off);</ins>
+			<ins>SetKeywordEnabled("_CLIPPING_ON", value == ClipMode.On);</ins>
+			<ins>SetKeywordEnabled("_CLIPPING_SHADOWS", value == ClipMode.Shadows);</ins>
+		<ins>}</ins>
+	<ins>}</ins>
+
+	<ins>bool ReceiveShadows {</ins>
+		<ins>set {</ins>
+			<ins>FindProperty("_ReceiveShadows", properties).floatValue =</ins>
+				<ins>value ? 1 : 0;</ins>
+			<ins>SetKeywordEnabled("_RECEIVE_SHADOWS", value);</ins>
+		<ins>}</ins>
+	<ins>}</ins></pre>
+						
+						<p>The final thing that we need to adjust is the render queue. That can be done by setting a material's <code>renderQueue</code> property. Add a setter property for that with the <code>RenderQueue</code> type, setting the queue of all materials.</p>
+						
+						<pre translate="no">	<ins>RenderQueue RenderQueue€ {</ins>
+		<ins>set {</ins>
+			<ins>foreach (Material m in materials) {</ins>
+				<ins>m.renderQueue = (int)value;</ins>
+			<ins>}</ins>
+		<ins>}</ins>
+	<ins>}</ins></pre>
+						
+					</section>
+					
+					<section>
+						<h3>Presets</h3>
+						
+						<p>Unity's shaders only allows you to select a few predefined surface types, hiding all the details of blend modes, culling, queues, etc. We won't do that. Instead, we'll add a few buttons that allow the user to apply presets.</p>
+						
+						<p>The first preset is opaque, corresponding to the default material settings. Add a method for that, which begins by invoking <code>GUILayout.Button</code> with <em translate="no">Opaque</em> as its label argument. If the button is clicked the method returns <code>true</code>. If it doesn't then it wasn't clicked and we can abort the method. Otherwise we continue and register and undo step.</p>
+						
+						<pre translate="no">	<ins>void OpaquePreset () {</ins>
+		<ins>if (!GUILayout.Button("Opaque")) {</ins>
+			<ins>return;</ins>
+		<ins>}</ins>
+		<ins>editor.RegisterPropertyChangeUndo("Opague Preset");</ins>
+	<ins>}</ins></pre>
+						
+						<p>The settings for opaque are: no clipping; back-face culling, one-zero blending, writing depth, receiving shadows, casting shadows, and uses the geometry queue.</p>
+						
+						<pre translate="no">		editor.RegisterPropertyChangeUndo("Opague Preset");
+		<ins>Clipping = ClipMode.Off;</ins>
+		<ins>Cull = CullMode.Back;</ins>
+		<ins>SrcBlend = BlendMode.One;</ins>
+		<ins>DstBlend = BlendMode.Zero;</ins>
+		<ins>ZWrite = true;</ins>
+		<ins>ReceiveShadows = true;</ins>
+		<ins>SetPassEnabled("ShadowCaster", true);</ins>
+		<ins>RenderQueue€ = RenderQueue.Geometry;</ins></pre>
+						
+						<p>Add another method for a clip preset. The only difference is that clipping is on and it uses the alpha-test queue.</p>
+						
+						<pre translate="no">	void <ins>ClipPreset</ins> () {
+		if (!GUILayout.Button(<ins>"Clip"</ins>)) {
+			return;
+		}
+		editor.RegisterPropertyChangeUndo(<ins>"Clip Preset"</ins>);
+		Clipping = ClipMode.<ins>On</ins>;
+		Cull = CullMode.Back;
+		SrcBlend = BlendMode.One;
+		DstBlend = BlendMode.Zero;
+		ZWrite = true;
+		ReceiveShadows = true;
+		SetPassEnabled("ShadowCaster", true);
+		RenderQueue€ = RenderQueue.<ins>AlphaTest</ins>;
+	}</pre>
+						
+						<p>But clipping could be combined with double-sided rendering, so add another preset for that, with culling off.
+						
+						<pre translate="no">	void <ins>ClipDoubleSidedPreset</ins> () {
+		if (!GUILayout.Button(<ins>"Clip Double-Sided"</ins>)) {
+			return;
+		}
+		editor.RegisterPropertyChangeUndo(<ins>"Clip Double-Sided Preset"</ins>);
+		Clipping = ClipMode.On;
+		Cull = CullMode.<ins>Off</ins>;
+		SrcBlend = BlendMode.One;
+		DstBlend = BlendMode.Zero;
+		ZWrite = true;
+		ReceiveShadows = true;
+		SetPassEnabled("ShadowCaster", true);
+		RenderQueue€ = RenderQueue.AlphaTest;
+	}</pre>
+						
+						<p>Make another preset for traditional fade materials. Compared to the opaque preset, it uses source-alpha and one-minus-source-alpha blending, doesn't write depth, neither receives nor casts shadows, and uses the transparent queue.
+						
+						<pre translate="no">	void <ins>FadePreset</ins> () {
+		if (!GUILayout.Button(<ins>"Fade"</ins>)) {
+			return;
+		}
+		editor.RegisterPropertyChangeUndo(<ins>"Fade Preset"</ins>);
+		Clipping = ClipMode.Off;
+		Cull = CullMode.Back;
+		SrcBlend = BlendMode.<ins>SrcAlpha</ins>;
+		DstBlend = BlendMode.<ins>OneMinusSrcAlpha</ins>;
+		ZWrite = <ins>false</ins>;
+		ReceiveShadows = <ins>false</ins>;
+		SetPassEnabled("ShadowCaster", <ins>false</ins>);
+		RenderQueue€ = RenderQueue.<ins>Transparent</ins>;
+	}</pre>
+						
+						<p>But our fade materials can both cast and receive shadows, so add another preset that has both casting and receiving enabled and uses the shadows clip mode.</p>
+						
+						<pre translate="no">	void <ins>FadeWithShadowsPreset</ins> () {
+		if (!GUILayout.Button(<ins>"Fade with Shadows"</ins>)) {
+			return;
+		}
+		editor.RegisterPropertyChangeUndo(<ins>"Fade with Shadows Preset"</ins>);
+		Clipping = ClipMode.<ins>Shadows</ins>;
+		Cull = CullMode.Back;
+		SrcBlend = BlendMode.SrcAlpha;
+		DstBlend = BlendMode.OneMinusSrcAlpha;
+		ZWrite = false;
+		ReceiveShadows = <ins>true</ins>;
+		SetPassEnabled("ShadowCaster", <ins>true</ins>);
+		RenderQueue€ = RenderQueue.Transparent;
+	}</pre>
+						
+						<p>Invoke all preset methods at the end of <code>OnGUI</code>. Add a little space between them and the rest of the GUI by invoking <code>EditorGUILayout.Space</code> first. Also, the preset buttons should be rarely used, so hide them with a foldout labeled <em translate="no">Preset</em>. The foldout can be created by invoking <code>EditorGUILayout.Foldout</code> with a boolean that indicated whether it's open, followed by its label, and whether clicking on the label&mdash;instead of only its icon&mdash;toggles its state. Keep track of the foldout state in a field so it's possible to change it. If open, show the presets.</p>
+						
+						<pre translate="no">	<ins>bool showPresets;</ins>
+	
+	&hellip;
+
+	public override void OnGUI (
+		MaterialEditor materialEditor, MaterialProperty[] properties
+	) {
+		&hellip;
+
+		<ins>EditorGUILayout.Space();</ins>
+		<ins>showPresets = EditorGUILayout.Foldout(showPresets, "Presets", true);</ins>
+		<ins>if (showPresets) {</ins>
+			<ins>OpaquePreset();</ins>
+			<ins>ClipPreset();</ins>
+			<ins>ClipDoubleSidedPreset();</ins>
+			<ins>FadePreset();</ins>
+			<ins>FadeWithShadowsPreset();</ins>
+		<ins>}</ins>
+	}</pre>
+						
+						<figure>
+							<img src="shader-gui/presets.png" width="320" height="154">
+							<figcaption>Preset buttons.</figcaption>
+						</figure>
+						
+						<p>The next tutorial is <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/reflections/">Reflections</a>.</p>
+					</section>
+					
+					<a href="https://bitbucket.org/catlikecodingunitytutorials/scriptable-render-pipeline-06-transparency/" class="repository">repository</a>
+					<a href="Transparency.pdf" download rel="nofollow">PDF</a>
+				</section>
+				
+			</article>
+		</main>
+
+		<footer>
+			<p>Enjoying the <a href="https://catlikecoding.com/unity/tutorials/">tutorials</a>? Are they useful? Want more?</p>
+			<p><b><a href="https://www.patreon.com/catlikecoding">Please support me on Patreon!</a></b></p>
+			<p><a href="https://www.patreon.com/catlikecoding"><img src="https://catlikecoding.com/unity/tutorials/become-a-patron.png" alt="Become my patron!" width="217" height="51"></a></p>
+			<p><b><a href="https://catlikecoding.com/unity/tutorials/donating.html">Or make a direct donation</a>!</b></p>
+			<p>made by <a href="https://catlikecoding.com/jasper-flick/" rel="author">Jasper Flick</a></p>
+		</footer>
+		
+		<script src="../../tutorials.js"></script>
+	</body>
+</html>

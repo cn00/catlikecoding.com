@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/image-quality/">
+		<meta property="og:type" content="article">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/image-quality/tutorial-image.jpg">
+		<meta property="og:title" content="Image Quality">
+		<meta property="og:description" content="A Unity Scriptable Render Pipeline tutorial about render scale, MSAA, and HDR.">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta name="viewport" content="width=768">
+		<title>Image Quality</title>
+		<link href="../../tutorials.css" rel="stylesheet">
+		<link rel="manifest" href="https://catlikecoding.com/site.webmanifest">
+		<link rel="mask-icon" href="https://catlikecoding.com/safari-pinned-tab.svg" color="#aa0000">
+
+		<script type="application/ld+json">{
+			"@context": "http://schema.org",
+			"@type": "WebPage",
+			"mainEntity": {
+				"@type": "TechArticle",
+				"@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/image-quality/#article",
+				"headline": "Image Quality",
+				"alternativeHeadline": "Render scale, MSAA, and HDR",
+				"datePublished": "2019-08-31",
+				"author": { "@type": "Person", "name": "Jasper Flick", "@id": "https://catlikecoding.com/jasper-flick/#person" },
+				"publisher": { "@type": "Organization", "name": "Catlike Coding", "@id": "https://catlikecoding.com/#organization" },
+				"description": "A Unity Scriptable Render Pipeline tutorial about render scale, MSAA, and HDR.",
+				"image": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/image-quality/tutorial-image.jpg",
+				"dependencies": "Unity 2018.4.4f1",
+				"proficiencyLevel": "Expert"
+			},
+			"breadcrumb": {
+				"@type": "BreadcrumbList",
+				"itemListElement": [
+					{ "@type": "ListItem", "position": 1, "item": { "@id": "https://catlikecoding.com/unity/", "name": "Unity" }},
+					{ "@type": "ListItem", "position": 2, "item": { "@id": "https://catlikecoding.com/unity/tutorials/", "name": "Tutorials" }},
+					{ "@type": "ListItem", "position": 3, "item": { "@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/", "name": "Scriptable Render Pipeline" }}
+				]
+			}
+		}</script>
+		<script>
+			var customTypes = {
+				ClipMode: 1,
+				DoubleSidedMeshMenuItem: 1,
+				InstancedmaterialProperties: 1,
+				LitShaderGUI: 1,
+				LitSurface: 1,
+				MSAAMode: 1,
+				MyPipeline: 1,
+				MyPipelineAsset: 1,
+				MyPipelineAssetEditor: 1,
+				MyPipelineCamera: 1,
+				MyPipelineShaderPreprocessor: 1,
+				MyPostProcessingStack: 1,
+				Pass: 1,
+				ShadowCascades: 1,
+				ShadowMapSize: 1
+			};
+			var hasMath = true;
+		</script>
+	</head>
+	<body>
+		<header>
+			<a href="https://catlikecoding.com"><img src="https://catlikecoding.com/catlike-coding-logo.svg" alt="Catlike Coding" width="45" height="45"></a>
+			<nav>
+				<ol>
+					<li><a href="https://catlikecoding.com">Catlike Coding</a></li>
+					<li><a href="https://catlikecoding.com/unity/">Unity</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/">Tutorials</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">Scriptable Render Pipeline</a></li>
+				</ol>
+			</nav>
+		</header>
+		
+		<main>
+			<article>
+				<header>
+					<h1>Image Quality</h1>
+					<p>Render scale, MSAA, and HDR</p>
+					<ul>
+						<li>Adjust the render scale.</li>
+						<li>Support MSAA.</li>
+						<li>Enable HDR, with optional tone mapping.</li>
+					</ul>
+				</header>
+				
+				<p>This is the twelfth installment of a tutorial series covering Unity's <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">scriptable render pipeline</a>. It's about improving image quality, by adjusting the render scale, applying MSAA, and rendering to HDR buffers in combination with tone mapping.</p>
+				
+				<p>This tutorial is made with Unity 2018.4.6f1.</p>
+				
+				<figure>
+					<img src="tutorial-image.jpg" width="512" height="256">
+					<figcaption>HDR, MSAA, and render scale working together.</figcaption>
+				</figure>
+								
+				<section>
+					<h2>Render Scale</h2>
+					
+					<p>The camera determines the width and height of the image that gets rendered, that's out of control of the pipeline. But we can do whatever we want before rendering to the camera's target. We can render to intermediate textures, which we can give any size we like. For example we could render everything to a smaller texture, followed by a final blit to the camera's target to scale it up to the desired size. That reduces the image quality, but speeds up rendering because there are fewer fragment to process. The Lightweight/Universal pipeline has a <em>Render Scale</em> option to support this, so let's add it to our own pipeline as well.</p>
+					
+					<section>
+						<h3>Scaling Down</h3>
+						
+						<p>Add a slider for the render scale to <code>MyPipelineAsset</code>, initially with a range of &frac14;&ndash;1. Reducing the resolution to a quarter drops the quality by a lot&mdash;pixel count gets divided by 16&mdash;and is most likely unacceptable, unless the original resolution is very high.</p>
+						
+						<pre>	<ins>[SerializeField, Range(0.25f, 1f)]</ins>
+	<ins>float renderScale = 1f;</ins></pre>
+						
+						<figure>
+							<img src="render-scale/render-scale.png" width="320" height="36">
+							<figcaption>Render scale slider set to its minimum.</figcaption>
+						</figure>
+						
+						<p>Pass the render scale to the pipeline instance.</p>
+						
+						<pre>	protected override IRenderPipeline InternalCreatePipeline () {
+		&hellip;
+		return new MyPipeline(
+			&hellip;
+			(int)shadowCascades, shadowCascadeSplit<ins>,</ins>
+			<ins>renderScale</ins>
+		);
+	}</pre>
+						
+						<p>And have <code>MyPipeline</code> keep track of it.</p>
+						
+						<pre>	<ins>float renderScale;</ins>
+
+	public MyPipeline (
+		&hellip;
+		int shadowCascades, Vector3 shadowCascasdeSplit<ins>,</ins>
+		<ins>float renderScale</ins>
+	) {
+		&hellip;
+		<ins>this.renderScale = renderScale;</ins>
+	}</pre>
+						
+						<p>When rendering a camera in <code>Render</code>, determine whether we're using scaled rendering before we create render textures in case we have an active stack. We use scaled rendering when the render scale has been reduced, but only do so for a game camera, so the scene, preview, and other cameras remain unaffected. Keep track of this decision with a boolean variable so we refer back to it.</p>
+						
+						<pre>		var myPipelineCamera = camera.GetComponent&lt;MyPipelineCamera>();
+		MyPostProcessingStack activeStack = myPipelineCamera ?
+			myPipelineCamera.PostProcessingStack : defaultStack;
+
+		<ins>bool scaledRendering =</ins>
+			<ins>renderScale &lt; 1f &amp;&amp; camera.cameraType == CameraType.Game;</ins>
+		
+		if (activeStack) {
+			&hellip;
+		}</pre>
+						
+						<p>Keep track of the render width and height in variables as well. They're determined by the camera by default, but must be adjusted when using scaled rendering.</p>
+						
+						<pre>		bool scaledRendering =
+			renderScale &lt; 1f &amp;&amp; camera.cameraType == CameraType.Game;
+		
+		<ins>int renderWidth = camera.pixelWidth;</ins>
+		<ins>int renderHeight = camera.pixelHeight;</ins>
+		<ins>if (scaledRendering) {</ins>
+			<ins>renderWidth = (int)(renderWidth * renderScale);</ins>
+			<ins>renderHeight = (int)(renderHeight * renderScale);</ins>
+		<ins>}</ins></pre>
+					</section>
+					
+					<section>
+						<h3>Rendering to a Scaled Texture</h3>
+						
+						<p>We must now render to an intermediate texture when either scaled rendering or post-processing is used. Keep track of this with a boolean as well and use the adjusted width and height when getting the textures.</p>
+						
+						<pre>		<ins>bool renderToTexture = scaledRendering || activeStack;</ins>
+
+		if (<ins>renderToTexture</ins>) {
+			cameraBuffer.GetTemporaryRT(
+				cameraColorTextureId, <ins>renderWidth</ins>, <ins>renderHeight</ins>, 0,
+				FilterMode.Bilinear
+			);
+			cameraBuffer.GetTemporaryRT(
+				cameraDepthTextureId, <ins>renderWidth</ins>, <ins>renderHeight</ins>, 24,
+				FilterMode.Point, RenderTextureFormat.Depth
+			);
+			&hellip;
+		}</pre>
+						
+						<p>From now on the adjusted width and height must be passed to the active stack, when <code>RenderAfterOpaque</code> gets invoked.</p>
+						
+						<pre>		context.DrawSkybox(camera);
+
+		if (activeStack) {
+			activeStack.RenderAfterOpaque(
+				postProcessingBuffer, cameraColorTextureId, cameraDepthTextureId,
+				<ins>renderWidth</ins>, <ins>renderHeight</ins>
+			);
+			&hellip;
+		}</pre>
+						
+						<p>The same is true for <code>RenderAfterTransparent</code>. Now we must always release the textures when we're rendering to them but only invoke <code>RenderAfterTransparent</code> when a stack is in use. If not we can use a regular blit to copy the scaled texture to the camera's target.</p>
+						
+						<pre>		DrawDefaultPipeline(context, camera);
+
+		if (<ins>renderToTexture</ins>) {
+			<ins>if (activeStack) {</ins>
+				activeStack.RenderAfterTransparent(
+					postProcessingBuffer, cameraColorTextureId,
+					cameraDepthTextureId, <ins>renderWidth</ins>, <ins>renderHeight</ins>
+				);
+				context.ExecuteCommandBuffer(postProcessingBuffer);
+				postProcessingBuffer.Clear();
+			<ins>}</ins>
+			<ins>else {</ins>
+				<ins>cameraBuffer.Blit(</ins>
+					<ins>cameraColorTextureId, BuiltinRenderTextureType.CameraTarget</ins>
+				<ins>);</ins>
+			<ins>}</ins>
+			cameraBuffer.ReleaseTemporaryRT(cameraColorTextureId);
+			cameraBuffer.ReleaseTemporaryRT(cameraDepthTextureId);
+		}</pre>
+						
+						<figure>
+							<img src="render-scale/100.png" width="300" height="270" alt="1.0">
+							<img src="render-scale/075.png" width="300" height="270" alt="0.75">
+							<img src="render-scale/050.png" width="300" height="270" alt="0.5">
+							<img src="render-scale/025.png" width="300" height="270" alt="025">
+							<figcaption>Render scale 1, 0.75, 0.5, and 0.25; zoomed in and without post-processing.</figcaption>
+						</figure>
+						
+						<p>Adjusting the render scale affects everything that our pipeline renders, except shadows as they have their own size. A slight reduction of the render scale seems to apply a bit of anti-aliasing, although haphazardly. But further reduction makes it clear that this is just a loss of detail that gets smudged due to bilinear interpolation when blitting to the final render target.</p>
+						
+						<aside>
+							<h3>How does render scale interact with bilinear interpolation?</h3>
+							<div>
+								<p>A render scale of 0.5 is most straightforward: we end up with a single pixel per block of 2&times;2 target pixels. Each final pixel uses the same four weights for interpolation, but there are four possible orientations.</p>
+								
+								<figure>
+									<img src="render-scale/render-scale-050-diagram.png" width="234" height="234">
+									<figcaption>Render scale 0.5 filtering.</figcaption>
+								</figure>
+								
+								<p>Other render scales produce pixels with varying weight configurations, because the distance from source to target pixel varies, in a regular pattern depending on the scale.</p>
+								
+								<figure>
+									<img src="render-scale/render-scale-075-diagram.png" width="459" height="459">
+									<figcaption>Render scale 0.75 filtering.</figcaption>
+								</figure>
+							</div>
+						</aside>
+					</section>
+					
+					<section>
+						<h3>Scaling Up</h3>
+						
+						<p>We can scale down to improve performance at the cost of image quality. We can do the opposite as well: scale up to improve image quality at the cost of performance. To make this possible increase the maximum render scale to 2 in <code>MyPipelineAsset</code>.</p>
+						
+						<pre>	[SerializeField, Range(0.25f, <ins>2f</ins>)]
+	float renderScale = 1f;</pre>
+						
+						<p>And also activate scaled rendering in <code>MyPipeline.Render</code> if the render scale is greater than 1.</p>
+						
+						<pre>		bool scaledRendering =
+			<ins>(</ins>renderScale &lt; 1f <ins>|| renderScale > 1f)</ins> &amp;&amp;
+			camera.cameraType == CameraType.Game;</pre>
+						
+						<figure>
+							<img src="render-scale/125.png" width="300" height="270" alt="1.25">
+							<img src="render-scale/150.png" width="300" height="270" alt="1.5">
+							<img src="render-scale/175.png" width="300" height="270" alt="1.75">
+							<img src="render-scale/200.png" width="300" height="270" alt="2.0">
+							<figcaption>Render scale 1.25, 1.5, 1.75, and 2.</figcaption>
+						</figure>
+						
+						<p>The image quality indeed improves, but is only really good when the scale is set to 2. At this scale we end up averaging a dedicated 2&times;2 pixel blocks for each final pixel. This means that we're rendering four times as many pixels, which is the same as supersampling anti-aliasing, SSAA 2&times; using a regular grid.</p>
+						
+						<figure>
+							<img src="render-scale/render-scale-150-diagram.png" width="122" height="122" alt="1.5">
+							<img src="render-scale/render-scale-200-diagram.png" width="122" height="122" alt="2.0">
+							<figcaption>Render scale 1.5 and 2 filtering.</figcaption>
+						</figure>
+						
+						<p>Increasing the render scale further won't improve image quality. At 3 we end up with the same result as render scale 1, while at 4 we're back at 2&times;2 blocks per pixel but closer together. That's because a single bilinear blit can only average four pixels. Taking advantage of higher scales would require a pass that performs more than one texture sample per fragment. While that's possible it's impractical because the required work scales quadratically with the render scale. SSAA 4&times; would require use to render sixteen times as many pixels.</p>
+					</section>
+				</section>
+				
+				<section>
+					<h2>MSAA</h2>
+					
+					<p>An alternative to SSAA is MSAA: multi-sample anti-aliasing. The idea is the same, but the execution differs. MSAA keeps track of multiple samples per pixel, which don't have to placed in a regular grid. The big difference is that the fragment program is only invoked once per primitive per fragment, so at the original resolution. The result is then copied to all subsamples that are covered by the rasterized triangle. This significantly reduces the amount of work that has to be done, but it means that MSAA only affects triangle edges and nothing else. High-frequency surface patterns and alpha-clipped edges remain aliased.</p>
+					
+					<aside>
+						<h3>What about alpha-to-coverage?</h3>
+						<div>
+							<p>That's a trick to smooth alpha-clipped edges somewhat, which can produce decent results in some cases. It won't be covered in this tutorial.</p>
+						</div>
+					</aside>
+					
+					<section>
+						<h3>Configuration</h3>
+						
+						<p>Add an option to select the MSAA mode to <code>MyPipelineAsset</code>. By default MSAA is off, the other options being 2&times;, 4&times;, and 8&times;, which can be represented with an enum. The enum values represent the amount of samples per pixel, so the default is 1.</p>
+						
+						<pre>	<ins>public enum MSAAMode {</ins>
+		<ins>Off = 1,</ins>
+		<ins>_2x = 2,</ins>
+		<ins>_4x = 4,</ins>
+		<ins>_8x = 8</ins>
+	<ins>}</ins>
+
+	&hellip;
+
+	<ins>[SerializeField]</ins>
+	<ins>MSAAMode MSAA = MSAAMode.Off;</ins></pre>
+						
+						<figure>
+							<img src="msaa/msaa-mode.png" width="320" height="38">
+							<figcaption>MSAA mode.</figcaption>
+						</figure>
+						
+						<aside>
+							<h3>Why not support MSAA 16&times;?</h3>
+							<div>
+								<p>You can do that, but it is very expensive for little extra quality gain compared to 8&times;, and doesn't have widespread support.</p>
+							</div>
+						</aside>
+						
+						<p>Pass the amount of samples per pixel to the pipeline instance.</p>
+						
+						<pre>		return new MyPipeline(
+			&hellip;
+			renderScale<ins>, (int)MSAA</ins>
+		);</pre>
+						
+						<p>And keep track of it in <code>MyPipeline</code>.</p>
+						
+						<pre>	<ins>int msaaSamples;</ins>
+
+	public MyPipeline (
+		&hellip;
+		float renderScale<ins>, int msaaSamples</ins>
+	) {
+		&hellip;
+		this.msaaSamples = msaaSamples;
+	}</pre>
+						
+						<p>Not all platforms support MSAA and the maximum sample count also varies. Going above the maximum could result in a crash, so we have to make sure that we remain within the limit. We can do that by assigning the sample count to <code>QualitySettings.antiAliasing</code>. Our pipeline doesn't use this quality setting, but it takes care of enforcing the limit when assigned to it. So after assigning to it we copy it back to our own sample count. The only thing we have to be aware of is that it will yield zero when MSAA is unsupported, which we have to convert to a sample count of 1.</p>
+						
+						<pre>		<ins>QualitySettings.antiAliasing = msaaSamples;</ins>
+		this.msaaSamples = <ins>Mathf.Max(QualitySettings.antiAliasing, 1)</ins>;</pre>
+					</section>
+					
+					<section>
+						<h3>Multisampled Render Textures</h3>
+						
+						<p>MSAA support is set per camera, so keep track of the samples used for rendering in <code>Render</code> and force it to 1 if the camera doesn't have MSAA enabled. Then if we end up with more than one sample per pixel we have to render to intermediate multi-sampled textures, MS textures for short.</p>
+						
+						<pre>		<ins>int renderSamples = camera.allowMSAA ? msaaSamples : 1;</ins>
+		bool renderToTexture =
+			scaledRendering || <ins>renderSamples > 1 ||</ins> activeStack;</pre>
+						
+						<p>To configure the render textures correctly we have to add two more arguments to <code>GetTemporaryRT</code>. First the read-write mode, which is the default for the color buffer and is linear for the depth buffer. The next argument is the sample count.</p>
+						
+						<pre>		if (renderToTexture) {
+			cameraBuffer.GetTemporaryRT(
+				cameraColorTextureId, renderWidth, renderHeight, 0,
+				FilterMode.Bilinear<ins>, RenderTextureFormat.Default,</ins>
+				<ins>RenderTextureReadWrite.Default, renderSamples</ins>
+			);
+			cameraBuffer.GetTemporaryRT(
+				cameraDepthTextureId, renderWidth, renderHeight, 24,
+				FilterMode.Point, RenderTextureFormat.Depth<ins>,</ins>
+				<ins>RenderTextureReadWrite.Linear, renderSamples</ins>
+			);
+			&hellip;
+		}</pre>
+						
+						<p>Try this out with all post-processing disabled.</p>
+						
+						<figure>
+							<img src="msaa/2x.png" width="300" height="270" alt="2x">
+							<img src="msaa/4x.png" width="300" height="270" alt="4x">
+							<img src="msaa/8x.png" width="300" height="270" alt="8x">
+							<img src="render-scale/200.png" width="300" height="270" alt="2.0">
+							<figcaption>MSAA 2&times;, 4&times;, 8&times;, plus no MSAA with render scale 2 for comparison.</figcaption>
+						</figure>
+						
+						<aside>
+							<h3>Does MSAA work with directional shadows?</h3>
+							<div>
+								<p>It works fine for our render pipeline. Unity's pipelines have trouble because they use a screen-space pass for cascaded directional shadows. We'll encounter the same kind of problem a bit further in this tutorial.</p>
+							</div>
+						</aside>
+						
+						<p>Compared to doubling the render scale, MSAA 4&times; ends up slightly better than render scale 2, with the caveat that the render scale affects everything and not just geometry edges. You could also combine both approaches. For example MSAA 4&times; at render scale 2 is roughly comparable to solely MSAA 8&times; at render scale 1, although it uses sixteen samples instead of eight per final pixel.</p> 
+						
+						<figure>
+							<img src="msaa/4xrs2.png" width="300" height="270" alt="4x">
+							<img src="msaa/8xrs2.png" width="300" height="270" alt="8x">
+							<figcaption>MSAA 4&times; and 8&times; both at render scale 2.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Resolving MS Textures</h3>
+						
+						<p>While we can render directly to MS textures, we cannot directly read from them the normal way. If we want to sample a pixel it must first be resolved, which means averaging all samples to arrive at the final value. The resolve happens for the entire texture at once in a special <em>Resolve Color</em> pass, which gets inserted automatically before a pass that samples it.</p>
+						
+						<figure>
+							<img src="msaa/resolving-color.png" width="298" height="162">
+							<figcaption>Resolving color before final blit.</figcaption>
+						</figure>
+						
+						<p>Resolving the MS texture creates a temporary regular texture which remains valid until something new gets rendered to the MS texture. So if we sample from and then render to the MS texture multiple times we end up with extra resolve passes for the same texture. You can see this when activating a post-effect stack with blurring enabled. At strength 5 we get three resolve passes.
+						
+						<figure>
+							<img src="msaa/multiple-resolves.png" width="298" height="160">
+							<figcaption>Resolving three times with blur strength 5.</figcaption>
+						</figure>
+						
+						<p>The additional resolve passes are useless, because our full-screen effects don't benefit from MSAA. To avoid needlessly rendering to an MS texture we can blit to an intermediate texture once and then use that instead of the camera target. To make this possible add a samples parameter to the <code>RenderAfterOpaque</code> and <code>RenderAfterTransparent</code> methods in <code>MyPostProcessingStack</code>. If blurring is enabled and MSAA is used then copy to a resolved texture and pass that to <code>Blur</code>.</p>
+						
+						<pre>	<ins>static int resolvedTexId =</ins>
+		<ins>Shader.PropertyToID("_MyPostProcessingStackResolvedTex");</ins>
+	
+	&hellip;
+	
+	public void RenderAfterOpaque (
+		CommandBuffer cb, int cameraColorId, int cameraDepthId,
+		int width, int height<ins>, int samples</ins>
+	) { &hellip; }
+	
+	public void RenderAfterTransparent (
+		CommandBuffer cb, int cameraColorId, int cameraDepthId,
+		int width, int height<ins>, int samples</ins>
+	) {
+		if (blurStrength > 0) {
+			<ins>if (samples > 1) {</ins>
+				<ins>cb.GetTemporaryRT(</ins>
+					<ins>resolvedTexId, width, height, 0, FilterMode.Bilinear</ins>
+				<ins>);</ins>
+				<ins>Blit(cb, cameraColorId, resolvedTexId);</ins>
+				<ins>Blur(cb, resolvedTexId, width, height);</ins>
+				<ins>cb.ReleaseTemporaryRT(resolvedTexId);</ins>
+			<ins>}</ins>
+			<ins>else {</ins>
+				Blur(cb, cameraColorId, width, height);
+			<ins>}</ins>
+		}
+		else {
+			Blit(cb, cameraColorId, BuiltinRenderTextureType.CameraTarget);
+		}
+	}</pre>
+						
+						<p>Add the render samples as arguments in <code>MyPipeline.Render</code>.</p>
+						
+						<pre>			activeStack.RenderAfterOpaque(
+				postProcessingBuffer, cameraColorTextureId, cameraDepthTextureId,
+				renderWidth, renderHeight<ins>, renderSamples</ins>
+			);
+		
+		&hellip;
+		
+						activeStack.RenderAfterTransparent(
+					postProcessingBuffer, cameraColorTextureId,
+					cameraDepthTextureId, renderWidth, renderHeight<ins>,</ins>
+					<ins>renderSamples</ins>
+				);</pre>
+						
+						<p>The three resolve passes are now reduced to one, plus a simple blit.</p>
+						
+						<figure>
+							<img src="msaa/single-resolve.png" width="298" height="146">
+							<figcaption>Resolving once with blur strength 5.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>No Depth Resolve</h3>
+						
+						<p>Color samples are resolved by averaging them, but this doesn't work for the depth buffer. Averaging adjacent depth values makes no sense and there is no universal approach that can be used, so multisampled depth doesn't get resolved at all. As as result the depth stripes effect doesn't work when MSAA is enabled.</p>
+						
+						<p>The naive approach to get the effect working again is to simply not apply MSAA to the depth texture when depth stripes are enabled. First add a getter property to <code>MyPostProcessingStack</code> that indicates whether it needs to read from a depth texture. This is only required when the depth stripes effect is used.</p>
+						
+						<pre>	<ins>public bool NeedsDepth {</ins>
+		<ins>get {</ins>
+			<ins>return depthStripes;</ins>
+		<ins>}</ins>
+	<ins>}</ins></pre>
+						
+						<p>Now we can keep track of whether we need an accessible depth texture in <code>MyPipeline.Render</code>. Only when we need depth do we have to get a separate depth texture, otherwise we can make do with setting the depth bits of the color texture. And if we do need a depth texture then let's explicitly always set its samples to 1 to disable MSAA for it.</p>
+						
+						<pre>		<ins>bool needsDepth = activeStack && activeStack.NeedsDepth;</ins>
+
+		if (renderToTexture) {
+			cameraBuffer.GetTemporaryRT(
+				cameraColorTextureId, renderWidth, renderHeight,
+				<ins>needsDepth ? 0 : 24</ins>,
+				FilterMode.Bilinear, RenderTextureFormat.Default,
+				RenderTextureReadWrite.Default, renderSamples
+			);
+			<ins>if (needsDepth) {</ins>
+				cameraBuffer.GetTemporaryRT(
+					cameraDepthTextureId, renderWidth, renderHeight, 24,
+					FilterMode.Point, RenderTextureFormat.Depth,
+					RenderTextureReadWrite.Linear, <ins>1</ins>
+				);
+				cameraBuffer.SetRenderTarget(
+					cameraColorTextureId,
+					RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store,
+					cameraDepthTextureId,
+					RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store
+				);
+			<ins>}</ins>
+			<ins>else {</ins>
+				<ins>cameraBuffer.SetRenderTarget(</ins>
+					<ins>cameraColorTextureId,</ins>
+					<ins>RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store</ins>
+				<ins>);</ins>
+			<ins>}</ins>
+		}</pre>
+						
+						<p>This also affects setting the render target after drawing opaque effects.</p>
+						
+						<pre>		context.DrawSkybox(camera);
+
+		if (activeStack) {
+			&hellip;
+
+			<ins>if (needsDepth) {</ins>
+				cameraBuffer.SetRenderTarget(
+					cameraColorTextureId,
+					RenderBufferLoadAction.Load, RenderBufferStoreAction.Store,
+					cameraDepthTextureId,
+					RenderBufferLoadAction.Load, RenderBufferStoreAction.Store
+				);
+			<ins>}</ins>
+			<ins>else {</ins>
+				<ins>cameraBuffer.SetRenderTarget(</ins>
+					<ins>cameraColorTextureId,</ins>
+					<ins>RenderBufferLoadAction.Load, RenderBufferStoreAction.Store</ins>
+				<ins>);</ins>
+			<ins>}</ins>
+			context.ExecuteCommandBuffer(cameraBuffer);
+			cameraBuffer.Clear();
+		}</pre>
+						
+						<p>And which textures need to get released at the end.</p>
+						
+						<pre>		DrawDefaultPipeline(context, camera);
+
+		if (renderToTexture) {
+			&hellip;
+			cameraBuffer.ReleaseTemporaryRT(cameraColorTextureId);
+			<ins>if (needsDepth) {</ins>
+				cameraBuffer.ReleaseTemporaryRT(cameraDepthTextureId);
+			<ins>}</ins>
+		}</pre>
+						
+						<figure>
+							<img src="msaa/depth-stripes-destroyed-msaa.png" width="300" height="270">
+							<figcaption>Depth stripes with MSAA 8&times;.</figcaption>
+						</figure>
+						
+						<p>Depth stripes now show up when MSAA is enabled, but anti-aliasing appears to be broken. This happened because depth information is no longer affected by MSAA. We need a different approach.</p>
+					</section>
+					
+					<section>
+						<h3>Depth-Only Pass</h3>
+						
+						<p>We need an MS depth texture for regular rendering and a non-MS depth texture for the depth stripes effect. We could solve this problem by creating a custom resolve pass for the depth texture, but unfortunately support for that is very limited. The alternative is to render to depth twice, by adding a depth-only pass that renders to a regular depth texture. This is expensive but feasible. It is what Unity does when a depth buffer is used in combination with MSAA, for example when a screen-space shadow pass is needed for cascaded directional shadows.</p>
+						
+						<aside>
+							<h3>Does this mean that Unity's depth-only pass doesn't affect regular rendering?</h3>
+							<div>
+								<p>Indeed. It is not used to prime the depth buffer and we won't use it for that either.</p>
+							</div>
+						</aside>
+						
+						<p>First distinguish between whether we can directly use the depth texture or whether we need a depth-only pass because MSAA is active. The logic that we have right now for getting textures and setting render targets applies to when MSAA is not used.</p>
+						
+						<pre>		bool needsDepth = activeStack && activeStack.NeedsDepth;
+		<ins>bool needsDirectDepth = needsDepth && renderSamples == 1;</ins>
+		<ins>bool needsDepthOnlyPass = needsDepth && renderSamples > 1;</ins>
+
+		if (renderToTexture) {
+			cameraBuffer.GetTemporaryRT(
+				cameraColorTextureId, renderWidth, renderHeight,
+				<ins>needsDirectDepth</ins> ? 0 : 24,
+				FilterMode.Bilinear, RenderTextureFormat.Default,
+				RenderTextureReadWrite.Default, renderSamples
+			);
+			if (needsDepth) {
+				cameraBuffer.GetTemporaryRT(
+					cameraDepthTextureId, renderWidth, renderHeight, 24,
+					FilterMode.Point, RenderTextureFormat.Depth,
+					RenderTextureReadWrite.Linear, 1
+				);
+			<ins>}</ins>
+			<ins>if (needsDirectDepth) {</ins>
+				cameraBuffer.SetRenderTarget(
+					cameraColorTextureId,
+					RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store,
+					cameraDepthTextureId,
+					RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store
+				);
+			}
+			else {
+				cameraBuffer.SetRenderTarget(
+					cameraColorTextureId,
+					RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store
+				);
+			}
+		}
+		
+		&hellip;
+		context.DrawSkybox(camera);
+
+		if (activeStack) {
+			&hellip;
+
+			if (<ins>needsDirectDepth</ins>) {
+				cameraBuffer.SetRenderTarget(
+					cameraColorTextureId,
+					RenderBufferLoadAction.Load, RenderBufferStoreAction.Store,
+					cameraDepthTextureId,
+					RenderBufferLoadAction.Load, RenderBufferStoreAction.Store
+				);
+			}
+			else {
+				cameraBuffer.SetRenderTarget(
+					cameraColorTextureId,
+					RenderBufferLoadAction.Load, RenderBufferStoreAction.Store
+				);
+			}
+			context.ExecuteCommandBuffer(cameraBuffer);
+			cameraBuffer.Clear();
+		}</pre>
+						
+						<p>If needed, add a depth-only pass before invoking <code>RenderAfterOpaque</code>. This works like the opaque pass except that we use <em>DepthOnly</em> for the pass name, don't need a renderer configuration, and have to set and clear the depth texture as the render target.</p>
+						
+						<pre>		context.DrawSkybox(camera);
+
+		if (activeStack) {
+			<ins>if (needsDepthOnlyPass) {</ins>
+				<ins>var depthOnlyDrawSettings = new DrawRendererSettings(</ins>
+					<ins>camera, new ShaderPassName("DepthOnly")</ins>
+				<ins>) {</ins>
+					<ins>flags = drawFlags</ins>
+				<ins>};</ins>
+				<ins>depthOnlyDrawSettings.sorting.flags = SortFlags.CommonOpaque;</ins>
+				<ins>cameraBuffer.SetRenderTarget(</ins>
+					<ins>cameraDepthTextureId,</ins>
+					<ins>RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store</ins>
+				<ins>);</ins>
+				<ins>cameraBuffer.ClearRenderTarget(true, false, Color.clear);</ins>
+				<ins>context.ExecuteCommandBuffer(cameraBuffer);</ins>
+				<ins>cameraBuffer.Clear();</ins>
+				<ins>context.DrawRenderers(</ins>
+					<ins>cull.visibleRenderers, ref depthOnlyDrawSettings, filterSettings</ins>
+				<ins>);</ins>
+			<ins>}</ins>
+
+			activeStack.RenderAfterOpaque(
+				postProcessingBuffer, cameraColorTextureId, cameraDepthTextureId,
+				renderWidth, renderHeight
+			);
+			&hellip;
+		}</pre>
+						
+						<p>Add the required pass to the <em>Lit</em> shader. It's a copy of the default pass with all features except instancing, clipping, and LOD fading removed. It won't write color information, so give it a color mask set to zero. It always writes depth and relies on dedicated vertex and fragment functions from a separate <em>DepthOnly</em> HLSL file.</p>
+						
+						<pre class="shader">		<ins>Pass {</ins>
+			<ins>Tags {</ins>
+				<ins>"LightMode" = "DepthOnly"</ins>
+			<ins>}</ins>
+			
+			<ins>ColorMask 0</ins>
+			<ins>Cull [_Cull]</ins>
+			<ins>ZWrite On</ins>
+
+			<ins>HLSLPROGRAM</ins>
+			
+			<ins>#pragma target 3.5</ins>
+			
+			<ins>#pragma multi_compile_instancing</ins>
+			<ins>//#pragma instancing_options assumeuniformscaling</ins>
+			
+			<ins>#pragma shader_feature _CLIPPING_ON</ins>
+			<ins>#pragma multi_compile _ LOD_FADE_CROSSFADE</ins>
+			
+			<ins>#pragma vertex DepthOnlyPassVertex</ins>
+			<ins>#pragma fragment DepthOnlyPassFragment</ins>
+			
+			<ins>#include "../ShaderLibrary/DepthOnly.hlsl"</ins>
+			
+			<ins>ENDHLSL</ins>
+		<ins>}</ins></pre>
+						
+						<p><em>DepthOnly.hlsl</em> is a copy of <em>Lit.hlsl</em> with all data removed that doesn't affect depth.
+						
+						<pre class="shader">#ifndef MYRP_DEPTH_ONLY_INCLUDED
+#define MYRP_DEPTH_ONLY_INCLUDED
+
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+
+CBUFFER_START(UnityPerFrame)
+	&hellip;
+CBUFFER_END
+
+CBUFFER_START(UnityPerCamera)
+	&hellip;
+CBUFFER_END
+
+CBUFFER_START(UnityPerDraw)
+	&hellip;
+CBUFFER_END
+
+CBUFFER_START(UnityPerMaterial)
+	&hellip;
+CBUFFER_END
+
+TEXTURE2D(_MainTex);
+SAMPLER(sampler_MainTex);
+
+TEXTURE2D(_DitherTexture);
+SAMPLER(sampler_DitherTexture);
+
+#define UNITY_MATRIX_M unity_ObjectToWorld
+
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
+
+UNITY_INSTANCING_BUFFER_START(PerInstance)
+	UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
+UNITY_INSTANCING_BUFFER_END(PerInstance)
+</pre>
+						
+						<p>We only care about the position and UV coordinates. The fragment function only applies LOD and performs clipping. Its final result is simply zero.</p>
+						
+						<pre class="shader">
+struct VertexInput {
+	float4 pos : POSITION;
+	float2 uv : TEXCOORD0;
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+struct VertexOutput {
+	float4 clipPos : SV_POSITION;
+	float2 uv : TEXCOORD3;
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+VertexOutput DepthOnlyPassVertex (VertexInput input) {
+	VertexOutput output;
+	UNITY_SETUP_INSTANCE_ID(input);
+	UNITY_TRANSFER_INSTANCE_ID(input, output);
+	float4 worldPos = mul(UNITY_MATRIX_M, float4(input.pos.xyz, 1.0));
+	output.clipPos = mul(unity_MatrixVP, worldPos);
+	output.uv = TRANSFORM_TEX(input.uv, _MainTex);
+	return output;
+}
+
+void LODCrossFadeClip (float4 clipPos) {
+	&hellip;
+}
+
+float4 DepthOnlyPassFragment (VertexOutput input) : SV_TARGET {
+	UNITY_SETUP_INSTANCE_ID(input);
+	
+	#if defined(LOD_FADE_CROSSFADE)
+		LODCrossFadeClip(input.clipPos);
+	#endif
+
+	float4 albedoAlpha = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
+	albedoAlpha *= UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color);
+	
+	#if defined(_CLIPPING_ON)
+		clip(albedoAlpha.a - _Cutoff);
+	#endif
+	
+	return 0;
+}
+
+#endif // MYRP_DEPTH_ONLY_INCLUDED</pre>
+						
+						<p>Now we get a depth-only pass before the depth stripes and MSAA works again. Unfortunately the depth stripes effect itself doesn't benefit from MSAA, so still introduces aliasing where it strongly affects the image. Unity's cascaded directional shadows interfere with MSAA in the same way.</p>
+						
+						<figure>
+							<img src="msaa/depth-only-pass.png" width="298" height="146" alt="frame debugger"><br>
+							<img src="msaa/depth-only-with-msaa.png" width="300" height="270" alt="scene">
+							<figcaption>Depth stripes with functional MSAA 8&times;.</figcaption>
+						</figure>
+						
+						<p>But transparent geometry that gets rendered later still benefits from MSAA.</p>
+						
+						<figure>
+							<img src="msaa/transparent.png" width="300" height="270">
+							<figcaption>Transparent with MSAA and depth stripes.</figcaption>
+						</figure>
+					</section>
+				</section>
+				
+				<section>
+					<h2>HDR</h2>
+					
+					<p>The final topic that we will cover is high-dynamic-range rendering. Up to this point each color channel of a texture has a range of 0&ndash;1, so it can represent light levels up to intensity 1. But the intensity of incoming light doesn't have an inherent upper bound. The sun is an example of an extremely bright light source, which is why you shouldn't look at it directly. Its intensity is far greater than we can perceive before our eyes get damaged. But many regular light sources also produce light with an intensity that can exceed the limits of the observer, especially when observed up close. For example, I increased the intensity of the point light in the scene to 100 and also boosted the intensity of the white sphere's emission by one step.</p>
+					
+					<figure>
+						<img src="hdr/high-intensity.png" width="320" height="180">
+						<figcaption>High-intensity light and emission.</figcaption>
+					</figure>
+					
+					<p>The result is that over-bright pixels get blown out to uniform white and there is some color shifting near the edges. The point of HDR rendering is to prevent very bright parts of the image from degrading to uniform white. This will require both storing the bright data and converting it to visible colors.</p>
+					
+					<section>
+						<h3>Configuration</h3>
+						
+						<p>Let's make it optional whether our pipeline supports high-dynamic-range rendering by adding an <em>Allow HDR</em> toggle to <code>MyPipelineAsset</code>, which we pass to the pipeline instance.</p>
+						
+						<pre>	<ins>[SerializeField]</ins>
+	<ins>bool allowHDR;</ins>
+
+	&hellip;
+
+	protected override IRenderPipeline InternalCreatePipeline () {
+		Vector3 shadowCascadeSplit = shadowCascades == ShadowCascades.Four ?
+			fourCascadesSplit : new Vector3(twoCascadesSplit, 0f);
+		return new MyPipeline(
+			&hellip;
+			renderScale, (int)MSAA<ins>, allowHDR</ins>
+		);
+	}</pre>
+						
+						<p><code>MyPipeline</code> just needs to keep track of it.</p>
+						
+						<pre>	<ins>bool allowHDR;</ins>
+
+	public MyPipeline (
+		&hellip;
+		float renderScale, int msaaSamples<ins>, bool allowHDR</ins>
+	) {
+		&hellip;
+		<ins>this.allowHDR = allowHDR;</ins>
+	}</pre>
+					
+						<figure>
+							<img src="hdr/allow-hdr.png" width="320" height="56">
+							<figcaption>HDR allowed.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Texture Format</h3>
+						
+						<p>To store color values that exceed 1 we need to change the texture format that we use for render textures. If HDR is enabled for both our pipeline and the camera then we need the default HDR format, otherwise we can make do with the regular default. The difference is that HDR textures contain floating-point values instead of 8-bit values for their color channels. So they require more memory, which means that you should only use HDR when you need it.</p>
+						
+						<p>We don't have to base <code>renderToTexture</code> on whether HDR is enabled because there is no reason to use HDR when not also using post-processing, as the final camera target is LDR 8-bit per channel anyway.</p>
+						
+						<pre>		<ins>RenderTextureFormat format = allowHDR &amp;&amp; camera.allowHDR ?</ins>
+			<ins>RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default;</ins>
+
+		if (renderToTexture) {
+			cameraBuffer.GetTemporaryRT(
+				cameraColorTextureId, renderWidth, renderHeight,
+				needsDirectDepth ? 0 : 24,
+				FilterMode.Bilinear, <ins>format</ins>,
+				RenderTextureReadWrite.Default, renderSamples
+			);
+			&hellip;
+		}</pre>
+						
+						<aside>
+							<h3>What about HDR displays?</h3>
+							<div>
+								<p>Unity doesn't currently support HDR displays, so we can't either. Besides that, a problem of HDR displays is that games that use color grading have to do this after&mdash;or at the same time as&mdash;tone mapping, which produces a regular LDR image, which then has to be converted back to HDR before sending it to the display, which then does its own thing.</p>
+							</div>
+						</aside>
+						
+						<p>We refrain from using HDR when not using a render texture. So let's also use MSAA, with no other post-processing. The result initially doesn't look different, except that the anti-aliasing quality got worse. That happened because averaging colors only works well when all values are LDR, otherwise the very bright samples dominate the result. So MSAA degrades when HDR colors are involved.</p>
+						
+						<figure>
+							<img src="hdr/hdr-off.png" width="300" height="270" alt="off">
+							<img src="hdr/hdr-on.png" width="300" height="270" alt="on">
+							<figcaption>HDR off and on, both with MSAA &times;4.</figcaption>
+						</figure>
+						
+						<p>We also have to make sure that we don't unintentially blit to an intermediate LDR texture during post-processing, as that would eliminate the HDR data. So pass the format to both invocations of the active stack.</p>
+						
+						<pre>			activeStack.RenderAfterOpaque(
+				postProcessingBuffer, cameraColorTextureId, cameraDepthTextureId,
+				renderWidth, renderHeight, renderSamples<ins>, format</ins>
+			);
+		
+		&hellip;
+		
+				activeStack.RenderAfterTransparent(
+					postProcessingBuffer, cameraColorTextureId,
+					cameraDepthTextureId, renderWidth, renderHeight,
+					renderSamples<ins>, format</ins>
+				);</pre>
+						
+						<p>Add the required parameters in <code>MyPostProcessingStack</code>. We only need to use it for the temporary texture in <code>DepthStripes</code>, as blurring has to be performed in LDR anyway for best results.</p>
+						
+						<pre>	public void RenderAfterOpaque (
+		CommandBuffer cb, int cameraColorId, int cameraDepthId,
+		int width, int height<ins>, RenderTextureFormat format</ins>
+	) {
+		InitializeStatic();
+		if (depthStripes) {
+			DepthStripes(cb, cameraColorId, cameraDepthId, width, height<ins>, format</ins>);
+		}
+	}
+	
+	public void RenderAfterTransparent (
+		CommandBuffer cb, int cameraColorId, int cameraDepthId,
+		int width, int height, int samples<ins>, RenderTextureFormat format</ins>
+	) { &hellip; }
+	
+	&hellip;
+	
+	void DepthStripes (
+		CommandBuffer cb, int cameraColorId, int cameraDepthId,
+		int width, int height<ins>, RenderTextureFormat format</ins>
+	) {
+		cb.BeginSample("Depth Stripes");
+		cb.GetTemporaryRT(tempTexId, width, height<ins>, 0, FilterMode.Point, format</ins>);
+		&hellip;
+	}</pre>
+					</section>
+					
+					<section>
+						<h3>Tone Mapping</h3>
+						
+						<p>Conversion from HDR to LDR is known as tone mapping, which comes from photography and film development. Traditional photos and film also have a limited range, so many techniques have been developed to perform the conversion. There is no single correct way to deal with this problem. Different approaches can be used to set the mood of the final result, like the classical film look. However, tweaking colors falls under color grading, which comes after tone mapping. We'll only concern ourselves with toning down the brightness of the image so it ends up inside the LDR range.</p>
+						
+						<p>Tone mapping is a post-processing effect which can be optional, so add a toggle for it to <code>MyPostProcessingStack</code>.</p>
+						
+						<pre>	<ins>[SerializeField]</ins>
+	<ins>bool toneMapping;</ins></pre>
+						
+						<figure>
+							<img src="hdr/tone-mapping-enabled.png" width="320" height="38">
+							<figcaption>Tone mapping enabled.</figcaption>
+						</figure>
+						
+						<p>It is done via its own pass, so add an enum value and method for it, initially just blitting with its own profiler sample. Make the source and destination ID parameters <code>RenderTargetIdentifier</code> so we can be flexible with what we pass to it.</p>
+						
+						<pre>	enum Pass { Copy, Blur, DepthStripes<ins>, ToneMapping</ins> };
+	
+	&hellip;
+	
+	<ins>void ToneMapping (</ins>
+		<ins>CommandBuffer cb,</ins>
+		<ins>RenderTargetIdentifier sourceId, RenderTargetIdentifier destinationId</ins>
+	<ins>) {</ins>
+		<ins>cb.BeginSample("Tone Mapping");</ins>
+		<ins>Blit(cb, sourceId, destinationId, Pass.ToneMapping);</ins>
+		<ins>cb.EndSample("Tone Mapping");</ins>
+	<ins>}</ins></pre>
+						
+						<p>In <code>RenderAfterTransparent</code> perform tone mapping to the camera target instead of the regular blit, if blurring is disabled. Otherwise create the resolved texture when either tone mapping or MSAA is used, with the appropriate pass. So resolving in this case can mean either an MSAA resolve, a tone mapping resolve, or both.</p>
+						
+						<pre>	public void RenderAfterTransparent (
+		CommandBuffer cb, int cameraColorId, int cameraDepthId,
+		int width, int height, int samples
+	) {
+		if (blurStrength > 0) {
+			if (<ins>toneMapping ||</ins> samples > 1) {
+				cb.GetTemporaryRT(
+					resolvedTexId, width, height, 0, FilterMode.Bilinear
+				);
+				<ins>if (toneMapping) {</ins>
+					<ins>ToneMapping(cb, cameraColorId, resolvedTexId);</ins>
+				<ins>}</ins>
+				<ins>else {</ins>
+					Blit(cb, cameraColorId, resolvedTexId);
+				<ins>}</ins>
+				Blur(cb, resolvedTexId, width, height);
+				cb.ReleaseTemporaryRT(resolvedTexId);
+			}
+			else {
+				Blur(cb, cameraColorId, width, height);
+			}
+		}
+		<ins>else if (toneMapping) {</ins>
+			<ins>ToneMapping(cb, cameraColorId, BuiltinRenderTextureType.CameraTarget);</ins>
+		<ins>}</ins>
+		else {
+			Blit(cb, cameraColorId, BuiltinRenderTextureType.CameraTarget);
+		}
+	}</pre>
+						
+						<p>Add the new pass to the <em>PostEffectStack</em> shader.</p>
+						
+						<pre class="shader">		<ins>Pass { // 3 ToneMapping</ins>
+			<ins>HLSLPROGRAM</ins>
+			<ins>#pragma target 3.5</ins>
+			<ins>#pragma vertex DefaultPassVertex</ins>
+			<ins>#pragma fragment ToneMappingPassFragment</ins>
+			<ins>ENDHLSL</ins>
+		<ins>}</ins></pre>
+						
+						<p>And add the required function to the HLSL file. Initially return the color minus 1, saturated. That gives us an indication of which pixels contain over-bright colors.</p>
+						
+						<pre class="shader"><ins>float4 ToneMappingPassFragment (VertexOutput input) : SV_TARGET {</ins>
+	<ins>float3 color = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv).rgb;</ins>
+	<ins>color -= 1;</ins>
+	<ins>return float4(saturate(color), 1);</ins>
+<ins>}</ins></pre>
+							
+						<figure>
+							<img src="hdr/only-hdr.png" width="320" height="180">
+							<figcaption>Only over-bright colors.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Reinhard</h3>
+						
+						<p>The goal of tone mapping is to reduce the brightness of the image so that otherwise uniform white regions show a variety of colors, revealing the details that were otherwise lost. It's like when your eyes adjust to a suddenly bright environment until you can see clearly again. But we don't want to scale down the entire image uniformly, because that would make darker colors indistinguishable, trading over-brightness for underexposure. So we need a nonlinear conversion that doesn't reduce dark values much but reduces high values a lot. At the extremes, zero remains zero and a value that approaches infinity is reduced to 1. A function that accomplishes that is `c/(1+c)` where `c` is a color channel. That function is known as the Reinhard tone mapping operation, initially proposed by Mark Reinhard, except that he applies it to luminance while we'll apply it to individual color channels. Make our tone mapping pass use it.</p>
+						
+						<figure>
+							<img src="hdr/reinhard-graph.png" width="250" height="50">
+							<figcaption>`c/(1+c)`</figcaption>
+						</figure>
+						
+						<pre class="shader">	color <ins>/= 1 + color</ins>;</pre>
+					
+						<figure>
+							<img src="hdr/high-intensity.png" width="320" height="180" alt="without">
+							<img src="hdr/reinhard.png" width="320" height="180" alt="with">
+							<figcaption>Without and with Reinhard RGB tone mapping.</figcaption>
+						</figure>
+						
+						<p>The result is an image that is guaranteed to not have any over-bright pixels, but the overall image has been desaturated and darkened somewhat. Pixels that were exactly at full intensity have been halved, which you can clearly see by applying tone mapping while HDR is disabled.</p>
+						
+						<figure>
+							<img src="hdr/ldr-tone-mapping.png" width="320" height="180">
+							<figcaption>Tone mapping applied to LDR image.</figcaption>
+						</figure>
+						
+						<aside>
+							<h3>Couldn't we perform tone-mapping before resolving MS textures?</h3>
+							<div>
+								<p>Yes, with a custom resolve pass, which would have to perform tone mapping on each sample before averaging them, which is more expensive than doing it once per pixel. Besides that, post-processing effects like bloom require HDR data. To make those work the resolve pass has to convert back to HDR after averaging, to approximate the original intensity.</p>
+							</div>
+						</aside>
+					</section>
+					
+					<section>
+						<h3>Modified Reinhard</h3>
+						
+						<p>There are multiple approaches to tone mapping&mdash;and color grading can be used to tweak it further&mdash;but per-channel RGB Reinhard is the simplest, so we'll keep it. But a simple adjustment that we could make is to limit the strength of the effect, by adjusting the value range that gets compressed to LDR. Anything beyond that range remains over-bright. That allows us to reduce the adjustment for less-bright scenes, or accept some over-brightness to keep darker colors intact.</p>
+						
+						<p>This adjustment is also described by Reinhard and transforms the function to `(c(1+c/w^2))/(1+c)` where `w` is the white point, or the maximum tone mapping range in our case. If `w` is infinite then we have the original function again, and when it is 1 then tone mapping does nothing.</p>
+						
+						<figure>
+							<img src="hdr/modified-reinhard-graph.png" width="250" height="50">
+							<figcaption>`(c(1+c/w^2))/(1+c)` for `w` from 1 to 5.</figcaption>
+						</figure>
+						
+						<p>Add a configuration option for the range, with a minimum of 1 as lower values would over-expose the entire image. The maximum can be 100, which is plenty to approximate the original function. Then calculate `m=1/w^2` and send that to the GPU as a modifier for the Reinhard function.</p>
+						
+						<pre>	<ins>[SerializeField, Range(1f, 100f)]</ins>
+	<ins>float toneMappingRange = 100f;</ins>
+
+	&hellip;
+
+	void ToneMapping (
+		CommandBuffer cb,
+		RenderTargetIdentifier sourceId, RenderTargetIdentifier destinationId
+	) {
+		cb.BeginSample("Tone Mapping");
+		<ins>cb.SetGlobalFloat(</ins>
+			<ins>"_ReinhardModifier", 1f / (toneMappingRange * toneMappingRange)</ins>
+		<ins>);</ins>
+		Blit(cb, sourceId, destinationId, Pass.ToneMapping);
+		cb.EndSample("Tone Mapping");
+	}</pre>
+						
+						<p>The shader then only has to calculate `(c(1+cm))/(1+c)`.</p>
+						
+						<pre class="shader"><ins>float _ReinhardModifier;</ins>
+
+&hellip;
+
+float4 ToneMappingPassFragment (VertexOutput input) : SV_TARGET {
+	float3 color = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv).rgb;
+	color <ins>*= (1 + color * _ReinhardModifier) / (1 + color)</ins>;
+	return float4(saturate(color), 1);
+}</pre>
+						
+						<figure>
+							<img src="hdr/tone-mapping-range-slider.png" width="320" height="40" alt="slider"><br>
+							<img src="hdr/tone-mapping-range-2.png" width="320" height="180" alt="scene">
+							<figcaption>Tone mapping range reduced to 2.</figcaption>
+						</figure>
+						
+						<p>This ends the original SRP tutorial series, which started when it was still experimental. A lot has changed in Unity 2019. There is a new <a href="https://catlikecoding.com/unity/tutorials/custom-srp/custom-render-pipeline/">Custom SRP</a> series for that, which covers both old and new topics with a more modern approach.</p>
+					</section>
+					
+					<a href="https://bitbucket.org/catlikecodingunitytutorials/scriptable-render-pipeline-12-image-quality/" class="repository">repository</a>
+					<a href="Image-Quality.pdf" download rel="nofollow">PDF</a>
+				</section>
+				
+			</article>
+		</main>
+
+		<footer>
+			<p>Enjoying the <a href="https://catlikecoding.com/unity/tutorials/">tutorials</a>? Are they useful? Want more?</p>
+			<p><b><a href="https://www.patreon.com/catlikecoding">Please support me on Patreon!</a></b></p>
+			<p><a href="https://www.patreon.com/catlikecoding"><img src="https://catlikecoding.com/unity/tutorials/become-a-patron.png" alt="Become my patron!" width="217" height="51"></a></p>
+			<p><b><a href="https://catlikecoding.com/unity/tutorials/donating.html">Or make a direct donation</a>!</b></p>
+			<p>made by <a href="https://catlikecoding.com/jasper-flick/" rel="author">Jasper Flick</a></p>
+		</footer>
+		
+		<script src="../../tutorials.js"></script>
+	</body>
+</html>

@@ -1,0 +1,1512 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/spotlight-shadows/">
+		<meta property="og:type" content="article">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/spotlight-shadows/tutorial-image.jpg">
+		<meta property="og:title" content="Spotlight Shadows">
+		<meta property="og:description" content="A Unity Scriptable Render Pipeline tutorial about spotlight shadows for sigle-pass forward rendering.">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta name="viewport" content="width=768">
+		<title>Spotlight Shadows</title>
+		<link href="../../tutorials.css" rel="stylesheet">
+
+				<link rel="manifest" href="https://catlikecoding.com/site.webmanifest">
+		<link rel="mask-icon" href="https://catlikecoding.com/safari-pinned-tab.svg" color="#aa0000">
+
+		<script type="application/ld+json">{
+			"@context": "http://schema.org",
+			"@type": "WebPage",
+			"mainEntity": {
+				"@type": "TechArticle",
+				"@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/spotlight-shadows/#article",
+				"headline": "Spotlight Shadows",
+				"alternativeHeadline": "Shadow Maps",
+				"datePublished": "2018-12-30",
+				"dateModified": "2019-01-31",
+				"author": { "@type": "Person", "name": "Jasper Flick", "@id": "https://catlikecoding.com/jasper-flick/#person" },
+				"publisher": { "@type": "Organization", "name": "Catlike Coding", "@id": "https://catlikecoding.com/#organization" },
+				"description": "A Unity Scriptable Render Pipeline tutorial about spotlight shadows for single-pass forward rendering.",
+				"image": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/spotlight-shadows/tutorial-image.jpg",
+				"dependencies": "Unity 2018.3.0f2",
+				"proficiencyLevel": "Expert"
+			},
+			"breadcrumb": {
+				"@type": "BreadcrumbList",
+				"itemListElement": [
+					{ "@type": "ListItem", "position": 1, "item": { "@id": "https://catlikecoding.com/unity/", "name": "Unity" }},
+					{ "@type": "ListItem", "position": 2, "item": { "@id": "https://catlikecoding.com/unity/tutorials/", "name": "Tutorials" }},
+					{ "@type": "ListItem", "position": 3, "item": { "@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/", "name": "Scriptable Render Pipeline" }}
+				]
+			}
+		}</script>
+		<script>
+			var customTypes = {
+				InstancedColor: 1,
+				MyPipeline: 1,
+				MyPipelineAsset: 1,
+				ShadowMapSize: 1
+			};
+		</script>
+	</head>
+	<body>
+		<header>
+			<a href="https://catlikecoding.com"><img src="https://catlikecoding.com/catlike-coding-logo.svg" alt="Catlike Coding" width="45" height="45"></a>
+			<nav>
+				<ol>
+					<li><a href="https://catlikecoding.com">Catlike Coding</a></li>
+					<li><a href="https://catlikecoding.com/unity/">Unity</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/">Tutorials</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">Scriptable Render Pipeline</a></li>
+				</ol>
+			</nav>
+		</header>
+		
+		<main>
+			<article>
+				<header>
+					<h1>Spotlight Shadows</h1>
+					<p>Shadow Maps</p>
+					<ul>
+						<li>Both render to and read from a texture.</li>
+						<li>Render from the point of view of a light.</li>
+						<li>Add a shader pass for shadow casters.</li>
+						<li>Sample a shadow map.</li>
+						<li>Support a mix of hard and soft shadows.</li>
+						<li>Combine up to sixteen shadow maps in a single atlas.</li>
+					</ul>
+				</header>
+				
+				<p>This is the fourth installment of a tutorial series covering Unity's <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">scriptable render pipeline</a>. In it, we'll add support for up to sixteen spotlights with shadows.</p>
+				
+				<p>This tutorial is made with Unity 2018.3.0f2.</p>
+				
+				<figure>
+					<img src="tutorial-image.jpg" width="512" height="256">
+					<figcaption>Three spotlights with shadows.</figcaption>
+				</figure>
+				
+				<section>
+					<h2>A Spotlight With Shadows</h2>
+					
+					<p>Shadows are very important, both to increase realism and to make the spatial relationship between objects more obvious. Without shadows, it can be hard to tell whether something floats about a surface or sits on top of it.</p>
+					
+					<p>The <a href="https://catlikecoding.com/unity/tutorials/rendering/part-7/">Rendering 7, Shadows</a> tutorial explains how shadows work in Unity's default render pipeline, but that exact same approach doesn't work for our single-pass forward renderer. It is still useful to skim to get the gist of shadow maps though. In this tutorial we'll limit ourselves to shadows for spotlights, are they're the least complicated.</p>
+					
+					<p>We start with supporting exactly one shadowed light, so make a scene that contains a few objects and a single spotlight. A plane object is useful to receive shadows. All objects should use our <em translate="no">Lit Opaque</em> material.</p>
+					
+					<figure>
+						<img src="a-spotlight-with-shadows/no-shadows.jpg" width="370" height="210">
+						<figcaption>A single spotlight, no shadows yet.</figcaption>
+					</figure>
+					
+					<section>
+						<h3>Shadow Map</h3>
+						
+						<p>There are a few different ways to deal with shadows, but we'll stick to the default approach of using a shadow map. This means that we'll render the scene from the light's point of view. We're only interested in the depth information of this render, because that tells us how far the light reaches before it hits a surface. Anything that's further away lies in shadows.</p>
+						
+						<p>To use a shadow map we have to create it before rendering with the normal camera. To be able to sample the shadow map later, we have to render into a separate render texture instead of the usual frame buffer. Add a <code>RenderTexture</code> field to <code>MyPipeline</code> to keep a reference to the shadow map texture.</p>
+						
+						<pre translate="no">	<ins>RenderTexture shadowMap;</ins></pre>
+						
+						<p>Create a separate method to render the shadows, with the context as a parameter. The first thing it has to do is get hold of a render texture. We'll do that by invoking the static <code>RenderTexture.GetTemporary</code> method. That either creates a new render texture or reuses an old one that hasn't been cleaned up yet. As we'll most likely need the shadow map every frame, it will get reused all the time.</p>
+						
+						<p>Supply <code>RenderTexture.GetTemporary</code> with our map's width and height, the amount of bits used for the depth channel, and finally the texture format. We'll start with a fixed size of 512&times;512. We'll use 16 bits for the depth channel, so it is high-precision. As we're creating a shadow map, use the <code>RenderTextureFormat.Shadowmap</code> format.</p>
+						
+						<pre translate="no">	<ins>void RenderShadows (ScriptableRenderContext context) {</ins>
+		<ins>shadowMap = RenderTexture.GetTemporary(</ins>
+			<ins>512, 512, 16, RenderTextureFormat.Shadowmap</ins>
+		<ins>);</ins>
+	<ins>}</ins></pre>
+						
+						<p>Make sure that the texture's filter mode is set the bilinear and its wrap mode is set to clamp.</p>
+						
+						<pre translate="no">		shadowMap = RenderTexture.GetTemporary(
+			512, 512, 16, RenderTextureFormat.Shadowmap
+		);
+		<ins>shadowMap.filterMode = FilterMode.Bilinear;</ins>
+		<ins>shadowMap.wrapMode = TextureWrapMode.Clamp;</ins></pre>
+						
+						<p>The shadow map is to be rendered before the regular scene, so invoke <code>RenderShadows</code> in <code>Render</code> before we setup the regular camera, but after culling.</p>
+						
+						<pre translate="no">	void Render (ScriptableRenderContext context, Camera camera) {
+		&hellip;
+		CullResults.Cull(ref cullingParameters, context, ref cull);
+
+		<ins>RenderShadows(context);</ins>
+
+		context.SetupCameraProperties(camera);
+
+		&hellip;
+	}</pre>
+						
+						<p>Also, make sure to release the render texture when we're done, after we've submitted the context. If we have a shadow map at that point, pass it to the <code>RenderTexture.ReleaseTemporary</code> method and clear our field.</p>
+						
+						<pre translate="no">	void Render (ScriptableRenderContext context, Camera camera) {
+		&hellip;
+		
+		context.Submit();
+
+		<ins>if (shadowMap) {</ins>
+			<ins>RenderTexture.ReleaseTemporary(shadowMap);</ins>
+			<ins>shadowMap = null;</ins>
+		<ins>}</ins>
+	}</pre>
+					</section>
+					
+					<section>
+						<h3>Shadow Command Buffer</h3>
+						
+						<p>We'll use a separate command buffer for all the shadow work, so we can see the shadow and regular rendering in separate sections in the frame debugger.</p>
+						
+						<pre translate="no">	CommandBuffer cameraBuffer = new CommandBuffer {
+		name = "Render Camera"
+	};
+
+	<ins>CommandBuffer shadowBuffer = new CommandBuffer {</ins>
+		<ins>name = "Render Shadows"</ins>
+	<ins>};</ins></pre>
+						
+						<p>The shadow rendering will happen in between <code>BeginSample</code> and <code>EndSample</code> commands, just like we do for regular rendering.</p>
+						
+						<pre translate="no">	void RenderShadows (ScriptableRenderContext context) {
+		shadowMap = RenderTexture.GetTemporary(
+			512, 512, 16, RenderTextureFormat.Shadowmap
+		);
+		shadowMap.filterMode = FilterMode.Bilinear;
+		shadowMap.wrapMode = TextureWrapMode.Clamp;
+
+		<ins>shadowBuffer.BeginSample("Render Shadows");</ins>
+		<ins>context.ExecuteCommandBuffer(shadowBuffer);</ins>
+		<ins>shadowBuffer.Clear();</ins>
+
+		<ins>shadowBuffer.EndSample("Render Shadows");</ins>
+		<ins>context.ExecuteCommandBuffer(shadowBuffer);</ins>
+		<ins>shadowBuffer.Clear();</ins>
+	}</pre>
+					</section>
+					
+					<section>
+						<h3>Setting the Render Target</h3>
+						
+						<p>Before we can render shadows, we first have tell the GPU to render to our shadow map. A convenient way to do this is by invoking <code>CoreUtils.SetRenderTarget</code> with our command buffer and shadow map as arguments. As we start with clearing the map, invoke it before <code>BeginSample</code> so the frame debugger doesn't show and extra nested <em translate="no">Render Shadows</em> level.</p>
+						
+						<pre translate="no">		<ins>CoreUtils.SetRenderTarget(shadowBuffer, shadowMap);</ins>
+		shadowBuffer.BeginSample("Render Shadows");
+		context.ExecuteCommandBuffer(shadowBuffer);
+		shadowBuffer.Clear();</pre>
+						
+						<p>We only care about the depth channel, so only that channel needs to be cleared. Indicate this by adding <code>ClearFlag.Depth</code> as a third argument to <code>SetRenderTarget</code>.</p> 
+						
+						<pre translate="no">		CoreUtils.SetRenderTarget(
+			shadowBuffer, shadowMap<ins>,</ins>
+			<ins>ClearFlag.Depth</ins>
+		);</pre>
+						
+						<p>While not necessary, we can also be more precise about the load and storage requirements of our texture. We don't care where it comes from, as we clear it anyway, which we can indicate with <code>RenderBufferLoadAction.DontCare</code>. That makes it possible for tile-based GPUs to be a bit more efficient. And we need to sample from the texture later, so it needs to be kept in memory, which we indicate with <code>RenderBufferStoreAction.Store</code>. Add these as the third and fourth arguments.</p>
+						
+						<pre translate="no">		CoreUtils.SetRenderTarget(
+			shadowBuffer, shadowMap,
+			<ins>RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store,</ins>
+			ClearFlag.Depth
+		);</pre>
+						
+						<p>The clear action for our shadow map now shows up in the frame debugger, before the regular camera render.</p>
+						
+						<figure>
+							<img src="a-spotlight-with-shadows/frame-debugger-render-shadows.png" width="298" height="52">
+							<figcaption>Clearing the shadow map.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Configuring the View and Projection Matrices</h3>
+						
+						<p>The idea is that we render from the point of view of the light source, which means that we're using the spotlight as if it were a camera. Thus, we have to provide appropriate view and projection matrices. We can retrieve these matrices by invoking <code>ComputeSpotShadowMatricesAndCullingPrimitives</code> on our cull results with the light index as an argument. As we only have a single spotlight in the scene, we simply supply zero. The view and projection matrices are made available via two output parameters. Besides that, there is a third <code>ShadowSplitData</code> output parameter. We don't need it, must supply the output argument.</p>
+						
+						<pre translate="no">		shadowBuffer.BeginSample("Render Shadows");
+		context.ExecuteCommandBuffer(shadowBuffer);
+		shadowBuffer.Clear();
+
+		<ins>Matrix4x4 viewMatrix, projectionMatrix;</ins>
+		<ins>ShadowSplitData splitData;</ins>
+		<ins>cull.ComputeSpotShadowMatricesAndCullingPrimitives(</ins>
+			<ins>0, out viewMatrix, out projectionMatrix, out splitData</ins>
+		<ins>);</ins></pre>
+						
+						<p>Once we have the matrices, set them up by invoking <code>SetViewProjectionMatrices</code> on the shadow command buffer, execute it, and clear it.</p>
+						
+						<pre translate="no">		cull.ComputeSpotShadowMatricesAndCullingPrimitives(
+			0, out viewMatrix, out projectionMatrix, out splitData
+		);
+		<ins>shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);</ins>
+		<ins>context.ExecuteCommandBuffer(shadowBuffer);</ins>
+		<ins>shadowBuffer.Clear();</ins></pre>
+					</section>
+					<section>
+						<h3>Rendering Shadow Casters</h3>
+						
+						<p>With the correct matrices in place, we can move on to rendering all the shadow-casting objects. We do that by invoking <code>DrawShadows</code> on the context. That method has a <code>DrawShadowsSettings</code> reference parameter, which we can create via a constructor method that takes the cull results and light index as parameters.</p>
+						
+						<pre translate="no">		shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+		context.ExecuteCommandBuffer(shadowBuffer);
+		shadowBuffer.Clear();
+		
+		<ins>var shadowSettings = new DrawShadowsSettings(cull, 0);</ins>
+		<ins>context.DrawShadows(ref shadowSettings);</ins></pre>
+						
+						<p>This only works if our spotlight's <em translate="no">Shadow Type</em> is set to either hard or soft. If it is set to none then Unity will complain that it isn't a valid shadow-casting light.</p>
+						
+						<figure>
+							<img src="a-spotlight-with-shadows/hard-shadows.png" width="320" height="24">
+							<figcaption>Light with shadows enabled.</figcaption>
+						</figure>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Shadow Caster Pass</h2>
+					
+					<p>At this point all objects that are affected by our light should get rendered to the shadow map, but the frame debugger tells us it isn't happening. That's because <code>DrawShadows</code> uses the <em translate="no">ShadowCaster</em> shader pass and our shader currently doesn't have such a pass.</p>
+					
+					<section>
+						<h3>Shadow Include File</h3>
+						
+						<p>To create a shadow-caster pass, duplicate the <em translate="no">Lit.hlsl</em> file and rename it to <em translate="no">ShadowCaster.hlsl</em>. We only care about depth information, so remove everything from the new file that doesn't relate to the fragment position. The output of the fragment program is simply zero. Also rename its pass functions and include guard define.</p>
+						
+						<pre class="shader" translate="no"><ins>#ifndef MYRP_SHADOWCASTER_INCLUDED</ins>
+<ins>#define MYRP_SHADOWCASTER_INCLUDED</ins>
+
+<ins>#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"</ins>
+
+<ins>CBUFFER_START(UnityPerFrame)</ins>
+	<ins>float4x4 unity_MatrixVP;</ins>
+<ins>CBUFFER_END</ins>
+
+<ins>CBUFFER_START(UnityPerDraw)</ins>
+	<ins>float4x4 unity_ObjectToWorld;</ins>
+<ins>CBUFFER_END</ins>
+
+<ins>#define UNITY_MATRIX_M unity_ObjectToWorld</ins>
+
+<ins>#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"</ins>
+
+<ins>struct VertexInput {</ins>
+	<ins>float4 pos : POSITION;</ins>
+	<ins>UNITY_VERTEX_INPUT_INSTANCE_ID</ins>
+<ins>};</ins>
+
+<ins>struct VertexOutput {</ins>
+	<ins>float4 clipPos : SV_POSITION;</ins>
+<ins>};</ins>
+
+<ins>VertexOutput ShadowCasterPassVertex (VertexInput input) {</ins>
+	<ins>VertexOutput output;</ins>
+	<ins>UNITY_SETUP_INSTANCE_ID(input);</ins>
+	<ins>float4 worldPos = mul(UNITY_MATRIX_M, float4(input.pos.xyz, 1.0));</ins>
+	<ins>output.clipPos = mul(unity_MatrixVP, worldPos);</ins>
+	<ins>return output;</ins>
+<ins>}</ins>
+
+<ins>float4 ShadowCasterPassFragment (VertexOutput input) : SV_TARGET {</ins>
+	<ins>return 0;</ins>
+<ins>}</ins>
+
+<ins>#endif // MYRP_SHADOWCASTER_INCLUDED</ins></pre>
+						
+						<p>This is sufficient to render shadows, but it is possible for shadow casters to intersect the near place, which can cause holes to appear in shadows. To prevent this, we have to clamp the vertices to the near place in the vertex program. This is done by taking the maximum of the Z coordinate and the W coordinate of the clip-space position.
+
+						<pre class="shader" translate="no">	output.clipPos = mul(unity_MatrixVP, worldPos);
+	
+	<ins>output.clipPos.z = max(output.clipPos.z, output.clipPos.w);</ins>
+	return output;</pre>
+						
+						<p>However, this is complicated by the specifics of the clip space. It's most intuitive to think of the depth value at the near clip plane as zero and increasing the further away it is. But it's actually the reverse for all but OpenGL APIs, with the value being 1 at the near plane. And for OpenGL the near plane value is &minus;1. We can cover all cases by relying on the <code>UNITY_REVERSED_Z</code> and <code>UNITY_NEAR_CLIP_VALUE</code> macros that we included via <em translate="no">Common.hlsl</em>.
+						
+						<pre class="shader" translate="no">	<del>//output.clipPos.z = max(output.clipPos.z, output.clipPos.w);</del>
+	<ins>#if UNITY_REVERSED_Z</ins>
+		<ins>output.clipPos.z =</ins>
+			<ins>min(output.clipPos.z, output.clipPos.w * UNITY_NEAR_CLIP_VALUE);</ins>
+	<ins>#else</ins>
+		<ins>output.clipPos.z =</ins>
+			<ins>max(output.clipPos.z, output.clipPos.w * UNITY_NEAR_CLIP_VALUE);</ins>
+	<ins>#endif</ins></pre>
+					</section>
+					
+					<section>
+						<h3>A Second Pass</h3>
+						
+						<p>To add the <em translate="no">ShadowCaster</em> pass to our <em translate="no">Lit</em> shader, we duplicate its pass block and give the second pass a <code class="shader">Tags</code> block in which we set <em translate="no">LightMode</em> to <em translate="no">ShadowCaster</em>. Then have it include <em translate="no">ShadowCaster.hlsl</em> instead of <em translate="no">Lit.hlsl</em> and use the appropriate vertex and fragment functions.</p>
+						
+						<pre class="shader" translate="no">		Pass {
+			HLSLPROGRAM
+			
+			#pragma target 3.5
+			
+			#pragma multi_compile_instancing
+			#pragma instancing_options assumeuniformscaling
+			
+			#pragma vertex LitPassVertex
+			#pragma fragment LitPassFragment
+			
+			#include "../ShaderLibrary/Lit.hlsl"
+			
+			ENDHLSL
+		}
+		
+		<ins>Pass {</ins>
+			<ins>Tags {</ins>
+				<ins>"LightMode" = "ShadowCaster"</ins>
+			<ins>}</ins>
+			
+			<ins>HLSLPROGRAM</ins>
+			
+			<ins>#pragma target 3.5</ins>
+			
+			<ins>#pragma multi_compile_instancing</ins>
+			<ins>#pragma instancing_options assumeuniformscaling</ins>
+			
+			<ins>#pragma vertex ShadowCasterPassVertex</ins>
+			<ins>#pragma fragment ShadowCasterPassFragment</ins>
+			
+			<ins>#include "../ShaderLibrary/ShadowCaster.hlsl"</ins>
+			
+			<ins>ENDHLSL</ins>
+		<ins>}</ins></pre>
+						
+						<p>Now our objects get rendered into the shadow map. As the objects aren't affected by multiply lights at this point, GPU instancing is very effective.</p>
+						
+						<figure>
+							<img src="shadow-caster-pass/frame-debugger-shadow-casters.png" width="298" height="100">
+							<figcaption>All shadow casters rendered with two draw calls.</figcaption>
+						</figure>
+						
+						<p>By selecting the <em translate="no">Shadows.Draw</em> entry you can see the final contents of the shadow map. As it is a depth-only texture, the frame debugger will show us the depth information, with white representing near and black far.</p>
+						
+						<figure>
+							<img src="shadow-caster-pass/shadow-map.png" width="255" height="255">
+							<figcaption>Rendered shadow map.</figcaption>
+						</figure>
+						
+						<p>Because the shadow map is rendered with the spotlight acting as the camera, its orientation matches the light's. If the light has been rotated so its local up direction points down in world space, the shadow map will be upside down too.</p>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Sampling the Shadow Map</h2>
+					
+					<p>At this point we have a shadow map with all the data that we need, but we're not using it yet. The next step is to sample the shadow map when rendering our objects the normal way.</p>
+					
+					<section>
+						<h3>From World Space to Shadow Space</h3>
+						
+						<p>The depth information stored in the shadow map is valid for the clip space that we used when rendering the map. We'll call that shadow space. It doesn't match the spaces that we use when rendering objects the normal way. To know where a fragment is relative to the shadow depth that we stored, we have to convert the fragment's position to shadow space.</p>
+						
+						<p>Step one is to make the shadow map itself available to our shader. We do that via a shader texture variable, which we'll name <em translate="no">_ShadowMap</em>. Keep track of its identifier in <code>MyPipeline</code>.</p>
+						
+						<pre translate="no">	<ins>static int shadowMapId = Shader.PropertyToID("_ShadowMap");</ins></pre>
+						
+						<p>Bind the shadow map to this variable globally at the end of <code>RenderShadows</code>, by invoking <code>SetGlobalTexture</code> on the shadow command buffer before it gets executed the last time.</p>
+						
+						<pre translate="no">		<ins>shadowBuffer.SetGlobalTexture(shadowMapId, shadowMap);</ins>
+		shadowBuffer.EndSample("Render Shadows");</pre>
+						
+						<p>Next, we'll add a shader matrix variable to convert from world space to shadow space, named <em translate="no">_WorldToShadowMatrix</em>. Keep track of its identifier too.</p>
+						
+						<pre translate="no">	<ins>static int worldToShadowMatrixId =</ins>
+		<ins>Shader.PropertyToID("_WorldToShadowMatrix");</ins></pre>
+						
+						<p>This matrix is found by multiplying the view and projection matrix that we used when rendering the shadows, then passing it to the GPU via <code>SetGlobalMatrix</code>.</p>
+						
+						<pre translate="no">		<ins>Matrix4x4 worldToShadowMatrix = projectionMatrix * viewMatrix;</ins>
+		<ins>shadowBuffer.SetGlobalMatrix(worldToShadowMatrixId, worldToShadowMatrix);</ins>
+		shadowBuffer.SetGlobalTexture(shadowMapId, shadowMap);</pre>
+						
+						<p>However, again there is a difference based on whether the clip-space Z dimension is reversed, which we can check via <code>SystemInfo.usesReversedZBuffer</code>. If so, we have to negate the Z-component row&mdash;the row with index 2&mdash;of the projection matrix before multiplying. We can do that by directly adjusting the <code>m20</code> through <code>m23</code> fields of the matrix.</p>
+						
+						<pre translate="no">		<ins>if (SystemInfo.usesReversedZBuffer) {</ins>
+			<ins>projectionMatrix.m20 = -projectionMatrix.m20;</ins>
+			<ins>projectionMatrix.m21 = -projectionMatrix.m21;</ins>
+			<ins>projectionMatrix.m22 = -projectionMatrix.m22;</ins>
+			<ins>projectionMatrix.m23 = -projectionMatrix.m23;</ins>
+		<ins>}</ins>
+		Matrix4x4 worldToShadowMatrix = projectionMatrix * viewMatrix;</pre>
+						
+						<p>We now have a conversion matrix from world space to shadow clip space. But clip space goes from &minus;1 to 1, while texture coordinates and depth go from 0 to 1. We can bake that range conversion into our matrix, via an additional multiplication with a matrix that scales and offsets by half a unit in all dimensions. We could use the <code>Matrix4x4.TRS</code> method to get such a matrix by providing a offset, rotation, and scale.</p>
+						
+						<pre translate="no">		<ins>var scaleOffset = Matrix4x4.TRS(</ins>
+			<ins>Vector3.one * 0.5f, Quaternion.identity, Vector3.one * 0.5f</ins>
+		<ins>);</ins>
+		Matrix4x4 worldToShadowMatrix =
+			<ins>scaleOffset * (</ins>projectionMatrix * viewMatrix<ins>)</ins>;</pre>
+						
+						<p>But as it is a simple matrix, we can also simply start with the identity matrix and set the appropriate fields.</p>
+						
+						<pre translate="no">		var scaleOffset = Matrix4x4.<ins>identity</ins>;
+		<ins>scaleOffset.m00 = scaleOffset.m11 = scaleOffset.m22 = 0.5f;</ins>
+		<ins>scaleOffset.m03 = scaleOffset.m13 = scaleOffset.m23 = 0.5f;</ins></pre>
+						
+					</section>
+					
+					<section>
+						<h3>Sampling Depth</h3>
+						
+						<p>In <em translate="no">Lit.hlsl</em>, add a buffer for light data and define <code class="shader">float4x4 _WorldToShadowMatrix</code> in it.</p>
+						
+						<pre class="shader" translate="no">CBUFFER_START(_LightBuffer)
+	&hellip;
+CBUFFER_END
+
+<ins>CBUFFER_START(_ShadowBuffer)</ins>
+	<ins>float4x4 _WorldToShadowMatrix;</ins>
+<ins>CBUFFER_END</ins></pre>
+						
+						<p>Texture resources aren't part of buffers. Instead they're defined separately. In this case, we can use the <code class="shader">TEXTURE2D_SHADOW</code> macro to define <code class="shader">_ShadowMap</code>.</p>
+						
+						<pre class="shader" translate="no">CBUFFER_START(_ShadowBuffer)
+	float4x4 _WorldToShadowMatrix;
+CBUFFER_END
+
+<ins>TEXTURE2D_SHADOW(_ShadowMap);</ins></pre>
+						
+						<aside>
+							<h3>What's the difference between <code class="shader">TEXTURE2D</code> and <code class="shader">TEXTURE2D_SHADOW</code>?</h3>
+							<div>
+								<p>There is only a difference for OpenGL ES 2.0, because it doesn't support depth comparisons for shadow maps. But we don't support OpenGL ES 2.0, so we could've used <code class="shader">TEXTURE2D</code> instead. I used <code class="shader">TEXTURE2D_SHADOW</code> anyway to make it abundantly clear that we are dealing with shadow data.</p>
+								
+								<p>The macros are defines per target platform via separate API include files in the Core library, which we included via <em translate="no">Common.hlsl</em>.</p>
+							</div>
+						</aside>
+						
+						<p>Next, we have to also define the sampler state used for sampling the texture. Usually this is done with the <code class="shader">SAMPLER</code> macro, but we're going to use a special comparison sampler so use <code class="shader">SAMPLER_CMP</code> instead. To end up with the correct sampler state, we have to give it the same name as the texture, with <em translate="no">sampler</em> written in front of it.</p>
+						
+						<pre class="shader" translate="no">TEXTURE2D_SHADOW(_ShadowMap);
+<ins>SAMPLER_CMP(sampler_ShadowMap);</ins></pre>
+						
+						<aside>
+							<h3>What is a texture sampler?</h3>
+							<div>
+								<p>In old GLSL code, we use <code class="sampler">sampler2D</code> to define both a texture and a sampler state together. But they are two separate things, and both take up resources. Sampler states exist separate from textures, which makes it possible to mix their use, typically reusing the same sampler state to sample from multiple textures.</p>
+								
+								<p>In our case, we set the sampler state to use clamping and bilinear filtering, via <code>MyPipeline</code>.</p>
+								
+								<p>The comparison sampler that we're using will perform a depth comparison for us, before bilinear interpolation happens. That produces better results than first interpolating and then comparing.</p>
+							</div>
+						</aside>
+						
+						<p>Create a <code class="shader">ShadowAttenuation</code> function with the world position as a parameter. It will return the attenuation factor for our light's shadows. The first thing it needs to do is convert the world position to the shadow position.</p>
+						
+						<pre class="shader" translate="no">TEXTURE2D_SHADOW(_ShadowMap);
+SAMPLER_CMP(sampler_ShadowMap);
+
+<ins>float ShadowAttenuation (float3 worldPos) {</ins>
+	<ins>float4 shadowPos = mul(_WorldToShadowMatrix, float4(worldPos, 1.0));</ins>
+<ins>}</ins></pre>
+						
+						<p>The resulting position is defined with homogeneous coordinates, just like when we convert to clip space. But we need regular coordinates, so divide XYZ components by its W component.</p>
+						
+						<pre class="shader" translate="no">	float4 shadowPos = mul(_WorldToShadowMatrix, float4(worldPos, 1.0));
+	<ins>shadowPos.xyz /= shadowPos.w;</ins></pre>
+						
+						<p>Now we can sample the shadow map, using the <code class="shader">SAMPLE_TEXTURE2D_SHADOW</code> macro. It needs the texture, the sampler state, and the shadow position as arguments. The result is 1 when the position's Z value is less than what's stored in the shadow map, meaning that it is closer to the light than whatever's casting a shadow. Otherwise, it is behind a shadow caster and the result is zero. Because the sampler performs the comparison before bilinear interpolation, the edges of shadows will blend across shadow map texels.</p>
+						
+						<pre class="shader" translate="no">	shadowPos.xyz /= shadowPos.w;
+	<ins>return SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, shadowPos.xyz);</ins></pre>
+					</section>
+					
+					<section>
+						<h3>Fading when Shadowed</h3>
+						
+						<p>To affect the lighting, add a parameter for the shadow attenuation to the <code class="shader">DiffuseLight</code> function. Factor it into the diffuse strength, along with the other fade factors.
+						
+						<pre class="shader" translate="no">float3 DiffuseLight (
+	int index, float3 normal, float3 worldPos<ins>, float shadowAttenuation</ins>
+) {
+	&hellip;
+	diffuse *= <ins>shadowAttenuation *</ins> spotFade * rangeFade / distanceSqr;
+	
+	return diffuse * lightColor;
+}</pre>
+						
+						<p>Shadows don't work for vertex lighting, so use 1 for the shadow attenuation in <code>LitPassVertex</code>.</p>
+						
+						<pre class="shader" translate="no">VertexOutput LitPassVertex (VertexInput input) {
+	&hellip;
+	
+	output.vertexLighting = 0;
+	for (int i = 4; i &lt; min(unity_LightIndicesOffsetAndCount.y, 8); i++) {
+		int lightIndex = unity_4LightIndices1[i - 4];
+		output.vertexLighting += 
+			DiffuseLight(lightIndex, output.normal, output.worldPos<ins>, 1</ins>);
+	}
+
+	return output;
+}</pre>
+						
+						<p>In <code>LitPassFragment</code>, invoke <code class="shader">ShadowAttenuation</code> with the world position as an argument and pass the result to <code class="shader">DiffuseLight</code>.</p>
+						
+						<pre class="shader" translate="no">float4 LitPassFragment (VertexOutput input) : SV_TARGET {
+	&hellip;
+	
+	float3 diffuseLight = input.vertexLighting;
+	for (int i = 0; i &lt; min(unity_LightIndicesOffsetAndCount.y, 4); i++) {
+		int lightIndex = unity_4LightIndices0[i];
+		<ins>float shadowAttenuation = ShadowAttenuation(input.worldPos);</ins>
+		diffuseLight += DiffuseLight(
+			lightIndex, input.normal, input.worldPos<ins>, shadowAttenuation</ins>
+		);
+	}
+	float3 color = diffuseLight * albedo;
+	return float4(color, 1);
+}</pre>
+						
+						<figure>
+							<img src="sampling-the-shadow-map/sampled-shadows.jpg" width="370" height="210">
+							<figcaption>Sampled shadows.</figcaption>
+						</figure>
+						
+						<p>Shadows finally appear, but with a severe case of shadow acne.</p>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Shadow Settings</h2>
+					
+					<p>There are various ways to control the quality and appearance of the shadows. We'll add support for a few, specifically the shadow resolution, depth bias, strength, and soft shadows. These and more can be configured via each light's inspector.</p>
+					
+					<figure>
+						<img src="shadow-settings/light-shadow-settings.png" width="320" height="130">
+						<figcaption>Shadow settings per light.</figcaption>
+					</figure>
+					
+					<section>
+						<h3>Shadow Map Size</h3>
+						
+						<p>Although the light inspector has an option for its shadow resolution, this only indirectly controls the size of the shadow map. The actual size is set via the quality settings, at least for Unity's default pipeline. We use our own pipeline, so we'll add a shadow map size configuration option to <code>MyPipelineAsset</code>.</p>
+						
+						<p>The shadow map is a square texture and we'll allow power-of-two sizes from 256&times;256 up to 4096&times.4096. To make only those options available, define a <code>ShadowMapSize</code> enum inside <code>MyPipelineAsset</code> with the elements 256, 512, 1024, 2048, and 4096. Numbers cannot be used for enumeration labels, so prefix each with an underscore. The Unity editor will omit the underscores when displaying the enum's options. Then use the enum to add a configuration field for the shadow map size.</p>
+						
+						<pre translate="no">	<ins>public enum ShadowMapSize {</ins>
+		<ins>_256,</ins>
+		<ins>_512,</ins>
+		<ins>_1024,</ins>
+		<ins>_2048,</ins>
+		<ins>_4096</ins>
+	<ins>}</ins>
+
+	<ins>[SerializeField]</ins>
+	<ins>ShadowMapSize shadowMapSize;</ins></pre>
+						
+						<p>By default, enums represent integers and start at zero. It's more convenient if our enumeration options directly map to the same integer, which we can do by assigning explicit values to them.</p>
+						
+						<pre translate="no">	public enum ShadowMapSize {
+		_256 <ins>= 256</ins>,
+		_512 <ins>= 512</ins>,
+		_1024 <ins>= 1024</ins>,
+		_2048 <ins>= 2048</ins>,
+		_4096 <ins>= 4096</ins>
+	}</pre>
+						
+						<p>This means that zero isn't a valid default value, so set the default to something else.</p>
+						
+						<pre translate="no">	ShadowMapSize shadowMapSize <ins>= ShadowMapSize._1024</ins>;</pre>
+						
+						<figure>
+							<img src="shadow-settings/map-size.png" width="320" height="78">
+							<figcaption>Shadow map size set to 1024.</figcaption>
+						</figure>
+						
+						<p>Pass the shadow map size to our pipeline's constructor method, cast to an integer.</p>
+						
+						<pre translate="no">	protected override IRenderPipeline InternalCreatePipeline () {
+		return new MyPipeline(
+			dynamicBatching, instancing<ins>, (int)shadowMapSize</ins>
+		);
+	}</pre>
+						
+						<p>And add a field to keep track of the size to <code>MyPipeline</code>, initializing it in the constructor.</p>
+						
+						<pre translate="no">	<ins>int shadowMapSize;</ins>
+
+	public MyPipeline (
+		bool dynamicBatching, bool instancing<ins>, int shadowMapSize</ins>
+	) {
+		&hellip;
+		<ins>this.shadowMapSize = shadowMapSize;</ins>
+	}</pre>
+						
+						<p>When fetching a render texture in <code>RenderShadows</code>, we'll now use the variable shadow map size.</p>
+						
+						<pre translate="no">	void RenderShadows (ScriptableRenderContext context) {
+		shadowMap = RenderTexture.GetTemporary(
+			<ins>shadowMapSize</ins>, <ins>shadowMapSize</ins>, 16, RenderTextureFormat.Shadowmap
+		);
+		&hellip;
+	}</pre>
+						
+						<figure>
+							<img src="shadow-settings/map-size-256.png" width="240" height="260" alt="256">
+							<img src="shadow-settings/map-size-4096.png" width="240" height="260" alt="4096">
+							<figcaption>Shadow map size 256 and 4096.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Shadow Bias</h3>
+						
+						<p>Shadow acne is caused by texels of the shadow map poking out of surfaces. For a more detailed explanation, see <a href="https://catlikecoding.com/unity/tutorials/rendering/part-7/">Rendering 7, Shadows</a>. We'll support the simplest way to mitigate acne, which is by adding a small depth offset when rendering to the shadow map. This shadow bias is configured per light, so we must send it to the GPU. We'll do that via a <em translate="no">_ShadowBias</em> shader property, so keep track of its identifier.</p>
+						
+						<pre translate="no">	<ins>static int shadowBiasId = Shader.PropertyToID("_ShadowBias");</ins></pre>
+						
+						<p>When setting the view and projection matrices in <code>RenderShadows</code>, also set the shadow bias. The <code>VisibleLight</code> struct doesn't contain this information, but it does have a <code>light</code> field that holds a reference to the <code>Light</code> component, which has the shadow bias.</p>
+						
+						<pre translate="no">		shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+		<ins>shadowBuffer.SetGlobalFloat(</ins>
+			<ins>shadowBiasId, cull.visibleLights[0].light.shadowBias</ins>
+		<ins>);</ins>
+		context.ExecuteCommandBuffer(shadowBuffer);
+
+		shadowBuffer.Clear();</pre>
+						
+						<p>Add the corresponding variable to <em translate="no">ShadowCaster.hlsl</em>, in a shadow caster buffer. Use it to offset the Z component of the clip-space position, before clamping. If Z is reversed, the bias should be subtracted, otherwise it is added.</p>
+						
+						<pre class="shader" translate="no"><ins>CBUFFER_START(_ShadowCasterBuffer)</ins>
+	<ins>float _ShadowBias;</ins>
+<ins>CBUFFER_END</ins>
+
+&hellip;
+
+VertexOutput ShadowCasterPassVertex (VertexInput input) {
+	&hellip;
+	output.clipPos = mul(unity_MatrixVP, worldPos);
+	
+	#if UNITY_REVERSED_Z
+		<ins>output.clipPos.z -= _ShadowBias;</ins>
+		output.clipPos.z =
+			min(output.clipPos.z, output.clipPos.w * UNITY_NEAR_CLIP_VALUE);
+	#else
+		<ins>output.clipPos.z += _ShadowBias;</ins>
+		output.clipPos.z =
+			max(output.clipPos.z, output.clipPos.w * UNITY_NEAR_CLIP_VALUE);
+	#endif
+	return output;
+}</pre>
+						
+						<p>The shadow bias should be as small as possible, to prevent shadows from moving too far away, which causes peter-panning.</p>
+						
+						<figure>
+							<img src="shadow-settings/bias-005.png" width="240" height="260" alt="0.05">
+							<img src="shadow-settings/bias-001.png" width="240" height="260" alt="0.01">
+							<figcaption>Shadow bias 0.05 and 0.01.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Shadow Strength</h3>
+						
+						<p>As we're only using a single light and don't have any environmental lighting, our shadows are completely black. But we could tone down the strength of the shadow attenuation, making it only partially fade the light's contribution. It would be like all shadow casters are semitransparent. We'll send the shadow strength to the shader via a <em translate="no">_ShadowStrength</em> property, so keep track of its identifier.</p>
+						
+						<pre translate="no">	<ins>static int shadowStrengthId = Shader.PropertyToID("_ShadowStrength");</ins></pre>
+						
+						<p>The shadow strength is used when sampling the shadow map, so set it along with the world-to-shadow matrix and the shadow map itself. Like the depth bias, we can retrieve it from the <code>Light</code> component.</p>
+						
+						<pre translate="no">		shadowBuffer.SetGlobalMatrix(worldToShadowMatrixId, worldToShadowMatrix);
+		shadowBuffer.SetGlobalTexture(shadowMapId, shadowMap);
+		<ins>shadowBuffer.SetGlobalFloat(</ins>
+			<ins>shadowStrengthId, cull.visibleLights[0].light.shadowStrength</ins>
+		<ins>);</ins>
+		shadowBuffer.EndSample("Render Shadows");</pre>
+						
+						<p>Add the shadow strength to the shadow buffer, then use it to interpolate between 1 and the sampled attenuation in <code class="shader">ShadowAttenuation</code>.</p>
+						
+						<pre class="shader" translate="no">CBUFFER_START(_ShadowBuffer)
+	float4x4 _WorldToShadowMatrix;
+	<ins>float _ShadowStrength;</ins>
+CBUFFER_END
+
+TEXTURE2D_SHADOW(_ShadowMap);
+SAMPLER_CMP(sampler_ShadowMap);
+
+float ShadowAttenuation (float3 worldPos) {
+	float4 shadowPos = mul(_WorldToShadowMatrix, float4(worldPos, 1.0));
+	shadowPos.xyz /= shadowPos.w;
+	<ins>float attenuation =</ins>
+		SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, shadowPos.xyz);
+	<ins>return lerp(1, attenuation, _ShadowStrength);</ins>
+}</pre>
+						
+						<figure>
+							<img src="shadow-settings/half-shadow-strength.png" width="240" height="260">
+							<figcaption>Shadow strength set to 0.5.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Soft Shadows</h3>
+						
+						<p>The final setting that we will support is to switch between hard and soft shadows. We're currently using hard shadows, meaning that the only smoothing of the shadow's edge is caused by the bilinear interpolation while sampling the shadow map. When smooth shadows are enabled, the shadow transition is blurred, representing shadows with a larger penumbra. However, unlike in real life the penumbra will be uniform, instead of depending on the spatial relationship between light source, shadow caster, and shadow receiver.</p>
+						
+						<p>Soft shadows are made by sampling the shadow map more than once, with samples further away from the original sample position contributing less to the final value. We'll use a 5&times;5 tent filter, requiring nine texture samples. We can use a function for this that is defined in the <em translate="no">Shadow/ShadowSamplingTent.hlsl</em> include file in the core library. Include it in <em translate="no">Lit.hlsl</em>.</p>
+						
+						<pre class="shader" translate="no">#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+<ins>#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Shadow/ShadowSamplingTent.hlsl"</ins></pre>
+						
+						<aside>
+							<h3>How does a tent filter work?</h3>
+							<div>
+								<p>The <a href="https://catlikecoding.com/unity/tutorials/advanced-rendering/bloom/">Bloom</a> tutorial covers filter kernels that take advantage of bilinear texture sampling, while the <a href="https://catlikecoding.com/unity/tutorials/advanced-rendering/depth-of-field/">Depth of Field</a> tutorial contains an example of a 3&times;3 tent filter.</p>
+							</div>
+						</aside>
+						
+						<p>The tent filter requires us to know the size of the shadow map. The function that we'll use specifically requires a vector with the map's inverted with and height and the regular with and height in its four components. So add it to the shadow buffer.</p>
+						
+						<pre class="shader" translate="no">CBUFFER_START(_ShadowBuffer)
+	float4x4 _WorldToShadowMatrix;
+	float _ShadowStrength;
+	<ins>float4 _ShadowMapSize;</ins>
+CBUFFER_END</pre>
+						
+						<p>Keep track of the corresponding identifier in <code>MyPipeline</code>.</p>
+						
+						<pre translate="no">	<ins>static int shadowMapSizeId = Shader.PropertyToID("_ShadowMapSize");</ins></pre>
+						
+						<p>And set it at the end of <code>RenderShadows</code>.</p>
+						
+						<pre translate="no">		<ins>float invShadowMapSize = 1f / shadowMapSize;</ins>
+		<ins>shadowBuffer.SetGlobalVector(</ins>
+			<ins>shadowMapSizeId, new Vector4(</ins>
+				<ins>invShadowMapSize, invShadowMapSize, shadowMapSize, shadowMapSize</ins>
+			<ins>)</ins>
+		<ins>);</ins>
+		shadowBuffer.EndSample("Render Shadows");</pre>
+						
+						<p>We'll replace the regular sampling of the shadow map in the <code class="shader">ShadowAttenuation</code> function with our tent filter when the <em translate="no">_SHADOWS_SOFT</em> shader keyword is defined.</p>
+						
+						<pre class="shader" translate="no">	float attenuation =
+		SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, shadowPos.xyz);
+	
+	<ins>#if defined(_SHADOWS_SOFT)</ins>
+	<ins>#endif</ins>
+	
+	return lerp(1, attenuation, _ShadowStrength);</pre>
+						
+						<p>Instead of a single sample, we'll have to accumulate nine samples to create the 5&times;5 tent filter. The <code class="shader">SampleShadow_ComputeSamples_Tent_5x5</code> function gives us the weights and UV coordinates to use, by passing the shadow map size and the XY coordinates of the shadow position as arguments. The weights and UV are provided via two output parameters, a <code class="shader">float</code> array and a <code class="shader">float2</code> array, both with nine elements.</p>
+						
+						<pre class="shader" translate="no">	#if defined(_SHADOWS_SOFT)</ins>
+		<ins>float tentWeights[9];</ins>
+		<ins>float2 tentUVs[9];</ins>
+		<ins>SampleShadow_ComputeSamples_Tent_5x5(</ins>
+			<ins>_ShadowMapSize, shadowPos.xy, tentWeights, tentUVs</ins>
+		<ins>);</ins>
+	#endif</pre>
+						
+						<p>However, the function is defined using <code class="shader">real</code> instead of <code class="shader">float</code> for its output parameters. That isn't an actual numeric type, but a macro that's used to create either a <code class="shader">float</code> or a <code class="shader">half</code> variant, as needed. We can usually ignore this, but to prevent compiler errors for some platforms, it's best to use <code class="shader">real</code> too for output parameters.</p>
+						
+						<pre class="shader" translate="no">		<ins>real</ins> tentWeights[9];
+		<ins>real2</ins> tentUVs[9];</pre>
+						
+						<p>Now we can use a loop to sample the shadow map nine times, using the weight and UV coordinates from the arrays. It's a tight fixed loop, so the shader compiler will unroll it. We still need the Z coordinate of the shadow position, so use it to construct a <code class="shader">float3</code> for each shadow sample.</p>
+						
+						<pre class="shader" translate="no">	#if defined(_SHADOWS_SOFT)
+		real tentWeights[9];
+		real2 tentUVs[9];
+		SampleShadow_ComputeSamples_Tent_5x5(
+			_ShadowMapSize, shadowPos.xy, tentWeights, tentUVs
+		);
+		<ins>attenuation = 0;</ins>
+		<ins>for (int i = 0; i &lt; 9; i++) {</ins>
+			<ins>attenuation += tentWeights[i] * SAMPLE_TEXTURE2D_SHADOW(</ins>
+				<ins>_ShadowMap, sampler_ShadowMap, float3(tentUVs[i].xy, shadowPos.z)</ins>
+			<ins>);</ins>
+		<ins>}</ins>
+	#endif</pre>
+						
+						<p>To enable soft shadows, we have to create a shader pass variant for when the <em translate="no">_SHADOWS_SOFT</em> keyword is defined. That's done by adding a multi-compile pragma directive to the default pass of our <em translate="no">Lit</em> shader. We want it to generate two variants, one without and one with the keyword defined. We do that by writing an underscore to represent the variant without a keyword, followed by the <em translate="no">_SHADOWS_SOFT</em> keyword.</p>
+						
+						<pre class="shader" translate="no">			#pragma multi_compile_instancing
+			#pragma instancing_options assumeuniformscaling
+			
+			<ins>#pragma multi_compile _ _SHADOWS_SOFT</ins></pre>
+						
+						<p>Finally, we have to toggle the keyword based on the value of the light's <code>shadows</code> property, at the end of <code>RenderShadows</code>. If it's set to <code>LightShadows.Soft</code> then invoke the <code>EnableShaderKeyword</code> method on our shadow buffer. Otherwise, invoke <code>DisableShaderKeyword</code>. Unity uses the keyword state to decide which pass variant to use when rendering.</p>
+						
+						<pre translate="no">	<ins>const string shadowsSoftKeyword = "_SHADOWS_SOFT";</ins>
+	
+	&hellip;
+	
+	void RenderShadows (ScriptableRenderContext context) {
+		&hellip;
+		
+		<ins>if (cull.visibleLights[0].light.shadows == LightShadows.Soft) {</ins>
+			<ins>shadowBuffer.EnableShaderKeyword(shadowsSoftKeyword);</ins>
+		<ins>}</ins>
+		<ins>else {</ins>
+			<ins>shadowBuffer.DisableShaderKeyword(shadowsSoftKeyword);</ins>
+		<ins>}</ins>
+		shadowBuffer.EndSample("Render Shadows");
+		context.ExecuteCommandBuffer(shadowBuffer);
+		shadowBuffer.Clear();
+	}</pre>
+						
+						<p>As it is a common to toggle a keyword based on a boolean, we could also use the <code>CoreUtils.SetKeyword</code> method to do the same.</p>
+						
+						<pre translate="no">		<ins>//if (cull.visibleLights[0].light.shadows == LightShadows.Soft) {</ins>
+		<ins>//	shadowBuffer.EnableShaderKeyword(shadowsSoftKeyword);</ins>
+		<ins>//}</ins>
+		<ins>//else {</ins>
+		<ins>//	shadowBuffer.DisableShaderKeyword(shadowsSoftKeyword);</ins>
+		<ins>//}</ins>
+		<ins>CoreUtils.SetKeyword(</ins>
+			<ins>shadowBuffer, shadowsSoftKeyword,</ins>
+			<ins>cull.visibleLights[0].light.shadows == LightShadows.Soft</ins>
+		<ins>);</ins></pre>
+						
+						<figure>
+							<img src="shadow-settings/hard-shadows.png" width="240" height="200" alt="hard">
+							<img src="shadow-settings/soft-shadows.png" width="240" height="200" alt="soft">
+							<figcaption>Hard and soft shadows.</figcaption>
+						</figure>
+					</section>
+				</section>
+				
+				<section>
+					<h2>More Lights With Shadows</h2>
+					
+					<p>So far we have only worked with a single spotlight, but our pipeline supports up to sixteen lights. We should also support up to sixteen spotlights that all cast shadows at the same time.</p>
+					
+					<section>
+						<h3>Shadow Data Per Light</h3>
+						
+						<p>If we're supporting multiple shadowed lights, while still doing all lighting in a single pass, then all shadow data&mdash;like shadow strength&mdash;must be made available at the same time. We'll collect this data in <code>ConfigureLights</code>, as we're setting up other light-related data there as well. So move the invocation of if to just before we invoke <code>RenderShadows</code>, and also only invoke <code>RenderShadows</code> if there are visible lights.</p>
+						
+						<pre translate="no">		CullResults.Cull(ref cullingParameters, context, ref cull);
+		<ins>if (cull.visibleLights.Count > 0) {</ins>
+			<ins>ConfigureLights();</ins>
+			RenderShadows(context);
+		<ins>}</ins>
+		<ins>else {</ins>
+			<ins>cameraBuffer.SetGlobalVector(</ins>
+				<ins>lightIndicesOffsetAndCountID, Vector4.zero</ins>
+			<ins>);</ins>
+		<ins>}</ins>
+		<ins>ConfigureLights();</ins>
+
+		context.SetupCameraProperties(camera);
+
+		CameraClearFlags clearFlags = camera.clearFlags;
+		cameraBuffer.ClearRenderTarget(
+			(clearFlags & CameraClearFlags.Depth) != 0,
+			(clearFlags & CameraClearFlags.Color) != 0,
+			camera.backgroundColor
+		);
+		
+		<del>//if (cull.visibleLights.Count > 0) {</del>
+		<del>//	ConfigureLights();</del>
+		<del>//}</del>
+		<del>//else {</del>
+		<del>//	cameraBuffer.SetGlobalVector(</del>
+		<del>//		lightIndicesOffsetAndCountID, Vector4.zero</del>
+		<del>//	);</del>
+		<del>//}</del></pre>
+						
+						<p>We'll use an array of 4D vectors to store the shadow data, one element per light. Initialize each element to zero when looping through the lights in <code>ConfigureLights</code>, like we do for the attenuation data.</p>
+						
+						<pre translate="no">	<ins>Vector4[] shadowData = new Vector4[maxVisibleLights];</ins>
+	
+	&hellip;
+	
+	void ConfigureLights () {
+		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			if (i == maxVisibleLights) {
+				break;
+			}
+			VisibleLight light = cull.visibleLights[i];
+			visibleLightColors[i] = light.finalColor;
+			Vector4 attenuation = Vector4.zero;
+			attenuation.w = 1f;
+			<ins>Vector4 shadow = Vector4.zero;</ins>
+
+			&hellip;
+
+			visibleLightAttenuations[i] = attenuation;
+			<ins>shadowData[i] = shadow;</ins>
+		}
+		
+		&hellip;
+	}</pre>
+						
+						<p>When we have a spotlight, get a reference to its <code>Light</code> component. If its <code>shadows</code> property isn't set to <code>LightShadows.None</code>, then store its shadow strength in the X component of the vector.</p>
+						
+						<pre translate="no">				if (light.lightType == LightType.Spot) {
+					&hellip;
+
+					<ins>Light shadowLight = light.light;</ins>
+					<ins>if (shadowLight.shadows != LightShadows.None) {</ins>
+						<ins>shadow.x = shadowLight.shadowStrength;</ins>
+					<ins>}</ins>
+				}</pre>
+						
+						<p>As each light can either use hard or soft shadows, we'll store that in the vector's Y component. Use 1 for soft shadows and zero otherwise.</p>
+						
+						<pre translate="no">					if (shadowLight.shadows != LightShadows.None) {
+						shadow.x = shadowLight.shadowStrength;
+						<ins>shadow.y =</ins>
+							<ins>shadowLight.shadows == LightShadows.Soft ? 1f : 0f;</ins>
+					}</pre>
+					</section>
+					
+					<section>
+						<h3>Excluding Lights</h3>
+						
+						<p>That a light is visible and has shadows enabled doesn't guarantee that it needs a shadow map. There might be no shadow casters or receivers in view. We can check this by invoking <code>GetShadowCasterBounds</code> on the cull results with the light index as a parameter. It returns whether it found valid bounds for the shadow volume of the light. If not, we can skip setting up the shadow data. It also provides the shadow bounds via an output parameter, which we'll have to provide even though we don't use it here.</p>
+						
+						<pre translate="no">					Light shadowLight = light.light;
+					<ins>Bounds shadowBounds;</ins>
+					if (
+						shadowLight.shadows != LightShadows.None <ins>&&</ins>
+						<ins>cull.GetShadowCasterBounds(i, out shadowBounds)</ins>
+					) {
+						shadow.x = shadowLight.shadowStrength;
+						shadow.y =
+							shadowLight.shadows == LightShadows.Soft ? 1f : 0f;
+					}</pre>
+					</section>
+					
+					<section>
+						<h3>Rendering All Shadow Maps</h3>
+						
+						<p>Moving on to <code>RenderShadows</code>, we have to put a loop around the code between the first execution of the shadow buffer and setting the shadow map texture. Again we loop through all visible lights, aborting when we go beyond the maximum supported lights. Replace all usage of the hard-coded zero index in the loop with the iterator variable.</p>
+						
+						<pre translate="no">		shadowBuffer.BeginSample("Render Shadows");
+		context.ExecuteCommandBuffer(shadowBuffer);
+		shadowBuffer.Clear();
+
+		<ins>for (int i = 0; i &lt; cull.visibleLights.Count; i++) {</ins>
+			<ins>if (i == maxVisibleLights) {</ins>
+				<ins>break;</ins>
+			<ins>}</ins>
+
+			Matrix4x4 viewMatrix, projectionMatrix;
+			ShadowSplitData splitData;
+			cull.ComputeSpotShadowMatricesAndCullingPrimitives(
+				<ins>i</ins>, out viewMatrix, out projectionMatrix, out splitData
+			);
+			shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+			shadowBuffer.SetGlobalFloat(
+				shadowBiasId, cull.visibleLights[<ins>i</ins>].light.shadowBias
+			);
+			context.ExecuteCommandBuffer(shadowBuffer);
+			shadowBuffer.Clear();
+
+			var shadowSettings = new DrawShadowsSettings(cull, <ins>i</ins>);
+			context.DrawShadows(ref shadowSettings);
+
+			&hellip;
+			shadowBuffer.SetGlobalMatrix(
+				worldToShadowMatrixId, worldToShadowMatrix
+			);
+		<ins>}</ins>
+		
+		shadowBuffer.SetGlobalTexture(shadowMapId, shadowMap);</pre>
+						
+						<p>Each light that doesn't need a shadow map should be skipped. We can use the shadow strength that we put in the shadow data to determine this. If it's zero or less&mdash;either because that was the original strength or we left it at zero&mdash;directly go to the next iteration of the loop, by using the <code>continue</code> statement.</p>
+						
+						<pre translate="no">			if (i == maxVisibleLights) {
+				break;
+			}
+			<ins>if (shadowData[i].x &lt;= 0f) {</ins>
+				<ins>continue;</ins>
+			<ins>}</ins></pre>
+						
+						<p>The <code>ComputeSpotShadowMatricesAndCullingPrimitives</code> method returns whether it was able to generate useful matrices. It should agree with the result of <code>GetShadowCasterBounds</code>, but to be sure set the strength to zero and skip the light if it fails.</p>
+						
+						<pre translate="no">			Matrix4x4 viewMatrix, projectionMatrix;
+			ShadowSplitData splitData;
+			<ins>if (!</ins>cull.ComputeSpotShadowMatricesAndCullingPrimitives(
+				i, out viewMatrix, out projectionMatrix, out splitData
+			)<ins>) {</ins>
+				<ins>shadowData[i].x = 0f;</ins>
+				<ins>continue;</ins>
+			<ins>}</ins></pre>
+						
+						<p>When using more than one light with shadows&mdash;provided that they're positioned such that they would produce visible shadows&mdash;the frame debugger will show us that indeed we render to the shadow map more than once.</p>
+						
+						<figure>
+							<img src="more-lights-with-shadows/two-shadow-maps.png" width="298" height="130">
+							<figcaption>Shadow map rendered twice.</figcaption>
+						</figure>
+						
+						<p>However, the resulting shadows are a mess. We still have some work to do.</p>
+					</section>
+					
+					<section>
+						<h3>Using the Correct Shadow Data</h3>
+						
+						<p>Instead of a single shadow strength, we now have to send an array of shadow data to the GPU. Make the necessary changes in <code>MyPipeline</code>.</p>
+						
+						<pre translate="no">	<del>//static int shadowStrengthId = Shader.PropertyToID("_ShadowStrength");</del>
+	<ins>static int shadowDataId = Shader.PropertyToID("_ShadowData");</ins>
+	
+	&hellip;
+	
+	void RenderShadows (ScriptableRenderContext context) {
+		&hellip;
+		<del>//shadowBuffer.SetGlobalFloat(</del>
+		<del>//	shadowStrengthId, cull.visibleLights[0].light.shadowStrength</del>
+		<del>//);</del>
+		<ins>shadowBuffer.SetGlobalVectorArray(shadowDataId, shadowData);</ins>
+		&hellip;
+	}</pre>
+						
+						<p>Likewise, instead of a single world-to-shadow matrix we'll need an array of them. Fill the array inside the loop in <code>RenderShadows</code>, then send the array to the GPU afterwards.</p>
+						
+						<pre translate="no">	<del>//static int worldToShadowMatrixId =</del>
+	<del>//	Shader.PropertyToID("_WorldToShadowMatrix");</del>
+	<ins>static int worldToShadowMatricesId =</ins>
+		<ins>Shader.PropertyToID("_WorldToShadowMatrices");</ins>
+		
+	&hellip;
+	
+	void RenderShadows (ScriptableRenderContext context) {
+		&hellip;
+
+		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+			<del>//Matrix4x4 worldToShadowMatrix =</del>
+			<del>//	scaleOffset * (projectionMatrix * viewMatrix);</del>
+			<del>//shadowBuffer.SetGlobalMatrix(</del>
+			<del>//	worldToShadowMatrixId, worldToShadowMatrix</del>
+			<del>//);</del>
+			<ins>worldToShadowMatrices[i] =</ins>
+				<ins>scaleOffset * (projectionMatrix * viewMatrix);</ins>
+		}
+		shadowBuffer.SetGlobalTexture(shadowMapId, shadowMap);
+		<ins>shadowBuffer.SetGlobalMatrixArray(</ins>
+			<ins>worldToShadowMatricesId, worldToShadowMatrices</ins>
+		<ins>);</ins>
+		shadowBuffer.SetGlobalVectorArray(shadowDataId, shadowData);
+		&hellip;
+	}</pre>
+						
+						<p>On the shader side, adjust the shadow buffer contents to match.</p>
+						
+						<pre class="shader" translate="no">CBUFFER_START(_ShadowBuffer)
+	<del>//float4x4 _WorldToShadowMatrix;</del>
+	<del>//float _ShadowStrength;</del>
+	<ins>float4x4 _WorldToShadowMatrices[MAX_VISIBLE_LIGHTS];</ins>
+	<ins>float4 _ShadowData[MAX_VISIBLE_LIGHTS];</ins>
+	float4 _ShadowMapSize;
+CBUFFER_END</pre>
+						
+						<p>The <code class="shader">ShadowAttenuation</code> function now needs a light index parameter so it can retrieve the correct array elements. Also, begin by checking whether the shadow strength is positive. If not, there are no shadows and immediately return an attenuation value of 1. And instead of relying on the <em translate="no">_SHADOWS_SOFT</em> keyword, branch based on the Y component of the shadow data.</p>
+						
+						<pre class="shader" translate="no">float ShadowAttenuation (<ins>int index</ins>, float3 worldPos) {
+	<ins>if (_ShadowData[index].x &lt;= 0) {</ins>
+		<ins>return 1.0;</ins>
+	<ins>}</ins>
+	float4 shadowPos = mul(<ins>_WorldToShadowMatrices[index]</ins>, float4(worldPos, 1.0));
+	shadowPos.xyz /= shadowPos.w;
+	float attenuation<ins>;</ins>
+	
+	<ins>if (_ShadowData[index].y == 0) {</ins>
+		attenuation =
+			SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, shadowPos.xyz);
+	<ins>}</ins>
+	<del>//#if defined(_SHADOWS_SOFT)</del>
+	<ins>else {</ins>
+		real tentWeights[9];
+		real2 tentUVs[9];
+		SampleShadow_ComputeSamples_Tent_5x5(
+			_ShadowMapSize, shadowPos.xy, tentWeights, tentUVs
+		);
+		attenuation = 0;
+		for (int i = 0; i &lt; 9; i++) {
+			attenuation += tentWeights[i] * SAMPLE_TEXTURE2D_SHADOW(
+				_ShadowMap, sampler_ShadowMap, float3(tentUVs[i].xy, shadowPos.z)
+			);
+		}
+	<ins>}</ins>
+	<del>//#endif</del>
+	
+	return lerp(1, attenuation, <ins>_ShadowData[index].x</ins>);
+}</pre>
+						
+						<p>Finally, supply the light index when invoking <code>ShadowAttenuation</code> in <code>LitPassFragment</code>.</p>
+						
+						<pre class="shader" translate="no">		float shadowAttenuation = ShadowAttenuation(<ins>lightIndex,</ins> input.worldPos);</pre>
+					</section>
+					
+					<section>
+						<h3>Shadow Map Atlas</h3>
+						
+						<p>Although we're now using the correct shadow data and matrices, we still end up with incorrect results when using more than one light with shadows. That's because all shadow maps are rendered to the same texture, producing a merged result that doesn't make sense. Unity's Lightweight pipeline solves this problem by using a shadow map atlas, partitioning the render texture into square tiles, one per light with shadows. We'll use the same approach.</p>
+						
+						<aside>
+							<h3>Why not use a texture array?</h3>
+							<div>
+								<p>That is possible, but unfortunately the support for shadow-caster render-texture arrays isn't good enough yet for a universal approach. For example, it currently works fine for Metal, but OpenGL Core requires targeting shader level 4.6 and&mdash;even though it works&mdash;will cause Unity to log a continuous stream of assertion errors. So instead we'll limit ourselves to a single render texture.</p>
+							</div>
+						</aside>
+						
+						<p>As we support up to sixteen lights, we'll treat our single shadow map as if it were a 4&times;4 grid of tiles. The size of each tile is thus equal to the size of the shadow map divided by four. We have to constrain rendering to a viewport of that size, so create a <code>Rect</code> struct value at the start of <code>RenderShadows</code> with the appropriate size.</p>
+						
+						<pre translate="no">	void RenderShadows (ScriptableRenderContext context) {
+		<ins>float tileSize = shadowMapSize / 4;</ins>
+		<ins>Rect tileViewport = new Rect(0f, 0f, tileSize, tileSize);</ins>
+
+		&hellip;
+	}</pre>
+						
+						<p>Tell the GPU to use the viewport by invoking <code>SetViewport</code> on the shadow command buffer when we're also setting the view and projection matrices.</p>
+						
+						<pre translate="no">			<ins>shadowBuffer.SetViewport(tileViewport);</ins>
+			shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);</pre>
+						
+						<figure>
+							<img src="more-lights-with-shadows/viewport.png" width="254" height="254">
+							<figcaption>Using a viewport.</figcaption>
+						</figure>
+						
+						<p>All shadow maps now get rendered to a single tile in the corner of our render texture. The next step is to change the offset of the viewport for each light. We can derive the viewport position from the X and Y indices of each tile. The Y offset index is found by dividing the light index by four, using an integer division. The X offset index found via an integer remainder operation instead. The final X and Y position of the viewport is equal to those indices multiplied by the tile size.</p>
+						
+						<pre translate="no">			<ins>float tileOffsetX = i % 4;</ins>
+			<ins>float tileOffsetY = i / 4;</ins>
+			<ins>tileViewport.x = tileOffsetX * tileSize;</ins>
+			<ins>tileViewport.y = tileOffsetY * tileSize;</ins>
+
+			shadowBuffer.SetViewport(tileViewport);</pre>
+						
+						<figure>
+							<img src="more-lights-with-shadows/seven-tiles.png" width="254" height="254">
+							<figcaption>Tiles for seven lights with shadows.</figcaption>
+						</figure>
+						
+						<p>A downside of using an atlas is that sampling at the edge of a tile can lead to an interpolation between data from two tiles, which is incorrect. This gets worse when using soft shadows, because the tent filter samples up to four texels away from the original sample position. It's better to fade out shadows than mix data from adjacent tiles. We can do this by adding an empty border around tiles, by instructing the GPU to limit the writing of data to a region that's a bit smaller than the viewport. This is known as scissoring, and we can do it by invoking <code>shadowBuffer.EnableScissorRect</code> with a rectangle that is a bit smaller than the viewport. We need a border of four texels, so create another rect with four added to the viewport's position and eight subtracted from its size.</p>
+						
+						<pre translate="no">			shadowBuffer.SetViewport(tileViewport);
+			<ins>shadowBuffer.EnableScissorRect(new Rect(</ins>
+				<ins>tileViewport.x + 4f, tileViewport.y + 4f,</ins>
+				<ins>tileSize - 8f, tileSize - 8f</ins>
+			<ins>));</ins></pre>
+						
+						<figure>
+							<img src="more-lights-with-shadows/scissored.png" width="254" height="254">
+							<figcaption>Tiles with borders.</figcaption>
+						</figure>
+						
+						<p>We have to disable the scissor rectangle by invoking <code>DisableScissorRect</code> after we're done rendering shadows, otherwise regular rendering will be affected too.</p>
+						
+						<pre translate="no">		<ins>shadowBuffer.DisableScissorRect();</ins>
+		shadowBuffer.SetGlobalTexture(shadowMapId, shadowMap);</pre>
+						
+						<p>The last thing that we have to do is adjust the world-to-shadow matrices so we end up sampling from the correct tile. This is done by multiplying them with a matrix that scales and offsets X and Y appropriately. The shader doesn't need to know that we're using an atlas.</p>
+						
+						<pre translate="no">			var scaleOffset = Matrix4x4.identity;
+			scaleOffset.m00 = scaleOffset.m11 = scaleOffset.m22 = 0.5f;
+			scaleOffset.m03 = scaleOffset.m13 = scaleOffset.m23 = 0.5f;
+			worldToShadowMatrices[i] =
+				scaleOffset * (projectionMatrix * viewMatrix);
+
+			<ins>var tileMatrix = Matrix4x4.identity;</ins>
+			<ins>tileMatrix.m00 = tileMatrix.m11 = 0.25f;</ins>
+			<ins>tileMatrix.m03 = tileOffsetX * 0.25f;</ins>
+			<ins>tileMatrix.m13 = tileOffsetY * 0.25f;</ins>
+			<ins>worldToShadowMatrices[i] = tileMatrix * worldToShadowMatrices[i];</ins></pre>
+						
+						<figure>
+							<img src="more-lights-with-shadows/four-lights-with-shadows.png" width="370" height="210">
+							<figcaption>Four lights with shadows.</figcaption>
+						</figure>
+						
+						<p>Keep in mind that we still only support up to four pixel lights per object. If you were to shine a fifth spotlight on a plane, one of them will turn into a vertex light, so the plane won't receive shadows from it.</p>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Dynamic Tiling</h2>
+					
+					<p>An advantage of using a shadow map atlas is that we always use the same render texture, no matter how many shadow maps get rendered. So the texture memory usage is fixed. A downsize is that only part of the texture gets used per light, so we end up with shadow maps that have an effective lower resolution than we specified. We can end up with a large part of the texture not in use.</p>
+					
+					<figure>
+						<img src="dynamic-tiling/six-out-of-sixteen.png" width="254" height="254">
+						<figcaption>Only six out of sixteen tiles in use.</figcaption>
+					</figure>
+					
+					<p>We can make better use of our texture by not always splitting it into sixteen tiles. It is possible to use a variable tile size, depending on how many tiles are needed. That way we can ensure that always at least half of the texture gets used.</p>
+					
+					<section>
+						<h3>Counting Shadow Tiles</h3>
+						
+						<p>First, we need to determine how many tiles are needed. We can do that by counting how many shadowed spotlights we encounter in <code>ConfigureLights</code>. Keep track of the total in a field so we can use it later.</p>
+						
+						<pre translate="no">	<ins>int shadowTileCount;</ins>
+
+&hellip;
+
+	void ConfigureLights () {
+		<ins>shadowTileCount = 0;</ins>
+		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+			else {
+				&hellip;
+
+				if (light.lightType == LightType.Spot) {
+					&hellip;
+					if (
+						shadowLight.shadows != LightShadows.None &&
+						cull.GetShadowCasterBounds(i, out shadowBounds)
+					) {
+						<ins>shadowTileCount += 1;</ins>
+						shadow.x = shadowLight.shadowStrength;
+						shadow.y =
+							shadowLight.shadows == LightShadows.Soft ? 1f : 0f;
+					}
+				}
+			}
+			&hellip;
+		}
+		&hellip;
+	}</pre>
+					</section>
+					
+					<section>
+						<h3>Splitting the Shadow Map</h3>
+						
+						<p>Next, we'll determine how we have to split the shadow map at the beginning of <code>RenderShadows</code>. Keep track of this with an integer variable. If we have at most a single tile, then we don't need to split at all, so the split amount is 1. Otherwise, if we have at most four tiles then the split becomes 2. The next step is up to nine tiles, with a split of 3. Only when ten or more tiles are in use do we need to use a split of 4.</p>
+						
+						<pre translate="no">	void RenderShadows (ScriptableRenderContext context) {
+		<ins>int split;</ins>
+		<ins>if (shadowTileCount &lt;= 1) {</ins>
+			<ins>split = 1;</ins>
+		<ins>}</ins>
+		<ins>else if (shadowTileCount &lt;= 4) {</ins>
+			<ins>split = 2;</ins>
+		<ins>}</ins>
+		<ins>else if (shadowTileCount &lt;= 9) {</ins>
+			<ins>split = 3;</ins>
+		<ins>}</ins>
+		<ins>else {</ins>
+			<ins>split = 4;</ins>
+		<ins>}</ins>
+		&hellip;
+	}</pre>
+						
+						<p>The tile size is now found by dividing the shadow map size by the split amount. Note that this is an integer division. In the case of a division by three, this means that we end up discarding fractional texels, which is intended. The tile scale then becomes one divided by the split amount, in this case using a float division. Then use the split amount when determining the tile offset and the tile scale when adjusting the world-to-shadow matrix.</p>
+						
+						<pre translate="no">		float tileSize = shadowMapSize / <ins>split</ins>;
+		<ins>float tileScale = 1f / split;</ins>
+		&hellip;
+
+		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+
+			float tileOffsetX = i % <ins>split</ins>;
+			float tileOffsetY = i / <ins>split</ins>;
+			&hellip;
+			
+			tileMatrix.m00 = tileMatrix.m11 = <ins>tileScale</ins>;
+			tileMatrix.m03 = tileOffsetX * <ins>tileScale</ins>;
+			tileMatrix.m13 = tileOffsetY * <ins>tileScale</ins>;
+			&hellip;
+		}</pre>
+						
+						<p>To pack all shadow maps in the available space, we must only increment the tile index when we used up a tile. So use a separate variable to keep track of it instead of relying on the light index. Increment it at the end of each iteration that we didn't skip.</p>
+						
+						<pre translate="no">		<ins>int tileIndex = 0;</ins>
+		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+
+			float tileOffsetX = <ins>tileIndex</ins> % split;
+			float tileOffsetY = <ins>tileIndex</ins> / split;
+			&hellip;
+			<ins>tileIndex += 1;</ins>
+		}</pre>
+						
+						<figure>
+							<img src="dynamic-tiling/six-out-of-nine.png" width="254" height="254">
+							<figcaption>Six out of nine tiles in use.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>One Tile is No Tile</h3>
+						
+						<p>Finally, if we end up with only a single tile it is not needed to set the viewport and change the scissor state at all. So only do that when there are multiple tiles.</p>
+						
+						<pre translate="no">		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+
+			<ins>if (split > 1) {</ins>
+				shadowBuffer.SetViewport(tileViewport);
+				shadowBuffer.EnableScissorRect(new Rect(
+					tileViewport.x + 4f, tileViewport.y + 4f,
+					tileSize - 8f, tileSize - 8f
+				));
+			<ins>}</ins>
+			shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+			&hellip;
+
+			<ins>if (split > 1) {</ins>
+				var tileMatrix = Matrix4x4.identity;
+				tileMatrix.m00 = tileMatrix.m11 = tileScale;
+				tileMatrix.m03 = tileOffsetX * tileScale;
+				tileMatrix.m13 = tileOffsetY * tileScale;
+				worldToShadowMatrices[i] = tileMatrix * worldToShadowMatrices[i];
+			<ins>}</ins>
+			tileIndex += 1;
+		}
+
+		<ins>if (split > 1) {</ins>
+			shadowBuffer.DisableScissorRect();
+		<ins>}</ins></pre>
+					</section>
+					
+					<section>
+						<h3>Shader Keywords</h3>
+						
+						<p>We can now end up sampling shadows up to four times per fragment, which can be a combination of hard and soft shadows. In the worst case we have four soft shadows, requiring 36 shadow samples. But we have branches in our shader to only sample shadows when needed, which works well because fragments from the same object end up branching the same way. However, we can switch to less complex shader alternatives by distinguishing between different combinations of shadows.</p>
+						
+						<p>There are four possible configurations. The first case is that there are no shadows at all. The second case is that there are only hard shadows. Third, there are only soft shadows. And the most complex case is a combination of hard and soft shadows. We can make shader variants for all cases by using the independent <em translate="no">_SHADOWS_HARD</em> and <em translate="no">_SHADOWS_SOFT</em> keywords.</p>
+						
+						<p>In <code>RenderShadows</code>, use two boolean variables to separately keep track of whether we have hard or soft shadows, based on whether the Y component of the shadows data is set to 0 or 1. Use these booleans after the loop to toggle the shader keywords.</p>
+						
+						<pre translate="no">	<ins>const string shadowsHardKeyword = "_SHADOWS_HARD";</ins>
+	&hellip;
+	
+	void RenderShadows (ScriptableRenderContext context) {
+		&hellip;
+		
+		int tileIndex = 0;
+		<ins>bool hardShadows = false;</ins>
+		<ins>bool softShadows = false;</ins>
+		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+			
+			<ins>if (shadowData[i].y &lt;= 0f) {</ins>
+				<ins>hardShadows = true;</ins>
+			<ins>}</ins>
+			<ins>else {</ins>
+				<ins>softShadows = true;</ins>
+			<ins>}</ins>
+		}
+
+		&hellip;
+		<ins>CoreUtils.SetKeyword(shadowBuffer, shadowsHardKeyword, hardShadows);</ins>
+		CoreUtils.SetKeyword(shadowBuffer, shadowsSoftKeyword, <ins>softShadows</ins>);
+		&hellip;
+	}</pre>
+						
+						<p>Add another multi-compile directive to the shader, now for <em translate="no">_SHADOWS_HARD</em>.</p>
+						
+						<pre class="shader" translate="no">			<ins>#pragma multi_compile _ _SHADOWS_HARD</ins>
+			#pragma multi_compile _ _SHADOWS_SOFT</pre>
+						
+						<p>In the <code class="shader">ShadowAttenuation</code> function, begin by returning 1 if neither keyword is defined. That cuts off the rest of the function, completely eliminating shadows.</p>
+						
+						<pre class="shader" translate="no">float ShadowAttenuation (int index, float3 worldPos) {
+	<ins>#if !defined(_SHADOWS_HARD) && !defined(_SHADOWS_SOFT)</ins>
+		<ins>return 1.0;</ins>
+	<ins>#endif</ins>
+	if (_ShadowData[index].x &lt;= 0) {
+		return 1.0;
+	}
+	&hellip;
+}</pre>
+						
+						<p>To make the code a more legible, move the sampling code for hard and soft shadows to their own functions.</p>
+						
+						<pre class="shader" translate="no"><ins>float HardShadowAttenuation (float4 shadowPos) {</ins>
+	<ins>return</ins> SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, shadowPos.xyz);
+<ins>}</ins>
+
+<ins>float SoftShadowAttenuation (float4 shadowPos) {</ins>
+	real tentWeights[9];
+	real2 tentUVs[9];
+	SampleShadow_ComputeSamples_Tent_5x5(
+		_ShadowMapSize, shadowPos.xy, tentWeights, tentUVs
+	);
+	<ins>float</ins> attenuation = 0;
+	for (int i = 0; i &lt; 9; i++) {
+		attenuation += tentWeights[i] * SAMPLE_TEXTURE2D_SHADOW(
+			_ShadowMap, sampler_ShadowMap, float3(tentUVs[i].xy, shadowPos.z)
+		);
+	}
+	<ins>return attenuation;</ins>
+<ins>}</ins>
+
+float ShadowAttenuation (int index, float3 worldPos) {
+	&hellip;
+	float attenuation;
+	
+	if (_ShadowData[index].y == 0) {
+		<ins>attenuation = HardShadowAttenuation(shadowPos);</ins>
+	}
+	else {
+		<ins>attenuation = SoftShadowAttenuation(shadowPos);</ins>
+	}
+	
+	return lerp(1, attenuation, _ShadowData[index].x);
+}</pre>
+						
+						<p>Now we can use the keywords to create code for the other three cases. The original branch is only needed if both keywords are defined.</p>
+						
+						<pre class="shader" translate="no">	<ins>#if defined(_SHADOWS_HARD)</ins>
+		<ins>#if defined(_SHADOWS_SOFT)</ins>
+			if (_ShadowData[index].y == 0) {
+				attenuation = HardShadowAttenuation(shadowPos);
+			}
+			else {
+				attenuation = SoftShadowAttenuation(shadowPos);
+			}
+		<ins>#else</ins>
+			<ins>attenuation = HardShadowAttenuation(shadowPos);</ins>
+		<ins>#endif</ins>
+	<ins>#else</ins>
+		<ins>attenuation = SoftShadowAttenuation(shadowPos);</ins>
+	<ins>#endif</ins></pre>
+						
+						<p>Finally, we can completely skip invoking <code>RenderShadows</code> in <code>MyPipeline.Render</code> if we need no shadow tiles at all. We won't even clear the shadow map. If we skip it, we do have to make sure that both shadow keywords are disabled. They can also be disabled when there are no visible lights.</p>
+						
+					<pre translate="no">		if (cull.visibleLights.Count > 0) {
+			ConfigureLights();
+			<ins>if (shadowTileCount > 0) {</ins>
+				RenderShadows(context);
+			<ins>}</ins>
+			<ins>else {</ins>
+				<ins>cameraBuffer.DisableShaderKeyword(shadowsHardKeyword);</ins>
+				<ins>cameraBuffer.DisableShaderKeyword(shadowsSoftKeyword);</ins>
+			<ins>}</ins>
+		}
+		else {
+			cameraBuffer.SetGlobalVector(
+				lightIndicesOffsetAndCountID, Vector4.zero
+			);
+			<ins>cameraBuffer.DisableShaderKeyword(shadowsHardKeyword);</ins>
+			<ins>cameraBuffer.DisableShaderKeyword(shadowsSoftKeyword);</ins>
+		}</pre>
+					
+					<p>The next tutorial is <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/directional-shadows/">Directional Shadows</a>.</p>
+					</section>
+					
+					<a href="https://bitbucket.org/catlikecodingunitytutorials/scriptable-render-pipeline-04-spotlight-shadows/" class="repository">repository</a>
+					<a href="Spotlight-Shadows.pdf" download rel="nofollow">PDF</a>
+				</section>
+				
+			</article>
+		</main>
+
+		<footer>
+			<p>Enjoying the <a href="https://catlikecoding.com/unity/tutorials/">tutorials</a>? Are they useful? Want more?</p>
+			<p><b><a href="https://www.patreon.com/catlikecoding">Please support me on Patreon!</a></b></p>
+			<p><a href="https://www.patreon.com/catlikecoding"><img src="https://catlikecoding.com/unity/tutorials/become-a-patron.png" alt="Become my patron!" width="217" height="51"></a></p>
+			<p><b><a href="https://catlikecoding.com/unity/tutorials/donating.html">Or make a direct donation</a>!</b></p>
+			<p>made by <a href="https://catlikecoding.com/jasper-flick/" rel="author">Jasper Flick</a></p>
+		</footer>
+		
+		<script src="../../tutorials.js"></script>
+	</body>
+</html>

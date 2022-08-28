@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/reflections/">
+		<meta property="og:type" content="article">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/reflections/tutorial-image.jpg">
+		<meta property="og:title" content="Reflections">
+		<meta property="og:description" content="A Unity Scriptable Render Pipeline tutorial about supporting specular and environmental reflections.">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta name="viewport" content="width=768">
+		<title>Reflections</title>
+		<link href="../../tutorials.css" rel="stylesheet">
+		<link rel="manifest" href="https://catlikecoding.com/site.webmanifest">
+		<link rel="mask-icon" href="https://catlikecoding.com/safari-pinned-tab.svg" color="#aa0000">
+
+		<script type="application/ld+json">{
+			"@context": "http://schema.org",
+			"@type": "WebPage",
+			"mainEntity": {
+				"@type": "TechArticle",
+				"@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/reflections/#article",
+				"headline": "Reflections",
+				"alternativeHeadline": "Specular and Environmental",
+				"datePublished": "2019-03-30",
+				"author": { "@type": "Person", "name": "Jasper Flick", "@id": "https://catlikecoding.com/jasper-flick/#person" },
+				"publisher": { "@type": "Organization", "name": "Catlike Coding", "@id": "https://catlikecoding.com/#organization" },
+				"description": "A Unity Scriptable Render Pipeline tutorial about supporting specular and environmental reflections.",
+				"image": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/reflections/tutorial-image.jpg",
+				"dependencies": "Unity 2018.3.0f2",
+				"proficiencyLevel": "Expert"
+			},
+			"breadcrumb": {
+				"@type": "BreadcrumbList",
+				"itemListElement": [
+					{ "@type": "ListItem", "position": 1, "item": { "@id": "https://catlikecoding.com/unity/", "name": "Unity" }},
+					{ "@type": "ListItem", "position": 2, "item": { "@id": "https://catlikecoding.com/unity/tutorials/", "name": "Tutorials" }},
+					{ "@type": "ListItem", "position": 3, "item": { "@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/", "name": "Scriptable Render Pipeline" }}
+				]
+			}
+		}</script>
+		<script>
+			var customTypes = {
+				ClipMode: 1,
+				DoubleSidedMeshMenuItem: 1,
+				InstancedMaterialProperties: 1,
+				LitShaderGUI: 1,
+				LitSurface: 1,
+				MyPipeline: 1,
+				MyPipelineAsset: 1,
+				MyPipelineAssetEditor: 1,
+				ShadowCascades: 1,
+				ShadowMapSize: 1
+			};
+			
+			var defaultCodeClass = "shader";
+		</script>
+	</head>
+	<body>
+		<header>
+			<a href="https://catlikecoding.com"><img src="https://catlikecoding.com/catlike-coding-logo.svg" alt="Catlike Coding" width="45" height="45"></a>
+			<nav>
+				<ol>
+					<li><a href="https://catlikecoding.com">Catlike Coding</a></li>
+					<li><a href="https://catlikecoding.com/unity/">Unity</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/">Tutorials</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">Scriptable Render Pipeline</a></li>
+				</ol>
+			</nav>
+		</header>
+		
+		<main>
+			<article>
+				<header>
+					<h1>Reflections</h1>
+					<p>Specular and Environmental</p>
+					<ul>
+						<li>Add specular highlights.</li>
+						<li>Reflect the environment.</li>
+						<li>Support non-uniform scaling.</li>
+						<li>Work with reflection probes.</li>
+						<li>Combine reflections and transparency.</li>
+					</ul>
+				</header>
+				
+				<p>This is the seventh installment of a tutorial series covering Unity's <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">scriptable render pipeline</a>. It covers the addition of reflections, both specular highlights and sampled reflection probes.</p>
+				
+				<p>This tutorial is made with Unity 2018.3.0f2.</p>
+				
+				<figure>
+					<img src="tutorial-image.jpg" width="512" height="256">
+					<figcaption>Reflections liven up a scene.</figcaption>
+				</figure>
+				
+				
+				<section>
+					<h2>Specular Highlights</h2>
+					
+					<p>Up to this point we've only used simple diffuse lighting, without any highlights. We're going to change that now, adding support for specular lighting. We'll used the same model that's used in Unity's Lightweight render pipeline. The <a href="https://catlikecoding.com/unity/tutorials/rendering/part-4/">Rendering 4, The Fist Light</a> tutorial covers the theory behind specular lighting, but uses an different model.</p>
+					
+					<section>
+						<h3>Smoothness</h3>
+						
+						<p>A perfectly diffuse surface&mdash;a perfect diffuser&mdash;has no specular reflections at all. The surface is so rough that no focused reflection takes place. The smoother a surface gets, the more lights bounces off it instead of getting diffused. We'll control this via a smoothness material property that goes from 0 to 1, with &frac12; as the default.</p>
+						
+						<pre>		_Cutoff ("Alpha Cutoff", Range(0, 1)) = 0.5
+		<ins>_Smoothness ("Smoothness", Range(0, 1)) = 0.5</ins></pre>
+						
+						<figure>
+							<img src="specular-highlights/smoothness-slider.png" width="320" height="74">
+							<figcaption>Smoothness slider.</figcaption>
+						</figure>
+						
+						<p>Add the corresponding shader variable.</p>
+						
+						<pre>CBUFFER_START(UnityPerMaterial)
+	float4 _MainTex_ST;
+	float _Cutoff;
+	<ins>float _Smoothness;</ins>
+CBUFFER_END</pre>
+					</section>
+					
+					<section>
+						<h3>Surface Data</h3>
+						
+						<p>Including specular reflections makes our lighting model more complex. Let's put all its code in a separate file, <em>Lighting.hlsl</em>. In it, we'll define a <code>LitSurface</code> struct that contains all surface data needed to perform the lighting calculations. That's the surface's normal, position, diffuse and specular colors, and its roughness. We'll also include the view direction. It's not really a property of the surface, but it's constant relative to the surface point that we're working with.</p>
+						
+						<pre><ins>#ifndef MYRP_LIGHTING_INCLUDED</ins>
+<ins>#define MYRP_LIGHTING_INCLUDED</ins>
+
+<ins>struct LitSurface {</ins>
+	<ins>float3 normal, position, viewDir;</ins>
+	<ins>float3 diffuse, specular;</ins>
+	<ins>float roughness;</ins>
+<ins>};</ins>
+
+<ins>#endif // MYRP_LIGHTING_INCLUDED</ins></pre>
+						
+						<p>Add a <code>GetLitSurface</code> function that return the lit surface data. We won't rely on shader-specific properties, textures, or definitions in this HLSL file, so all relevant data has to be defined as parameters. Although we take smoothness as input, internally we'll work with roughness, which is simply its reverse. Also, we use the metallic workflow and limit ourselves to dielectric materials for now. Dielectrics are nonmetals and purely reflect only a tiny amount of light, corresponding to a grayscale specular of 0.04 on average. We'll hard-code that, just like Unity's lighting code does.
+						
+						<pre>struct LitSurface {
+	&hellip;
+};
+
+<ins>LitSurface GetLitSurface (</ins>
+	<ins>float3 normal, float3 position, float3 viewDir,</ins>
+	<ins>float3 color, float smoothness</ins>
+<ins>) {</ins>
+	<ins>LitSurface s;</ins>
+	<ins>s.normal = normal;</ins>
+	<ins>s.position = position;</ins>
+	<ins>s.viewDir = viewDir;</ins>
+	<ins>s.diffuse = color;</ins>
+	<ins>s.specular = 0.04;</ins>
+	<ins>s.roughness = 1.0 - smoothness;</ins>
+	<ins>return s;</ins>
+<ins>}</ins></pre>
+						
+						<p>The roughness that we have at this point is actually a value known as perceptual roughness, according to the Disney model. The physical roughness is the square of that. We'll need both.</p>
+						
+						<pre>struct LitSurface {
+	float3 normal, position, viewDir;
+	float3 diffuse, specular;
+	float <ins>perceptualRoughness,</ins> roughness;
+};
+
+LitSurface GetLitSurface (
+	float3 normal, float3 position, float3 viewDir,
+	float3 color, float smoothness
+) {
+	&hellip;
+	s.<ins>perceptualRoughness</ins> = 1.0 - smoothness;
+	<ins>s.roughness = s.perceptualRoughness * s.perceptualRoughness;</ins>
+	return s;
+}</pre>
+						
+						<p>Include <em>Lighting.hlsl</em> in <em>Lit.hlsl</em>.</p>
+						
+						<pre>#include &hellip;
+<ins>#include "Lighting.hlsl"</ins></pre>
+						
+						<p>Now we can get the surface in <code>LitPassFragment</code>, before performing any lighting calculations. The view direction is simply the camera position minus the fragment position, normalized.</p>
+						
+						<pre>	<ins>float3 viewDir = normalize(_WorldSpaceCameraPos - input.worldPos.xyz);</ins>
+	<ins>LitSurface surface = GetLitSurface(</ins>
+		<ins>input.normal, input.worldPos, viewDir,</ins>
+		<ins>albedoAlpha.rgb, _Smoothness</ins>
+	<ins>);</ins>
+	
+	float3 diffuseLight = input.vertexLighting;</pre>
+						
+					</section>
+					
+					<section>
+						<h3>Diffuse Lighting</h3>
+						
+						<p>We're going to move the lighting calculations to <em>Lighting.hlsl</em>. Give it a <code>LightSurface</code> function for this purpose, with the surface and light direction as parameters. It performs the diffuse dot product and multiplies that by the surface's diffuse color. We're assuming an ideal light here, pure white without any attenuation. That keeps it simple.</p>
+						
+						<pre><ins>float3 LightSurface (LitSurface s, float3 lightDir) {</ins>
+	<ins>float3 color = s.diffuse;</ins>
+	<ins>return color * saturate(dot(s.normal, lightDir));</ins>
+<ins>}</ins></pre>
+						
+						<p>Adjust <code>MainLight</code> so it only has the surface as a parameter instead of the position and normal vectors. Have it invoke <code>LightSurface</code> instead of performing the dot product itself. This is where we apply the attenuation and light color, as before.</p>
+						
+						<pre>float3 MainLight (<ins>LitSurface s</ins>) {
+	float shadowAttenuation = CascadedShadowAttenuation(<ins>s.position</ins>);
+	float3 lightColor = _VisibleLightColors[0].rgb;
+	float3 lightDirection = _VisibleLightDirectionsOrPositions[0].xyz;
+	<del>//float diffuse = saturate(dot(normal, lightDirection));</del>
+	<ins>float3 color = LightSurface(s, lightDirection);</ins>
+	<ins>color</ins> *= shadowAttenuation;
+	return <ins>color</ins> * lightColor;
+}</pre>
+						
+						<p>Adjust <code>DiffuseLight</code> in the same way, renaming it to <code>GenericLight</code>, which better describes its purpose from now on.</p>
+						
+						<pre><del>//float3 DiffuseLight (</del>
+<del>//	int index, float3 normal, float3 worldPos, float shadowAttenuation</del>
+<del>//) {</del>
+<ins>float3 GenericLight (int index, LitSurface s, float shadowAttenuation) {</ins>
+	&hellip;
+	
+	float3 lightVector =
+		lightPositionOrDirection.xyz - <ins>s.position</ins> * lightPositionOrDirection.w;
+	float3 lightDirection = normalize(lightVector);
+	<del>//float diffuse = saturate(dot(normal, lightDirection));</del>
+	<ins>float3 color = LightSurface(s, lightDirection);</ins>
+	
+	&hellip;
+	
+	float distanceSqr = max(dot(lightVector, lightVector), 0.00001);
+	<ins>color</ins> *= shadowAttenuation * spotFade * rangeFade / distanceSqr;
+	return <ins>color</ins> * lightColor;
+}</pre>
+						
+						<p><code>LitPassFragment</code> now has to pass the surface as an argument. Also, diffuse is now factored into the color along the way, instead of at the end. We still have to factor it into the vertex lighting though, at the start.</p>
+						
+						<pre>	<del>//float3 diffuseLight = input.vertexLighting;</del>
+	<ins>float3 color = input.vertexLighting * surface.diffuse;</ins>
+	#if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)
+		<ins>color</ins> += MainLight(<ins>surface</ins>);
+	#endif
+	
+	for (int i = 0; i &lt; min(unity_LightIndicesOffsetAndCount.y, 4); i++) {
+		int lightIndex = unity_4LightIndices0[i];
+		float shadowAttenuation = ShadowAttenuation(lightIndex, input.worldPos);
+		<ins>color</ins> += <ins>GenericLight</ins>(lightIndex, <ins>surface</ins>, shadowAttenuation);
+	}
+	<del>//float3 color = diffuseLight * albedoAlpha.rgb;</del>
+	return float4(color, albedoAlpha.a);</pre>
+						
+						<p>We also have to use <code>GenericLight</code> for the vertex lights. Vertex lighting is purely diffuse, so only the position and normal are needed. The color is white and the other values don't matter. Let's add a convenient wrapper function for that to <em>Lighting.hlsl</em>.</p>
+						
+						<pre><ins>LitSurface GetLitSurfaceVertex (float3 normal, float3 position) {</ins>
+	<ins>return GetLitSurface(normal, position, 0, 1, 0);</ins>
+<ins>}</ins></pre>
+						
+						<p>Then use it in <code>LitPassVertex</code>.</p>
+						
+						<pre>	<ins>LitSurface surface = GetLitSurfaceVertex(output.normal, output.worldPos);</ins>
+	output.vertexLighting = 0;
+	for (int i = 4; i &lt; min(unity_LightIndicesOffsetAndCount.y, 8); i++) {
+		int lightIndex = unity_4LightIndices1[i - 4];
+		output.vertexLighting += <ins>GenericLight</ins>(lightIndex, <ins>surface</ins>, 1);
+	}</pre>
+						
+					</section>
+					
+					<section>
+						<h3>Optional Specular</h3>
+						
+						<p>Before we add specular highlighting, let's make it possible to skip that, to still support perfectly diffuse materials. We'll indicate that via a boolean field that we add to the surface and as a parameter to <code>GetLitSurface</code>, set to <code>false</code> by default. The idea is that you'll hard-code the argument, or make it dependent on a shader keyword.</p>
+						
+						<p>In case of a perfect diffuser, smoothness and specular should always be zero.</p>
+						
+						<pre>struct LitSurface {
+	&hellip;
+	<ins>bool perfectDiffuser;</ins>
+};
+
+LitSurface GetLitSurface (
+	float3 normal, float3 position, float3 viewDir,
+	float3 color, float smoothness<ins>, bool perfectDiffuser = false</ins>
+) {
+	&hellip;
+	s.diffuse = color;
+	<ins>if (perfectDiffuser) {</ins>
+		<ins>smoothness = 0.0;</ins>
+		<ins>s.specular = 0.0;</ins>
+	<ins>}</ins>
+	<ins>else {</ins>
+		s.specular = 0.04;
+	<ins>}</ins>
+	<ins>s.perfectDiffuser = perfectDiffuser;</ins>
+	s.perceptualRoughness = 1.0 - smoothness;
+
+	return s;
+}</pre>
+						
+						<p>Also, we can make all specular calculations conditional on that boolean. Only the final dot product is always needed.</p>
+						
+						<pre>float3 LightSurface (LitSurface s, float3 lightDir) {
+	float3 color = s.diffuse;
+	
+	<ins>if (!s.perfectDiffuser) {}</ins>
+	
+	return color * saturate(dot(s.normal, lightDir));
+}</pre>
+						
+						<p>This is exactly what we need for vertex lighting.</p>
+						
+						<pre>LitSurface GetLitSurfaceVertex (float3 normal, float3 position) {
+	return GetLitSurface(normal, position, 0, 1, 0<ins>, true</ins>);
+}</pre>
+					</section>
+					
+					<section>
+						<h3>Specular Lighting</h3>
+						
+						<p>The idea behind the specular highlight is that it represents a pure reflection. A light ray hits the surface and some of it gets reflected. If the camera is aligned so it matches the reflection perfectly, then it sees the light, otherwise it doesn't. But if a surface isn't perfectly smooth then the reflection gets scattered a little, so the camera still sees some of the reflection even when it isn't perfectly aligned. The rougher the surface, the larger this transition zone gets. That creates the specular highlight.</p>
+						
+						<p>Unity's Lightweight render pipeline uses a modified minimalist CookTorrance BRDF to calculate the highlight. We'll perform the same calculations. See <em>Lighting.hlsl</em> in the <em>Lightweight RP</em> package for details and links for further reading.</p>
+						
+						<pre>	if (!s.perfectDiffuser) {
+		<ins>float3 halfDir = SafeNormalize(lightDir + s.viewDir);</ins>
+		<ins>float nh = saturate(dot(s.normal, halfDir));</ins>
+		<ins>float lh = saturate(dot(lightDir, halfDir));</ins>
+		<ins>float d = nh * nh * (s.roughness * s.roughness - 1.0) + 1.00001;</ins>
+		<ins>float normalizationTerm = s.roughness * 4.0 + 2.0;</ins>
+		<ins>float specularTerm = s.roughness * s.roughness;</ins>
+		<ins>specularTerm /= (d * d) * max(0.1, lh * lh) * normalizationTerm;</ins>
+		<ins>color += specularTerm * s.specular;</ins>
+	}</pre>
+						
+						<p>Light that gets reflected doesn't also get scattered, so reduce the diffuse color accordingly in <code>GetLitSurface</code>, unless the surface is perfect diffuser.</p>
+						
+						<pre>	if (perfectDiffuser) {
+		smoothness = 0.0;
+		s.specular = 0.0;
+	}
+	else {
+		s.specular = 0.04;
+		<ins>s.diffuse *= 1.0 - 0.04;</ins>
+	}</pre>
+						
+						<figure>
+							<img src="specular-highlights/without-specular.png" width="410" height="90" alt="without">
+							<img src="specular-highlights/with-specular.png" width="410" height="90" alt="with">
+							<figcaption>Without and with specular highlights.</figcaption>
+						</figure>
+						
+					</section>
+					
+					<section>
+						<h3>Smoothness Per Object</h3>
+						
+						<p>We made the <code>InstancedColor</code> component so we can give each object its own color without requiring separate materials. We can do the same for smoothness. We can do both with the same component, but we should rename it to better describe its more generic functionality.</p>
+						
+						<p>First, rename the asset file in the <em>Project</em> window from <em>InstancedColor</em> to <em>InstancedMaterialProperties</em>, then rename the class definition in the code and add smoothness. Doing it in that order makes it possible for the Unity editor to keep all component references intact. Otherwise you'd have to fix missing script references.</p>
+						
+						<pre class="csharp"><del>//public class InstancedColor : MonoBehaviour {</del>
+<ins>public class InstancedMaterialProperties : MonoBehaviour {</ins>
+
+	static MaterialPropertyBlock propertyBlock;
+
+	static int colorID = Shader.PropertyToID("_Color");
+	<ins>static int smoothnessId = Shader.PropertyToID("_Smoothness");</ins>
+
+	[SerializeField]
+	Color color = Color.white;
+
+	<ins>[SerializeField, Range(0f, 1f)]</ins>
+	<ins>float smoothness = 0.5f;</ins>
+
+	&hellip;
+
+	void OnValidate () {
+		&hellip;
+		propertyBlock.SetColor(colorID, color);
+		<ins>propertyBlock.SetFloat(smoothnessId, smoothness);</ins>
+		GetComponent&lt;MeshRenderer>().SetPropertyBlock(propertyBlock);
+	}
+}</pre>
+						
+						<figure>
+							<img src="specular-highlights/smoothness-per-object-inspector.png" width="320" height="80" alt="inspector"><br>
+							<img src="specular-highlights/smoothness-per-object.png" width="410" height="90" alt="scene">
+							<figcaption>Varying smoothness per object.</figcaption>
+						</figure>
+						
+						<p>To keep GPU instancing we have to move the smoothness variable to the instancing buffer.</p>
+						
+						<pre>CBUFFER_START(UnityPerMaterial)
+	float4 _MainTex_ST;
+	float _Cutoff;
+	<del>//float _Smoothness;</del>
+CBUFFER_END
+
+&hellip;
+
+UNITY_INSTANCING_BUFFER_START(PerInstance)
+	UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
+	<ins>UNITY_DEFINE_INSTANCED_PROP(float, _Smoothness)</ins>
+UNITY_INSTANCING_BUFFER_END(PerInstance)</pre>
+						
+						<p>And retrieve it by using the <code>UNITY_ACCESS_INSTANCED_PROP</code> macro.</p>
+						
+						<pre>	LitSurface surface = GetLitSurface(
+		input.normal, input.worldPos, viewDir,
+		albedoAlpha.rgb, <ins>UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Smoothness)</ins>
+	);</pre>
+						
+					</section>
+				</section>
+				
+				<section>
+					<h2>Reflecting the Environment</h2>
+					
+						<p>The specular highlight represents a direct reflection of the light source. But light&mdash;both direct and indirect&mdash;can come from all directions. We cannot trace all these reflections in realtime, so we'll sample a cube map that contains the environment lighting instead.</p>
+							
+					<section>
+						<h3>Sampling the Environment</h3>
+						
+						<p>The default environment is the skybox. Unity makes it available in the shader via <code>unity_SpecCube0</code>. This is a cube map texture resource, which we can define via the <code>TEXTURECUBE</code> macro, along with a <code>samplerunity_SpecCube0</code> sampler state. Define these in <em>Lighting.hlsl</em> along with the other variables and resources, as the specifics of how we got the environment data isn't relevant for the lighting calculations.</p>
+						
+						<pre><ins>TEXTURECUBE(unity_SpecCube0);</ins>
+<ins>SAMPLER(samplerunity_SpecCube0);</ins></pre>
+						
+						<p>Again in <em>Lit.hlsl</em>, define a <code>SampleEnvironment</code> function with the surface as a parameter. It will sample the cube map the same way as described in <a href="https://catlikecoding.com/unity/tutorials/rendering/part-8/">Rendering 8, Reflections</a>. First, use the <code>reflect</code> function with the negative view direction and surface normal to get the reflection vector. Then invoke <code>PerceptualRoughnessToMipmapLevel</code> to find the correct mip level based on the perceptual roughness. After that we can sample the cube map with the <code>SAMPLE_TEXTURECUBE_LOD</code> macro and use the result as the final color.</p>
+						
+						<pre><ins>float3 SampleEnvironment (LitSurface s) {</ins>
+	<ins>float3 reflectVector = reflect(-s.viewDir, s.normal);</ins>
+	<ins>float mip = PerceptualRoughnessToMipmapLevel(s.perceptualRoughness);</ins>
+	
+	<ins>float3 uvw = reflectVector;</ins>
+	<ins>float4 sample = SAMPLE_TEXTURECUBE_LOD(</ins>
+		<ins>unity_SpecCube0, samplerunity_SpecCube0, uvw, mip</ins>
+	<ins>);</ins>
+	<ins>float3 color = sample.rgb;</ins>
+	<ins>return color;</ins>
+<ins>}</ins></pre>
+						
+						<p><code>PerceptualRoughnessToMipmapLevel</code> is defined in the <em>ImageBasedLighting.hlsl</em> Core RP Library file. Rough surfaces produce fuzzy reflections, which we get by selecting an appropriate mip level. Unity generates special mipmaps to represent scattered reflections.</p>
+						
+						<pre><ins>#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/ImageBasedLighting.hlsl"</ins>
+#include "Lighting.hlsl"
+</pre>
+						
+						<p>To check whether this works, sample the environment at the end of <code>LitPassFragment</code> and use it as the final color, overriding out lighting.</p>
+						
+						<pre>float4 LitPassFragment (
+	VertexOutput input, FRONT_FACE_TYPE isFrontFace : FRONT_FACE_SEMANTIC
+) : SV_TARGET {
+	&hellip;
+	
+	<ins>color = SampleEnvironment(surface);</ins>
+	
+	return float4(color, albedoAlpha.a);
+}</pre>
+						
+						<p>The result is uniform gray, which means that no cube map has been made available. We have to instruct Unity to bind the environment map, which we do by setting the <code class="csharp">RendererConfiguration.PerObjectReflectionProbes</code> flag in the renderer configuration in <code class="csharp">MyPipeline.Render</code>. Because we're not using reflection probes at this point all objects end up with the skybox cube map.</p>
+						
+						<pre class="cshapr">		if (cull.visibleLights.Count > 0) {
+			drawSettings.rendererConfiguration =
+				RendererConfiguration.PerObjectLightIndices8;
+		}
+		<ins>drawSettings.rendererConfiguration |=</ins>
+			<ins>RendererConfiguration.PerObjectReflectionProbes;</ins></pre>
+						
+						<figure>
+							<img src="reflecting-the-environment/sampling-skybox.png" width="410" height="90">
+							<figcaption>Sampling the skybox.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Modulating Reflections</h3>
+						
+						<p>How much of the environment gets reflected depends on how rough the surface is. Add a <code>ReflectEnvironment</code> function for this to <em>Lighting.hlsl</em>, with the surface and environment color as parameters. Note that this function doesn't care whether the environment color is derived from a cube map sample, a uniform value, or something else.</p>
+						
+						<p>A perfect diffuser doesn't reflect anything, so the result is always zero. Otherwise, factor the specular color into the result. Then divide it by the squared roughness plus one.</p>
+						
+						<pre><ins>float3 ReflectEnvironment (LitSurface s, float3 environment) {</ins>
+	<ins>if (s.perfectDiffuser) {</ins>
+		<ins>return 0;</ins>
+	<ins>}</ins>
+	
+	<ins>environment *= s.specular;</ins>
+	<ins>environment /= s.roughness * s.roughness + 1.0;</ins>
+	<ins>return environment;</ins>
+<ins>}</ins></pre>
+						
+						<p>Filter the sampled environment through this function.</p>
+						
+						<pre>	color = <ins>ReflectEnvironment(surface,</ins> SampleEnvironment(surface)<ins>)</ins>;</pre>
+						
+						<figure>
+							<img src="reflecting-the-environment/modulated-reflections.png" width="410" height="90">
+							<figcaption>Modulated reflections.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Fresnel</h3>
+						
+						<p>At glancing angles, most light is reflected, and all surfaces act like a mirror. This is known as Fresnel reflection. What this effectively does is boost the specular color based on the angle between the surface normal and view direction. We'll use one minus the saturated dot product of the normal and view direction, raised to the fourth power. The Core RP Library defines a convenient <code>Pow4</code> function for that. Use the result to interpolate from the specular color to white before factoring it into the environment color in <code>ReflectEnvironment</code>.</p>
+						
+						<pre>	<ins>float fresnel = Pow4(1.0 - saturate(dot(s.normal, s.viewDir)));</ins>
+	environment *= <ins>lerp(</ins>s.specular<ins>, 1, fresnel)</ins>;</pre>
+						
+						<figure>
+							<img src="reflecting-the-environment/fresnel.png" width="410" height="90">
+							<figcaption>Fresnel reflections.</figcaption>
+						</figure>
+						
+						<p>But roughness also affects the Fresnel reflections. The rougher the surface, the weaker the effect. Add a <code>fresnelStrength</code> field to the surface to keep track of this. We'll simply make it equal to the smoothness.</p>
+						
+						<pre>struct LitSurface {
+	float3 normal, position, viewDir;
+	float3 diffuse, specular;
+	float perceptualRoughness, roughness, <ins>fresnelStrength,</ins>
+	bool perfectDiffuser;
+};
+
+LitSurface GetLitSurface (
+	float3 normal, float3 position, float3 viewDir,
+	float3 color, float smoothness, bool perfectDiffuser = false
+) {
+	&hellip;
+	<ins>s.fresnelStrength = smoothness;</ins>
+	return s;
+}</pre>
+						
+						<p>Now boost up to the fresnel strength, instead of always to full strength.</p>
+						
+						<pre>	environment *= lerp(s.specular, <ins>s.fresnelStrength</ins>, fresnel);</pre>
+						
+						<figure>
+							<img src="reflecting-the-environment/modulated-fresnel.png" width="410" height="90">
+							<figcaption>Modulated Fresnel reflections.</figcaption>
+						</figure>
+						
+						<p>Finally, add the environment reflections to the direct lighting, instead of replacing it.</p>
+						
+						<pre>	color <ins>+=</ins> ReflectEnvironment(surface, SampleEnvironment(surface));</pre>
+						
+						<figure>
+							<img src="reflecting-the-environment/reflections-added.png" width="410" height="90">
+							<figcaption>Reflections added to direct lighting.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Metallic Surfaces</h3>
+						
+						<p>A fixed monochrome specular of 0.04 works fine for dielectric materials, but not for metals. A pure metal only reflects light, but changes its color. To indicate whether something is a metal, add another shader property. Again use a slider with a 0&mdash;1 range, so it's possible to represent materials that are a blend of dielectric and metallic.</p>
+						
+						<pre>		<ins>_Metallic ("Metallic", Range(0, 1)) = 0</ins>
+		_Smoothness ("Smoothness", Range(0, 1)) = 0.5</pre>
+						
+						<figure>
+							<img src="reflecting-the-environment/metallic-slider.png" width="320" height="56">
+							<figcaption>Metallic slider.</figcaption>
+						</figure>
+						
+						<p>We'll immediately add the metallic property to <code class="csharp">InstancedMaterialProperties</code> as well.</p>
+						
+						<pre class="csharp">	<ins>static int metallicId = Shader.PropertyToID("_Metallic");</ins>
+	static int smoothnessId = Shader.PropertyToID("_Smoothness");
+
+	[SerializeField]
+	Color color = Color.white;
+
+	<ins>[SerializeField, Range(0f, 1f)]</ins>
+	<ins>float metallic;</ins>
+
+	[SerializeField, Range(0f, 1f)]
+	float smoothness = 0.5f;
+
+	&hellip;
+
+	void OnValidate () {
+		&hellip;
+		<ins>propertyBlock.SetFloat(metallicId, metallic);</ins>
+		propertyBlock.SetFloat(smoothnessId, smoothness);
+		GetComponent&lt;MeshRenderer>().SetPropertyBlock(propertyBlock);
+	}
+}</pre>
+						
+						<figure>
+							<img src="reflecting-the-environment/metallic-per-object.png" width="320" height="98">
+							<figcaption>Metallic per object.</figcaption>
+						</figure>
+						
+						<p>Add the shader instance property.</p>
+						
+						<pre>UNITY_INSTANCING_BUFFER_START(PerInstance)
+	UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
+	<ins>UNITY_DEFINE_INSTANCED_PROP(float, _Metallic)</ins>
+	UNITY_DEFINE_INSTANCED_PROP(float, _Smoothness)
+UNITY_INSTANCING_BUFFER_END(PerInstance)</pre>
+						
+						<p>And pass it to <code>LitSurface</code> in <code>LitPassFragment</code>, before smoothness.</p>
+						
+						<pre>	LitSurface surface = GetLitSurface(
+		input.normal, input.worldPos, viewDir, albedoAlpha.rgb,
+		<ins>UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Metallic),</ins>
+		UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Smoothness)
+	);</pre>
+						
+						<p>Add the corresponding parameter to <code>GetLitSurface</code> and give <code>LitSurface</code> a field to store its reflectivity. In case of a perfect diffuser it's always zero.</p>
+						
+						<pre>struct LitSurface {
+	float3 normal, position, viewDir;
+	float3 diffuse, specular;
+	float perceptualRoughness, roughness, fresnelStrength<ins>, reflectivity</ins>;
+	bool perfectDiffuser;
+};
+
+LitSurface GetLitSurface (
+	float3 normal, float3 position, float3 viewDir,
+	float3 color, <ins>float metallic,</ins> float smoothness, bool perfectDiffuser = false
+) {
+	&hellip;
+	if (perfectDiffuser) {
+		<ins>s.reflectivity = 0.0;</ins>
+		smoothness = 0.0;
+		s.specular = 0.0;
+	}
+	&hellip;
+}
+
+LitSurface GetLitSurfaceVertex (float3 normal, float3 position) {
+	return GetLitSurface(normal, position, 0, 1, <ins>0,</ins> 0, true);
+}</pre>
+						
+						<p>In case of a metal, the provided color controls specular instead of diffuse. Because metallic isn't binary, use it to interpolate the specular color between 0.04 for nonmetals and the color for metals. After that, the reflectivity would simply be equal to metallic, except that we use 0.04 as a minimum. So interpolate from 0.04 to 1 based on metallic. Finally, the reflectivity adds to the Fresnel strength, up to a maximum of one.</p>
+						
+						<pre>	if (perfectDiffuser) {
+		&hellip;
+	}
+	else {
+		s.specular = <ins>lerp(</ins>0.04<ins>, color, metallic)</ins>;
+		<ins>s.reflectivity = lerp(0.04, 1.0, metallic);</ins>
+		s.diffuse *= 1.0 - <ins>s.reflectivity</ins>;
+	}
+	&hellip;
+	s.fresnelStrength = <ins>saturate(</ins>smoothness<ins> + s.reflectivity)</ins>;
+	return s;
+}</pre>
+						
+						<figure>
+							<img src="reflecting-the-environment/half-metallic.png" width="410" height="90" alt="half">
+							<img src="reflecting-the-environment/fully-metallic.png" width="410" height="90" alt="fully">
+							<figcaption>Half and fully metallic.</figcaption>
+						</figure>
+					</section>
+				</section>
+				
+				
+				<section>
+					<h2>Non-Uniform Scaling</h2>
+					
+					<p>Before we move on, let's reconsider our assumption that all objects have a uniform scale. That limitation works fine for simple scenes, but to build more complex scenes with simple shapes it's useful to stretch them, resulting in non-uniform scales. If we did that now we'd end up with incorrect shading, as explained in <a href="https://catlikecoding.com/unity/tutorials/rendering/part-4/">Rendering 4, The First Light</a>.</p>
+					
+					<figure>
+						<img src="non-uniform-scaling/incorrect-shading.png" width="380" height="90">
+						<figcaption>Incorrect shading on stretched sphere.</figcaption>
+					</figure>
+					
+					<section>
+						<h3>Removing the Assumption</h3>
+						
+						<p>To keep shading correct no matter the scale used, we have to get rid the <code>assumeuniformscaling</code> pragma directives in our shader.</p>
+						
+						<pre>			<del>//#pragma instancing_options assumeuniformscaling</del></pre>
+						
+						<p>In case of a non-uniform scale, we have to use the object's wold-to-object matrix to correctly transform the normal vectors. So besides <code>unity_ObjectToWorld</code> we also need <code>unity_WorldToObject</code> in the <code>UnityPerDraw</code> buffer.</p>
+						
+						<pre>CBUFFER_START(UnityPerDraw)
+	float4x4 unity_ObjectToWorld<ins>, unity_WorldToObject;</ins>
+	float4 unity_LightIndicesOffsetAndCount;
+	float4 unity_4LightIndices0, unity_4LightIndices1;
+CBUFFER_END</pre>
+						
+						<p>Besides that, Unity's instancing code expects it to be defined via a <code>UNITY_MATRIX_I_M</code> macro, as the inverse of <code>UNITY_MATRIX_M</code>.</p>
+						
+						<pre>#define UNITY_MATRIX_M unity_ObjectToWorld
+<ins>#define UNITY_MATRIX_I_M unity_WorldToObject</ins></pre>
+						
+						<p>When transforming the normal vector in <code>LitPassVertex</code>, we have to swap the matrix, reverse the multiplication order, and normalize the result. But we only need to do this when uniform scaling isn't assumed. If you do enable that option, <em>UNITY_ASSUME_UNIFORM_SCALING</em> will be defined and the cheaper approach can still be used.</p>
+						
+						<pre>	<ins>#if defined(UNITY_ASSUME_UNIFORM_SCALING)</ins>
+		output.normal = mul((float3x3)UNITY_MATRIX_M, input.normal);
+	<ins>#else</ins>
+		<ins>output.normal = normalize(mul(input.normal, (float3x3)UNITY_MATRIX_I_M));</ins>
+	<ins>#endif</ins></pre>
+						
+						<figure>
+							<img src="non-uniform-scaling/correct-shading.png" width="380" height="90">
+							<figcaption>Correct shading on stretched sphere.</figcaption>
+						</figure>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Reflection Probes</h2>
+					
+					<p>The skybox is only used for environmental reflections when no other reflection probe is available. You can add one to the scene via <em>GameObject / Light / Reflection Probe</em>. By default, a reflection probe's <em>Type</em> is set to <em>Baked</em>, which means that its cube map is rendered once by the Unity editor and it only shows objects marked as static for reflection probes. It will get updated if something static gets changed. When set to <em>Realtime</em>, it shows the entire scene. When the cube map gets rendered depends on the <em>Refresh Mode</em> and <em>Time Slicing</em> settings. While in edit mode, a realtime reflection probe doesn't always get refreshed when the scene changes. See <a href="https://catlikecoding.com/unity/tutorials/rendering/part-8/">Rendering 8, Reflections</a> for a more details.</p>
+					
+					<figure>
+						<img src="reflection-probes/reflection-probe.png" width="320" height="136">
+						<figcaption>Reflection probe set to realtime rendering.</figcaption>
+					</figure>
+					
+					<p>Reflection probes are only useful when there is something to reflect, so put them in a scene near other objects. You can place them inside an object, as long as that object uses a material that culls back faces. That way you can get the most accurate reflections for that object.</p>
+					
+					<figure>
+						<img src="reflection-probes/one-reflection-probe.png" width="440" height="220">
+						<figcaption>Scene with one reflection probe at its center.</figcaption>
+					</figure>
+					
+					<p>Unity uses our pipeline when rendering the cube map faces, although this won't be shown in the frame debugger. You can verify this in <code>MyPipeline</code> by logging the camera type that's used in <code>Render</code>. By default, the cubemap gets rendered once when needed. This means that reflective surfaces end up darker than expected in the environment map, because they rely on the environment map themselves. You can increase the amount of bounces via  the lighting settings. For example, two bounces means that all cube maps are rendered as normal, but then they're rendered again with the previous results used for environment mapping.</p>
+					
+					<figure>
+						<img src="reflection-probes/two-bounces.png" width="420" height="110">
+						<figcaption>Two reflection bounces.</figcaption>
+					</figure>
+					
+					<section>
+						<h3>Box Projection</h3>
+						
+						<p>By default the light represented by cube maps is treated as coming from infinitely far away. This doesn't work for nearby surfaces. Box mapping can be used to make reflections more accurate for small regions. Unity's Lightweight render pipeline doesn't do this, but we'll support box mapping using the approach described in <a href="https://catlikecoding.com/unity/tutorials/rendering/part-8/">Rendering 8, Reflections</a>, which matches Unity's Legacy render pipeline.</p>
+						
+						<p>Add variables for the probe box's minimum and maximum bounds as well as its position to the <code>UnityPerDraw</code> buffer.</p>
+						
+						<pre>CBUFFER_START(UnityPerDraw)
+	&hellip;
+	<ins>float4 unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax;</ins>
+	<ins>float4 unity_SpecCube0_ProbePosition;</ins>
+CBUFFER_END</pre>
+						
+						<p>Copy the <code>BoxProjection</code> function straight from the other tutorial.</p>
+						
+						<pre><ins>float3 BoxProjection (</ins>
+	<ins>float3 direction, float3 position,</ins>
+	<ins>float4 cubemapPosition, float4 boxMin, float4 boxMax</ins>
+<ins>) {</ins>
+	<ins>UNITY_BRANCH</ins>
+	<ins>if (cubemapPosition.w > 0) {</ins>
+		<ins>float3 factors =</ins>
+			<ins>((direction > 0 ? boxMax.xyz : boxMin.xyz) - position) / direction;</ins>
+		<ins>float scalar = min(min(factors.x, factors.y), factors.z);</ins>
+		<ins>direction = direction * scalar + (position - cubemapPosition.xyz);</ins>
+	<ins>}</ins>
+	<ins>return direction;</ins>
+<ins>}</ins></pre>
+						
+						<p>Use that function to find the adjusted sample coordinates in <code>SampleEnvironment</code>.</p>
+						
+						<pre>	float3 uvw = <ins>BoxProjection(</ins>
+		<ins>reflectVector, s.position, unity_SpecCube0_ProbePosition,</ins>
+		<ins>unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax</ins>
+	<ins>);</ins></pre>
+						
+						<p>Enable <em>Box Projection</em> for the reflection probe and adjust its box bounds so it best matches what it reflects.</p>
+						
+						<figure>
+							<img src="reflection-probes/box-projection-inspector.png" width="320" height="160" alt="inspector">
+							<img src="reflection-probes/box-projection.png" width="420" height="110" alt="scene">
+							<figcaption>Box projection.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Probe Blending</h3>
+						
+						<p>Reflection probes can produce decent results after some tuning, but only for objects that are reasonably close to the probe's position. Otherwise, besides the reflection being misaligned, it's possible for objects to end up reflecting themselves. If the mistakes are too obvious, you have to use more probes.</p>
+						
+						<figure>
+							<img src="reflection-probes/two-probes.png" width="420" height="110">
+							<figcaption>Two probes instead of one.</figcaption>
+						</figure>
+						
+						<p>Which reflection probe is used per object is controlled by their box. The closest or most important probe that covers the object is chosen. If the object isn't contained by any probe's box it uses the skybox instead. But this creates hard transitions from one probe to the next. That can be alleviated by blending between probes, which can be configured per object. At most two probes can be blended this way.</p>
+						
+						<p>To support blending, we have to add another set of variables for the second probe.</p>
+						
+						<pre>	float4 unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax;
+	float4 unity_SpecCube0_ProbePosition;
+	<ins>float4 unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax;</ins>
+	<ins>float4 unity_SpecCube1_ProbePosition;</ins></pre>
+						
+						<p>Along with a second cube map texture, but we can use the same sampler state for both.</p>
+						
+						<pre>TEXTURECUBE(unity_SpecCube0);
+<ins>TEXTURECUBE(unity_SpecCube1);</ins>
+SAMPLER(samplerunity_SpecCube0);</pre>
+						
+						<p>Once again, we copy the approach from the other tutorial.</p>
+						
+						<pre>float3 SampleEnvironment (LitSurface s) {
+	&hellip;
+	float3 color = sample.rgb;
+	
+	<ins>float blend = unity_SpecCube0_BoxMin.w;</ins>
+	<ins>if (blend &lt; 0.99999) {</ins>
+		<ins>uvw = BoxProjection(</ins>
+			<ins>reflectVector, s.position,</ins>
+			<ins>unity_SpecCube1_ProbePosition,</ins>
+			<ins>unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax</ins>
+		<ins>);</ins>
+		<ins>sample = SAMPLE_TEXTURECUBE_LOD(</ins>
+			<ins>unity_SpecCube1, samplerunity_SpecCube0, uvw, mip</ins>
+		<ins>);</ins>
+		<ins>color = lerp(sample.rgb, color, blend);</ins>
+	<ins>}</ins>
+	return color;
+}</pre>
+						
+						<figure>
+							<img src="reflection-probes/blending-probes.png" width="420" height="110">
+							<figcaption>Blending probes.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>HDR Decoding</h3>
+						
+						<p>We now support reflection probes, but only if their textures contain unencoded light data. That's usually the case, but not when baked maps are HDR encoded or a probe's intensity is changed. To support that we can rely on <code>DecodeHDREnvironment</code>, defined in the <em>ImageBasedLighting.hlsl</em> Core RP Library file.</p>
+						
+						<pre>#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/ImageBasedLighting.hlsl"
+<ins>#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/EntityLighting.hlsl"</ins></pre>
+						
+						<p>Each probe has HDR decoding instructions, for which we have to add variables.</p>
+						
+						<pre>	float4 unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax;
+	float4 unity_SpecCube0_ProbePosition<ins>, unity_SpecCube0_HDR</ins>;
+	float4 unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax;
+	float4 unity_SpecCube1_ProbePosition<ins>, unity_SpecCube1_HDR</ins>;</pre>
+						
+						<p>Then we can decode the cube map samples.</p>
+						
+						<pre>	float3 color = <ins>DecodeHDREnvironment(sample, unity_SpecCube0_HDR)</ins>;
+	
+	float blend = unity_SpecCube0_BoxMin.w;
+	if (blend &lt; 0.99999) {
+		&hellip;
+		color = lerp(
+			<ins>DecodeHDREnvironment(sample, unity_SpecCube1_HDR)</ins>, color, blend
+		);
+	}</pre>
+						
+						<figure>
+							<img src="reflection-probes/double-intensity.png" width="420" height="110">
+							<figcaption>Double intensity.</figcaption>
+						</figure>
+						
+						<p>Note that increasing the intensity of probes can produce dramatic changes when multiple bounces are used, as the light intensifies with each bounce.</p>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Transparent Surfaces</h2>
+					
+					<p>We wrap up by revisiting semitransparent surfaces. We added support for fading surfaces in the previous tutorial. We fade out the entire color of a surface, so that also includes reflections. That's fine if you want to fade everything, but doesn't work for materials like crystal or glass.</p>
+					
+					<figure>
+						<img src="transparent-surfaces/fade.png" width="300" height="190">
+						<figcaption>Fading reflections.</figcaption>
+					</figure>
+					
+					<section>
+						<h3>Premultiplying Alpha</h3>
+						
+						<p>Glass is often almost fully transparent, but still reflects light. To represent that we have to apply opacity to the diffuse lighting only. We do that by factoring alpha into the diffuse color. So we premultiply with alpha instead of applying it after all lighting is done, instead of using regular fragment blending. After that we boost alpha based on reflectivity so reflections replace whatever's behind the surface. Add a function to <em>Lighting.hlsl</em> to tweak the surface and alpha accordingly.</p>
+						
+						<pre><ins>void PremultiplyAlpha (inout LitSurface s, inout float alpha) {</ins>
+	<ins>s.diffuse *= alpha;</ins>
+	<ins>alpha = lerp(alpha, 1, s.reflectivity);</ins>
+<ins>}</ins></pre>
+						
+						<p>Invoke it after getting the surface in <code>LitPassFragment</code>, if the <em>_PREMULTIPLY_ALPHA</em> shader keyword is defined.</p>
+						
+						<pre>	LitSurface surface = GetLitSurface(
+		input.normal, input.worldPos, viewDir, albedoAlpha.rgb,
+		UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Metallic),
+		UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Smoothness)
+	);
+	<ins>#if defined(_PREMULTIPLY_ALPHA)</ins>
+		<ins>PremultiplyAlpha(surface, albedoAlpha.a);</ins>
+	<ins>#endif</ins></pre>
+						
+						<p>Add a toggle shader property to control the keyword.</p>
+						
+						<pre>		[Toggle(_RECEIVE_SHADOWS)] _ReceiveShadows ("Receive Shadows", Float) = 1
+		<ins>[Toggle(_PREMULTIPLY_ALPHA)] _PremulAlpha ("Premultiply Alpha", Float) = 0</ins></pre>
+						
+						<p>To make this work we have to set the source blend mode to one instead of source-alpha.</p>
+						
+						<figure>
+							<img src="transparent-surfaces/premultiplied-alpha-inspector.png" width="320" height="110" alt="inspector"><br>
+							<img src="transparent-surfaces/premultiplied-alpha.png" width="300" height="190" alt="scene">
+							<figcaption>Premultiply alpha enabled.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Presets</h3>
+						
+						<p>Let's add presets to <code class="csharp">LitShaderGUI</code> for transparent materials. Give it a property to set the <em>_PREMULTIPLY_ALPHA</em> keyword and the accompanying shader property.</p>
+						
+						<pre class="csharp">	<ins>bool PremultiplyAlpha {</ins>
+		<ins>set {</ins>
+			<ins>FindProperty("_PremulAlpha", properties).floatValue =</ins>
+				<ins>value ? 1 : 0;</ins>
+			<ins>SetKeywordEnabled("_PREMULTIPLY_ALPHA", value);</ins>
+		<ins>}</ins>
+	<ins>}</ins></pre>
+						
+						<p>Set it to <code class="csharp">false</code> in all preset methods that we have so far.</p>
+						
+						<pre class="csharp">		<ins>PremultiplyAlpha = false;</ins></pre>
+						
+						<p>Copy the two fade preset methods and adjust them so they configure transparent materials instead. So <code class="chsarp">PremultiplyAlpha</code> becomes <code class="csharp">true</code> and <code class="csharp">SrcBlend</code> becomes <code class="csharp">BlendMode.One</code>.</p>
+						
+						<pre class="csharp">	void <ins>TransparentPreset</ins> () {
+		if (!GUILayout.Button("Transparent")) {
+			return;
+		}
+		editor.RegisterPropertyChangeUndo("Transparent Preset");
+		Clipping = ClipMode.Off;
+		Cull = CullMode.Back;
+		SrcBlend = BlendMode.<ins>One</ins>;
+		DstBlend = BlendMode.OneMinusSrcAlpha;
+		ZWrite = false;
+		ReceiveShadows = false;
+		PremultiplyAlpha = <ins>true</ins>;
+		SetPassEnabled("ShadowCaster", false);
+		RenderQueue = RenderQueue.Transparent;
+	}
+
+	void <ins>TransparentWithShadowsPreset</ins> () {
+		if (!GUILayout.Button("Transparent with Shadows")) {
+			return;
+		}
+		editor.RegisterPropertyChangeUndo("Transparent with Shadows Preset");
+		Clipping = ClipMode.Shadows;
+		Cull = CullMode.Back;
+		SrcBlend = BlendMode.<ins>One</ins>;
+		DstBlend = BlendMode.OneMinusSrcAlpha;
+		ZWrite = false;
+		ReceiveShadows = true;
+		PremultiplyAlpha = <ins>true</ins>;
+		SetPassEnabled("ShadowCaster", true);
+		RenderQueue = RenderQueue.Transparent;
+	}</pre>
+						
+						<p>The last step is to invoke the methods in <code class="csharp">OnGUI</code> along with the other ones.</p>
+						
+						<pre class="csharp">		if (showPresets) {
+			OpaquePreset();
+			ClipPreset();
+			ClipDoubleSidedPreset();
+			FadePreset();
+			FadeWithShadowsPreset();
+			<ins>TransparentPreset();</ins>
+			<ins>TransparentWithShadowsPreset();</ins>
+		}</pre>
+						
+						<figure>
+							<img src="transparent-surfaces/presets.png" width="320" height="168">
+							<figcaption>New transparent presets.</figcaption>
+						</figure>
+					</section>
+						
+					
+					<section>
+						<p>The next tutorial is <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/global-illumination/">Global Illumination</a>.</p>
+					</section>
+					
+					<a href="https://bitbucket.org/catlikecodingunitytutorials/scriptable-render-pipeline-07-reflections/" class="repository">repository</a>
+					<a href="Reflections.pdf" download rel="nofollow">PDF</a>
+				</section>
+				
+			</article>
+		</main>
+
+		<footer>
+			<p>Enjoying the <a href="https://catlikecoding.com/unity/tutorials/">tutorials</a>? Are they useful? Want more?</p>
+			<p><b><a href="https://www.patreon.com/catlikecoding">Please support me on Patreon!</a></b></p>
+			<p><a href="https://www.patreon.com/catlikecoding"><img src="https://catlikecoding.com/unity/tutorials/become-a-patron.png" alt="Become my patron!" width="217" height="51"></a></p>
+			<p><b><a href="https://catlikecoding.com/unity/tutorials/donating.html">Or make a direct donation</a>!</b></p>
+			<p>made by <a href="https://catlikecoding.com/jasper-flick/" rel="author">Jasper Flick</a></p>
+		</footer>
+		
+		<script src="../../tutorials.js"></script>
+	</body>
+</html>

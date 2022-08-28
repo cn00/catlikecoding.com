@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html>
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/simplex-noise/">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/simplex-noise/tutorial-image.jpg">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:description" content="A Unity C# scripting tutorial in which you will discover how to create Simplex noise.">
+		<meta name="description" content="A Unity C# scripting tutorial in which you will discover how to create Simplex noise.">
+		<meta property="og:title" content="Simplex Noise, a Unity C# Tutorial">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<title>Simplex Noise, a Unity C# Tutorial</title>
+		<link href="../../default.css" rel="stylesheet">
+		<script>
+			var customTypes = {
+				Flow3D: 1,
+				Noise: 1,
+				NoiseMethod: 1,
+				NoiseMethodType: 1,
+				NoiseSample: 1,
+				SurfaceCreator: 1,
+				SurfaceCreatorInspector: 1,
+				SurfaceFlow: 1,
+				TextureCreator: 1,
+				TextureCreatorInspector: 1
+			};
+		</script>
+	</head>
+	<body>
+		<header data-type="tutorial"></header>
+
+		<article class="tutorial" itemscope="" itemtype="http://schema.org/TechArticle">
+			<h1 itemprop="name headline">Simplex Noise<span>, keeping it simple</span></h1>
+
+			<div class="instructions">
+				<span itemprop="about description">In this tutorial you will create alternatives of Value and Perlin noise, known as Simplex Noise.</span>
+				You'll learn to
+				<ul>
+					<li>Use a falloff function based on distance;</li>
+					<li>Convert between a square and a triangular grid;</li>
+					<li>Convert between a cube and a tetrahedron grid;</li>
+					<li>Compute Simplex Value noise, up to 3D, with derivatives;</li>
+					<li>Compute Simplex Gradient noise, up to 3D, with derivatives.</li>
+				</ul>
+				<p><span itemprop="dependencies">This tutorial follows the <a href="../noise/index.html">Noise</a> and <a href="../noise-derivatives/index.html">Noise Derivatives</a> tutorials. I assume you did those first, as we'll be using code and knowledge gained from them.</span></p>
+				<p>This tutorial has been made with Unity 4.5.2. It might not work for older versions.</p>
+			</div>
+			
+			<aside class="share"></aside>
+
+			<figure>
+				<img src="tutorial-image.jpg" width="512" height="256" itemprop="image">
+				<figcaption>Pushing particles around with Simplex curl noise.</figcaption>
+			</figure>
+			
+			<h2>Simplifying Noise</h2>
+			
+			<div class="instructions">
+				<p>In the <a href="../noise/index.html">Noise</a> and <a href="../noise-derivatives/index.html">Noise Derivatives</a> tutorial we used pseudorandom noise to color a texture, deform a flat surface, and animate particles flows. We created two forms of lattice noise, interpolating between intersection points of grid lines. We chose to use a hypercube grid &ndash; a line grid in 1D, a square grid in 2D, and a cube grid in 3D &ndash; because it's an obvious and easy way to partition space.</p>
+				<p>We created Value noise by defining hash values for each lattice point and smoothly interpolating between them. We created Gradient noise by interpolating gradients instead of fixed values, which is most often known as Perlin noise.</p>
+				<p>You can produce very nice effects with these noise types, but they have some limitations. As they're based on a hypercube grid, you will be able to detect square patterns if you look hard enough. Also, when moving an axis-aligned 2D slice through 3D noise you will see a distinct change in the noise as you alternate between edges and centers of cube cells. Due to the triple interpolation, a cube's center is a lot more fuzzy than its faces. Finally, analytical derivatives are hard to compute and higher dimensions get more expensive quickly. 4D noise requires a tesseract grid, which means you'd have to interpolate 16 points per sample.</p>
+			</div>				
+			
+			<h3>Using a Simplex Grid</h3>
+			
+			<div class="instructions">
+				<p>We do not need to use a hypercube grid, all we need is a way to partition space into regular chunks. Ideally, we'd use the smallest possible shape for our grid cells, which would be a simplex. For 1D this is a line, so it makes no difference. For 2D it is a triangle instead of a square. For 3D it is a tetrahedron instead of a cube. And for 4D it is a pentatope instead of a tesseract. This means that for <b><i>n</i></b> dimension we only have consider <b>1 + <i>n</i></b> points, instead of <b>2<sup><i>n</i></sup></b>.</p>
+			</div>
+			
+			<h3>Falloff instead of Interpolation</h3>
+			
+			<div class="instructions">
+				<p>How would we interpolate between the corners of a simplex? Actually, we don't need to. Instead of interpolating, we can decrease the contribution of a corner based on its distance from the sample point. For 2D, this would be a radial falloff function, which should drop to zero when it reaches the opposide side of the triangle. For 3D it would be a spherical falloff, and so on.</p>
+				<p>A big advantage of using a falloff instead of an interpolation is that the contribution of each point is now indepedent. They're just added together to get the final value. This simplifies the calculation of the derivatives a great deal.</p>
+				<p>You could use this approach with a hypercube grid as well, but the radial falloff doesn't work as well with squares as it does with triangles.</p>
+			</div>
+			
+			<figure>
+				<img alt="radial value" src="01-02-radial-value.png" width="150" height="150">
+				<img alt="radial gradient" src="01-02-radial-gradient.png" width="150" height="150"><br>
+				<img alt="value" src="01-02-value.png" width="150" height="150">
+				<img alt="perlin" src="01-02-perlin.png" width="150" height="150">
+				<figcaption>2D Value and Perlin noise, radial falloff vs. interpolation.</figcaption>
+			</figure>
+			
+			
+			<h3>Simplex Noise</h3>
+			
+			<div class="instructions">
+				<p>Using a simplex grid with a falloff function to compute gradient noise was first proposed by Ken Perlin as an alternative for the gradient noise that he previously invented. Most people refer to this as simplex noise, so let's stick with the same name for our simplex-based gradient noise. For our Value noise alternative, let's name it Simplex Value to distinquish it from the hypercube-based Value noise.</p>
+				<p>We'll be building on top of the previous tutorial, so start with the <a href="../noise-derivatives/noise-derivatives-finished.unitypackage" onclick="_gaq.push(['_trackEvent', 'Tutorial Download', 'Noise Derivatives', 'Final']);" target="_blank" download rel="nofollow">finished project</a> of the <a href="../noise-derivatives/index.html">Noise Derivatives</a> tutorial.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-patented" id="q-patented">Isn't Simplex noise patented?</a></li>
+				</ul>
+			</aside>
+
+			<h2>Simplex Value Noise</h2>
+			
+			<div class="instructions">
+				<p>Let's again start with Value noise, as it is simpler than Gradient noise. However, before we start remember that we've so far treated Value noise as a special case. This is because it has a range of 0&ndash;1 while Gradient noise has a range of -1&ndash;1. So we should update our code to also make that exception for Simplex Value noise. Alternatively, we could do away with the special case entirely if we change the range of our Value noise to -1&ndash;1. Let's do that, just because we can.</p>
+				<p>First, adjust the result of the <code>Value1D</code>, <code>Value2D</code>, and <code>Value3D</code> methods in <code>Noise</code>. Simply double it and subtract one.</p>
+			</div>
+			
+			<pre translate="no">		return sample * (<mark>2f</mark> / hashMask) <mark>- 1f</mark>;</pre>
+			
+			<div class="instructions">
+				<p>Then remove the checks for Value noise from <code>TextureCreator</code>, <code>SurfaceCreator</code>, and <code>SurfaceFlow</code>. After taking a noise sample we now always half it.</p>
+			</div>
+			
+			<pre translate="no">				NoiseSample sample = &hellip;;
+				sample = sample * 0.5f;</pre>
+			
+			<div class="instructions">
+				<p>And to keep <code>TextureCreator</code> in the 0&ndash;1 range, add &frac12;.</p>
+			</div>
+			
+			<pre translate="no">				sample = sample * 0.5f <mark>+ 0.5f</mark>;</pre>
+			
+			<div class="instructions">
+				<p>With that out of the way, add our new noise type to the enumeration at the top of the <code>Noise</code> script.</p>
+			</div>
+			
+			<pre translate="no">public enum NoiseMethodType {
+	Value,
+	Perlin<mark>,</mark>
+	<mark>SimplexValue</mark>
+}</pre>
+			
+			<div class="instructions">
+				<p>Now we can add placeholder methods and their method array, and include it in the methods collection. This allows use to select Simplex Value noise in the inspectors of our creators.</p>
+			</div>
+			
+			<pre translate="no">	<mark>public static NoiseMethod[] simplexValueMethods = {</mark>
+		<mark>SimplexValue1D,</mark>
+		<mark>SimplexValue2D,</mark>
+		<mark>SimplexValue3D</mark>
+	<mark>};</mark>
+
+	public static NoiseMethod[][] methods = {
+		valueMethods,
+		perlinMethods<mark>,</mark>
+		<mark>simplexValueMethods</mark>
+	};
+	
+	<mark>public static NoiseSample SimplexValue1D (Vector3 point, float frequency) {</mark>
+		<mark>return new NoiseSample();</mark>
+	<mark>}</mark>
+
+	<mark>public static NoiseSample SimplexValue2D (Vector3 point, float frequency) {</mark>
+		<mark>return new NoiseSample();</mark>
+	<mark>}</mark>
+
+	<mark>public static NoiseSample SimplexValue3D (Vector3 point, float frequency) {</mark>
+		<mark>return new NoiseSample();</mark>
+	<mark>}</mark></pre>
+			
+			<h3>1D</h3>
+			
+			<div class="instructions">
+				<p>We start considering just one dimension, which keeps it simple. The simplex and hypercube grid are equal in this case, so we can just grab the integer portion of the sample point to get the lattice point to its left.</p>
+			</div>
+			
+			<pre translate="no">	public static NoiseSample SimplexValue1D (Vector3 point, float frequency) {
+		<mark>point *= frequency;</mark>
+		<mark>int ix = Mathf.FloorToInt(point.x);</mark>
+		return new NoiseSample();
+	}</pre>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-nonzero-derivatives" id="q-nonzero-derivatives">Why can the derivatives be nonzero?</a></li>
+					<li><a href="index.html#a-falloff-derivatives" id="q-falloff-derivatives">How do you find the falloff derivatives?</a></li>
+				</ul>
+			</aside>
+			
+			<div class="instructions">
+				<p>Let's focus on the contribution of the left end of the line segment we're in. It should start at one and drop to zero when we reach the right end, just like with regular Value noise. And once again we want to make sure that the first and second derivative of that falloff function drops to zero as well. What's different is that the derivatives don't need to be zero at the start, they just need to be continuous.</p>
+				<p>Besides those considerations, we want a function that would work in any dimension, based on the distance to the grid intersection. While we could compute the actual distance, this would require performing a square root operation for higher dimensions, and we rather avoid doing that. So could we work with the squared distance instead? If so, we automatically get a radially symmetrical falloff.</p>
+				<p>The simplest such falloff would be <b>1 - <i>x</i><sup>2</sup></b>. Its first and second derivatives are <b>-2<i>x</i></b> and <b>-2</b>, which aren't zero when <b><i>x</i></b> is one, so it won't work. What about if we squared the whole function? Then we get <b>(1 - <i>x</i><sup>2</sup>)<sup>2</sup></b>, which still drops to zero when it should. Its derivatives are <b>-4<i>x</i>(1 - <i>x</i><sup>2</sup>)</b>, which does drop to zero, and <b>-4(1 - <i>x</i><sup>2</sup>) + 8<i>x</i><sup>2</sup></b>, which doesn't. So let's go one step further and try the cubic version, <b>(1 - <i>x</i><sup>2</sup>)<sup>3</sup></b>. That one has derivatives <b>-6<i>x</i>(1 - <i>x</i><sup>2</sup>)<sup>2</sup></b> and <b>-6(1 - <i>x</i><sup>2</sup>)<sup>2</sup> + 24<i>x</i><sup>2</sup>(1 - <i>x</i><sup>2</sup>)</b>, which both drop to zero when we want them to.</p>
+			</div>
+			
+			<figure>
+				<img src="02-01-function.png" width="300" height="150">
+				<figcaption>(1 - x<sup>2</sup>)<sup>n</sup> with n from 1 to 3.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>So <b>(1 - <i>x</i><sup>2</sup>)<sup>3</sup></b> is our falloff function. Let's compute it step by step and visualize it. Also don't forget that we have to convert the final result to the -1&ndash;1 range.</p>
+			</div>
+			
+			<pre translate="no">	public static NoiseSample SimplexValue1D (Vector3 point, float frequency) {
+		point *= frequency;
+		int ix = Mathf.FloorToInt(point.x);
+		<mark>float x = point.x - ix;</mark>
+		<mark>float f = 1f - x * x;</mark>
+		<mark>float f2 = f * f;</mark>
+		<mark>float f3 = f * f2;</mark>
+		<mark>NoiseSample sample =</mark> new NoiseSample();
+		<mark>sample.value = f3;</mark>
+		return <mark>sample * 2f - 1f;</mark>
+	}</pre>
+			
+			<figure>
+				<img src="02-01-falloff.png" width="200" height="200">
+				<figcaption>Falloff in 1D, frequency 4.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Now the idea is that we can compute this for both end points separately and simply sum the results. So let's put the code to compute one part of the result in a separate method and call it twice so we get both ends.</p>
+			</div>
+			
+			<pre translate="no">	<mark>private static NoiseSample SimplexValue1DPart (Vector3 point, int ix) {</mark>
+		float x = point.x - ix;
+		float f = 1f - x * x;
+		float f2 = f * f;
+		float f3 = f * f2;
+		NoiseSample sample = new NoiseSample();
+		sample.value = f3;
+		<mark>return sample;</mark>
+	}
+
+	public static NoiseSample SimplexValue1D (Vector3 point, float frequency) {
+		point *= frequency;
+		int ix = Mathf.FloorToInt(point.x);
+		<mark>NoiseSample sample = SimplexValue1DPart(point, ix);</mark>
+		<mark>sample += SimplexValue1DPart(point, ix + 1);</mark>
+		return sample * 2f - 1f;
+	}</pre>
+			
+			<figure>
+				<img src="02-01-two-parts.png" width="200" height="200">
+				<figcaption>Adding both parts.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>As you can see, the result is at full strength at the end points of the line segments and weakest halfway between them. This difference becomes more pronounced in higher dimensions.</p>
+				<p>All that's left to turn it into Value noise is factoring in the hash values.</p>
+			</div>
+			
+			<pre translate="no">	private static NoiseSample SimplexValue1DPart (Vector3 point, int ix) {
+		float x = point.x - ix;
+		float f = 1f - x * x;
+		float f2 = f * f;
+		float f3 = f * f2;
+		<mark>float h = hash[ix &amp; hashMask];</mark>
+		NoiseSample sample = new NoiseSample();
+		sample.value = <mark>h *</mark> f3;
+		return sample;
+	}
+
+	public static NoiseSample SimplexValue1D (Vector3 point, float frequency) {
+		point *= frequency;
+		int ix = Mathf.FloorToInt(point.x);
+		NoiseSample sample = SimplexValue1DPart(point, ix);
+		sample += SimplexValue1DPart(point, ix + 1);
+		return sample * <mark>(</mark>2f <mark>/ hashMask)</mark> - 1f;
+	}</pre>
+			
+			<figure>
+				<img alt="Simplex Value" src="02-01-simplex-value.png" width="200" height="200">
+				<img alt="Value" src="02-01-value.png" width="200" height="200">
+				<figcaption>Simplex Value noise vs. Value noise, frequency 8.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>The end result looks very much like regular interpolated Value noise, though the falloff function produces more bands.</p>
+				<p>Of course we still have to include the derivate computation, but we leave that for later.</p>
+			</div>
+			
+			<h3>2D</h3>
+			
+			<div class="instructions">
+				<p>For two-dimension noise, we again begin with visualizing the falloff. Building on our 1D apprach, let's just include <b><i>y</i></b> the exact same way that we use <b><i>x</i></b>.</p>
+			</div>
+			
+			<pre translate="no">	<mark>private static NoiseSample SimplexValue2DPart (Vector3 point, int ix, int iy) {</mark>
+		<mark>float x = point.x - ix;</mark>
+		<mark>float y = point.y - iy;</mark>
+		<mark>float f = 1f - x * x - y * y;</mark>
+		<mark>float f2 = f * f;</mark>
+		<mark>float f3 = f * f2;</mark>
+		<mark>NoiseSample sample =</mark> new NoiseSample();
+		<mark>sample.value = f3;</mark>
+		<mark>return sample;</mark>
+	<mark>}</mark>
+
+	public static NoiseSample SimplexValue2D (Vector3 point, float frequency) {
+		<mark>point *= frequency;</mark>
+		<mark>int ix = Mathf.FloorToInt(point.x);</mark>
+		<mark>int iy = Mathf.FloorToInt(point.y);</mark>
+		<mark>NoiseSample sample = SimplexValue2DPart(point, ix, iy);</mark>
+		<mark>sample += SimplexValue2DPart(point, ix + 1, iy + 1);</mark>
+		return <mark>sample * 2f - 1f;</mark>
+	}</pre>
+			
+			<figure>
+				<img src="02-02-square.png" width="200" height="200">
+				<figcaption>Radial falloff in 2D square, frequency 2.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>We now see the radial falloff of two corners per square, along the main diagonal. However, those corners themselves aren't white. This is because the falloff function from the other corner is negative at that point, which is something that couldn't happen in 1D. We don't want negative contributions, so only include them when they are larger than zero.</p>
+			</div>
+			
+			<pre translate="no">	private static NoiseSample SimplexValue2DPart (Vector3 point, int ix, int iy) {
+		float x = point.x - ix;
+		float y = point.y - iy;
+		float f = 1f - x * x - y * y;
+		NoiseSample sample = new NoiseSample();
+		<mark>if (f > 0f) {</mark>
+			float f2 = f * f;
+			float f3 = f * f2;
+			sample.value = f3;
+		<mark>}</mark>
+		return sample;
+	}</pre>
+			
+			<figure>
+				<img src="02-02-clamped.png" width="200" height="200">
+				<figcaption>No more negative contributions.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Of course we don't want squares, we want triangles. So how do we determine which triangle contains a sample point, and how do we locate the corners of that triangle? We know that 2D space can be tiled with equilateral triangles. We also know that 2D space can be tiled with squares, which we've already used a lot. It would be convenient if we could convert between the two tilings.</p>
+				<p>If you split a square along its diagonal, you end up with two triangles. These are both right and isosceles triangles. If you were to compress those triangles along the same diagonal, at some point they'll become equilateral. So if we skew a square grid by the right amount and split the squares, we end up with an equilateral triangular grid.</p>
+				<p>Scaling along the main diagonal means that we need to figure out where along that line each point lies. For any point <b>&lt;<i>x</i>, <i>y</i>></b> this is equal to <b><i>x</i> + <i>y</i></b>. The downscaling itself can be done by subtracting <b>s(<i>x</i> + <i>y</i>)</b> from both components of the point. We have to choose the scaling factor <b>s</b> such that we end up with equilateral triangles.</p>
+			</div>
+			
+			<figure>
+				<img src="02-02-skewing.png" width="150" height="150">
+				<figcaption>Skewing to convert between grids.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Let's consider the triangle defined by <b>A = &lt;0, 0></b>, <b>B = &lt;1, 0></b>, and <b>C = &lt;1, 1></b>. Point <b>A</b> won't change, but the other two will be transformed into <b>B = &lt;1 - s, -s></b> and <b>C = &lt;1 - 2s, 1 - 2s></b>. To get an equilateral triangle, the length of all three sides of the triangle have to be equal.</p>
+				<p>For the unscaled triangle the distance from <b>A</b> to <b>B</b> &ndash; or simply <b>|AB|</b> &ndash; is 1. The distance <b>|BC|</b> between <b>B</b> and <b>C</b> is the same as <b>|B|</b>, so we can ignore that one. The distance from <b>A</b> to <b>C</b> &ndash; or simply <b>|AC|</b> &ndash; is &radic;2. For the transformed triangle these lenghts are yet unknown.</p>
+			</div>
+			
+			<figure>
+				<img src="02-02-edge-comparison.png" width="300" height="150">
+				<figcaption>Comparing edges.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>We have to find a value for <b>s</b> such that after scaling <b>|AB| = |AC|</b>. Alternatively, we can equate the squared lengths <b>|AB|<sup>2</sup> = |AC|<sup>2</sup></b>, which means we don't have to work with square roots. The squared length of a point <b>&lt;<i>x</i>, <i>y</i>></b> is simply <b><i>x</i><sup>2</sup> + <i>y</i><sup>2</sup></b>.</p>
+				<p>We have <b>|AB|<sup>2</sup> = (1 - s)<sup>2</sup> + (-s)<sup>2</sup> = 2s<sup>2</sup> - 2s + 1</b>.</p>
+				<p>We also have <b>|AC|<sup>2</sup> = 2(1 - 2s)<sup>2</sup> = 8s<sup>2</sup> - 8s + 2</b>.</p>
+				<p>Equating those rewrites to <b>6s<sup>2</sup> - 6s + 1 = 0</b>. Using the quadratic formula, we end up with the two solutions <b>s = (3 &plusmn; &radic;3) / 6</b>. That we get two solutions makes sense, because you can create both a positive and a negative equilateral triangle. To stay positive we simple choose the smallest solution, which is <b>(3 - &radic;3) / 6</b>.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-quadratic-formula" id="q-quadratic-formula">What's the quadratic formula?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">	<mark>private static float squaresToTriangles = (3f - Mathf.Sqrt(3f)) / 6f;</mark></pre>
+			
+			<div class="instructions">
+				<p>But how do we convert the other way, from the triangles to the squares? For that, consider the transformed point <b>C</b>. It has to go from <b>&lt;<i>x</i> + 2s<i>x</i>, <i>y</i> + 2s<i>y</i>></b> back to <b>&lt;1, 1></b>, for some new <b>s</b> that we have to find.</p>
+				
+				<p>We have <b><i>x</i> + 2s<i>x</i> = 1</b>, which means that <b>s = 1 / 2<i>x</i> - &frac12;</b>. We also know that <b><i>x</i> = 1 - 2((3 - &radic;3) / 6)</b>, which equals <b>&radic;3 / 3</b> or <b>1 / &radic;3</b>. Substituting that in, we get <b>s = 1 / (2 / &radic;3) - &frac12; = (&radic;3 - 1) / 2</b>.</p>
+				
+				<p>Now we finally have both our conversion factors.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-equalities" id="q-equalities">How do you derive those equalities?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">	<mark>private static float trianglesToSquares = (Mathf.Sqrt(3f) - 1f) / 2f;</mark></pre>
+			
+			<div class="instructions">
+				<p>So to easily figure out which pair of triangles we're in, we first skew the grid so it becomes square. The we determine the lattice points, which we feed into the part method.</p>
+			</div>
+
+			<pre translate="no">	public static NoiseSample SimplexValue2D (Vector3 point, float frequency) {
+		point *= frequency;
+		<mark>float skew = (point.x + point.y) * trianglesToSquares;</mark>
+		<mark>float sx = point.x + skew;</mark>
+		<mark>float sy = point.y + skew;</mark>
+		int ix = Mathf.FloorToInt(<mark>sx</mark>);
+		int iy = Mathf.FloorToInt(<mark>sy</mark>);
+		NoiseSample sample = SimplexValue2DPart(point, ix, iy);
+		sample += SimplexValue2DPart(point, ix + 1, iy + 1);
+		return sample * 2f - 1f;
+	}</pre>
+			
+			<div class="instructions">
+				<p>To get the actual corner points for determining their distance, we have to unskew them.</p>
+			</div>
+		
+			<pre translate="no">	private static NoiseSample SimplexValue2DPart (Vector3 point, int ix, int iy) {
+		<mark>float unskew = (ix + iy) * squaresToTriangles;</mark>
+		float x = point.x - ix <mark>+ unskew</mark>;
+		float y = point.y - iy <mark>+ unskew</mark>;
+		float f = 1f - x * x - y * y;
+		NoiseSample sample = new NoiseSample();
+		if (f > 0f) {
+			float f2 = f * f;
+			float f3 = f * f2;
+			sample.value = f3;
+		}
+		return sample;
+	}</pre>
+			
+			<figure>
+				<img src="02-02-skewed.png" width="200" height="200">
+				<figcaption>We're skewed.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>We now see rhombuses formed by two equilateral triangles instead of squares. We also see that the falloff isn't quick enough. It currently reaches zero at a distance of one, while it should do so at a distance equal to the height of our triangle.</p>
+				<p>The height of an equilateral triangle is equal to its edge length multiplied by <b>&radic;3 / 2</b>. So we must determine the length of its edges. We already know that <b>|AB|<sup>2</sup> = 2s<sup>2</sup> - 2s + 1</b> with <b>s = (3 - &radic;3) / 6</b>, which leads to <b>|AB|<sup>2</sup> = &#8532;</b>. That's the square length, so the actual edge length is <b>&radic;&#8532;</b> or <b>&radic;6 / 3</b>. This means that the triangle height is <b>&radic;&frac12;</b> or <b>&radic;2 / 2</b>.</p>
+				<p>So our falloff function should reach zero when the squared distance reaches <b>&frac12;</b>. That means we should use <b>&frac12; - <i>x</i><sup>2</sup> - <i>y</i><sup>2</sup></b> as our basis, instead of <b>1 - <i>x</i><sup>2</sup> - <i>y</i><sup>2</sup></b>.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-calculate-length" id="q-calculate-length">How do you calculate that length?</a></li>
+				</ul>
+			</aside>
+			
+			<pre translate="no">		float f = <mark>0.5f</mark> - x * x - y * y;</pre>
+			
+			<div class="instructions">
+				<p>Of course this also means that the falloff now starts at <b>&frac12;<sup>3</sup> = &#8539;</b>, so we have to scale up the end result to compensate.</p>
+			</div>
+			
+			<pre translate="no">		return sample * <mark>(8f *</mark> 2f<mark>)</mark> - 1f;</pre>
+			
+			<figure>
+				<img alt="unscaled" src="02-02-falloff.png" width="200" height="200">
+				<img alt="scaled" src="02-02-falloff-scaled.png" width="200" height="200">
+				<figcaption>Correct falloff, unscaled vs. scaled.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>The next step is determining which of the two triangles we're in, either the bottom or the top one. This is easy to do inside the rectangular grid. If the fraction of our X coordinate is larger than or equal to the fraction of the Y coordinate, then we're in the bottom triangle. This triangle has the relative corner coordinates <b>&lt;0, 0></b>, <b>&lt;1, 0></b>, and <b>&lt;1, 1></b>. The other triangles sits above it and has the corner coordinates <b>&lt;0, 0></b>, <b>&lt;0, 1></b>, and <b>&lt;1, 1></b>. As we already included the corners along the main diagonal, we only need to add the one that's still missing.</p>
+			</div>
+			
+			<figure>
+				<img src="02-02-determining-triangle.png" width="150" height="150">
+				<figcaption>Determining which triangle you're in.</figcaption>
+			</figure>
+			
+			<pre translate="no">		NoiseSample sample = SimplexValue2DPart(point, ix, iy);
+		sample += SimplexValue2DPart(point, ix + 1, iy + 1);
+		<mark>if (sx - ix >= sy - iy) {</mark>
+			<mark>sample += SimplexValue2DPart(point, ix + 1, iy);</mark>
+		<mark>}</mark>
+		<mark>else {</mark>
+			<mark>sample += SimplexValue2DPart(point, ix, iy + 1);</mark>
+		<mark>}</mark>
+</pre>
+			
+			<figure>
+				<img src="02-02-triangle.png" width="200" height="200">
+				<figcaption>Complete triangles.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>To turn it into real Value noise, we have to factor the hash values into the result.</p>
+			</div>
+			
+			<pre translate="no">			<mark>float h = hash[hash[ix &amp; hashMask] + iy &amp; hashMask];</mark>
+			sample.value = <mark>h *</mark> f3;</pre>
+			
+			<div class="instructions">
+				<p>And the final step is to readjust the scale.</p>
+			</div>
+			
+			<pre translate="no">		return sample * (8f * 2f <mark>/ hashMask</mark>) - 1f;</pre>
+			
+			<figure>
+				<img alt="value simplex 2" src="02-02-f2.png" width="200" height="200">
+				<img alt="value simplex 4" src="02-02-f4.png" width="200" height="200">
+				<img alt="value simplex 8" src="02-02-f8.png" width="200" height="200"><br>
+				<img alt="value 2" src="02-02-f2-value.png" width="200" height="200">
+				<img alt="value 4" src="02-02-f4-value.png" width="200" height="200">
+				<img alt="value 8" src="02-02-f8-value.png" width="200" height="200">
+				<figcaption>2D Simplex Value noise vs. Value noise, frequency 2, 4, and 8.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>As you can see, 2D Simplex Value noise looks like spheres placed in a triangular or honeycomb grid. It shows the same hash pattern as 2D Value noise does, but skewed along the main diagonal.</p>
+			</div>
+			
+			<h3>3D</h3>
+			
+			<div class="instructions">
+				<p>We can apply the same approach we used for 2D to work out the grid for three dimensions, but in this case we're working with cubes and tetrahedra. However, it is not possible to tile 3D space with regular tetrahedra. We have to make do with skewed tetrahedra, which means that not all edges will have the same length.</p>
+				<p>A cube can be split into six tetrahedra just like a square can be split into two triangles. Each tetrahedron has one edge along the main diagonal of the cube, from <b>&lt;0, 0, 0></b> to <b>&lt;1, 1, 1></b>. How many ways can you walk between those two points, if you must follow three edges of the cube? Six ways, each defining three more edges of a tetrahedron. Besides that, each tetrahedron has two edges along diagonals of adjacent cube faces.</p>
+			</div>
+			
+			<figure>
+				<img src="02-03-cube-tetrahedrons.png" width="284" height="150">
+				<figcaption>Six tetrahedra inside a cube.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>So we start with three different edge lengths. Let's consider the tetrahedron that is defined by the four points <b>A = &lt;0, 0, 0></b>, <b>B = &lt;1, 0, 0></b>, <b>C = &lt;1, 0, 1></b>, and <b>D = &lt;1, 1, 1></b>. Applying a yet unknown scale factor, we end up with three transformed points.</p>
+				<p><b>B = &lt;1 - s, -s, -s></b> with <b>|AB|<sup>2</sup> = 3s<sup>2</sup> - 2s + 1</b>.</p>
+				<p><b>C = &lt;1 - 2s, -2s, 1 - 2s></b> with <b>|AC|<sup>2</sup> = 12s<sup>2</sup> - 8s + 2</b>.</p>
+				<p><b>D = &lt;1 - 3s, 1 - 3s, 1 - 3s></b> with <b>|AD|<sup>2</sup> = 27s<sup>2</sup> - 18s + 3</b>.</p>
+			</div>
+			
+			<figure>
+				<img alt="skewing" src="02-03-skewing.png" width="220" height="200">
+				<img alt="edges" src="02-03-edge-comparison.png" width="400" height="200">
+				<figcaption>Skewing between grids and comparing edges.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Let's try out <b>|AB|<sup>2</sup> = |AC|<sup>2</sup></b>. This leads to <b>9s<sup>2</sup> - 6s + 1 = 0</b> and <b>s = &frac13;</b>. What square lenghts do we end up with? <b>|AB|<sup>2</sup> = |AC|<sup>2</sup> = &frac23;</b>, and <b>|AD|<sup>2</sup> = 0</b>. This doesn't work, we've collapsed the tetrahedron into a triangle.</p>
+				<p>So let's try <b>|AB|<sup>2</sup> = |AD|<sup>2</sup></b> instead. This leads to <b>14s<sup>2</sup> - 16s + 2 = 0</b> and <b>s = &frac16;</b>. This gives us square lenghts <b>|AB|<sup>2</sup> = |AD|<sup>2</sup> = &frac34;</b>, and <b>|AC|<sup>2</sup> = 1</b>. This could work, and making the shortest and longest edges equal matches what we did in 2D as well.</p>
+				<p>The last option is to try <b>|AC|<sup>2</sup> = |AD|<sup>2</sup></b>. This leads to <b>15s<sup>2</sup> - 10s + 1 = 0</b> and <b>s = (5 - &radic;10) / 15</b>. That results in <b>|AB|<sup>2</sup> = &frac45;</b>, and  = <b>|AC|<sup>2</sup> = |AD|<sup>2</sup> = 1 + &frac15;</b>. This also works, although the difference between edge lengths is larger.</p>
+				
+				<p>So let's use a scale factor of <b>&frac16;</b> to go from cubes to tetrahedra. These tetrahedra are composed of four isosceles triangles. Each triangle has one long side with length <b>1</b> and two short sides with length <b>&radic;&frac34;</b> or <b>&radic;3 / 2</b>.</p>
+				
+				<p>To scale in the other direction, consider one component of the transformed point <b>D</b>. This time we have <b><i>x</i> + 3s<i>x</i> = 1</b>, with <b>x = 1 - 3(&frac16;) = &frac12;</b>. So <b>s = &frac13;</b>.</p>
+				<p>Let's just copy the 2D code, remove the triangle check, add the third dimension, substitude our new scale factors, and see what happens.</p>
+			</div>
+			
+			<pre translate="no">	<mark>private static NoiseSample SimplexValue3DPart (Vector3 point, int ix, int iy, int iz) {</mark>
+		<mark>float unskew = (ix + iy + iz) * (1f / 6f);</mark>
+		<mark>float x = point.x - ix + unskew;</mark>
+		<mark>float y = point.y - iy + unskew;</mark>
+		<mark>float z = point.z - iz + unskew;</mark>
+		<mark>float f = 0.5f - x * x - y * y - z * z;</mark>
+		<mark>NoiseSample sample =</mark> new NoiseSample();
+		<mark>if (f > 0f) {</mark>
+			<mark>float f2 = f * f;</mark>
+			<mark>float f3 = f * f2;</mark>
+			<mark>sample.value = f3;</mark>
+		<mark>}</mark>
+		<mark>return sample;</mark>
+	<mark>}</mark>
+
+	public static NoiseSample SimplexValue3D (Vector3 point, float frequency) {
+		<mark>point *= frequency;</mark>
+		<mark>float skew = (point.x + point.y + point.z) * (1f / 3f);</mark>
+		<mark>float sx = point.x + skew;</mark>
+		<mark>float sy = point.y + skew;</mark>
+		<mark>float sz = point.z + skew;</mark>
+		<mark>int ix = Mathf.FloorToInt(sx);</mark>
+		<mark>int iy = Mathf.FloorToInt(sy);</mark>
+		<mark>int iz = Mathf.FloorToInt(sz);</mark>
+		<mark>NoiseSample sample = SimplexValue3DPart(point, ix, iy, iz);</mark>
+		<mark>sample += SimplexValue3DPart(point, ix + 1, iy + 1, iz + 1);</mark>
+		return <mark>sample * (8f * 2f) - 1f;</mark>
+	}</pre>
+			
+			<figure>
+				<img alt="2" src="02-03-falloff-diagonal-2.png" width="200" height="200">
+				<img alt="8" src="02-03-falloff-diagonal-8.png" width="200" height="200">
+				<figcaption>Falloff along main diagonal, frequency 2 and 8.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>The falloff looks pretty good. Inspecting the geometry of the face triangles reveals that the height of our tetrahedron is <b>&radic;&frac12;</b>. Because this is the same as for our 2D case, we do not need to adjust the falloff base. It also happens to be equal to the height of a regular tetrahedron with edge length &radic;&frac34;.</p>
+			</div>
+			
+			<aside>
+				<ul>
+					<li><a href="index.html#a-calculate-height" id="q-calculate-height">How do you calculate that height?</a></li>
+				</ul>
+			</aside>
+			
+			<figure>
+				<img src="02-03-height.png" width="300" height="150">
+				<figcaption>Determining the tetrahedron height, compared with a regular tetrahedron.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Now we need to determine which tetrahedron we're in. This works the same as for 2D, but now we have to compare three components instead of two. So let's start with figuring out the closest corner on the main axes.</p>
+			</div>
+			
+			<pre translate="no">		<mark>float x = sx - ix;</mark>
+		<mark>float y = sy - iy;</mark>
+		<mark>float z = sz - iz;</mark>
+		<mark>if (x >= y) {</mark>
+			<mark>if (x >= z) {</mark>
+				<mark>sample += SimplexValue3DPart(point, ix + 1, iy, iz);</mark>
+			<mark>}</mark>
+			<mark>else {</mark>
+				<mark>sample += SimplexValue3DPart(point, ix, iy, iz + 1);</mark>
+			<mark>}</mark>
+		<mark>}</mark>
+		<mark>else {</mark>
+			<mark>if (y >= z) {</mark>
+				<mark>sample += SimplexValue3DPart(point, ix, iy + 1, iz);</mark>
+			<mark>}</mark>
+			<mark>else {</mark>
+				<mark>sample += SimplexValue3DPart(point, ix, iy, iz + 1);</mark>
+			<mark>}</mark>
+		<mark>}</mark></pre>
+			
+			<figure>
+				<img alt="2" src="02-03-falloff-half-2.png" width="200" height="200">
+				<img alt="8" src="02-03-falloff-half-8.png" width="200" height="200">
+				<figcaption>Falloff of three corners.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>To get the fourth and last corner, we have to repeat this process and add the second-closest corner.</p>
+			</div>
+			
+			<figure>
+				<img src="02-03-determining-tetrahedron.png" width="250" height="200">
+				<figcaption>Determining which other two corners to include.</figcaption>
+			</figure>
+			
+			<pre translate="no">		if (x >= y) {
+			if (x >= z) {
+				sample += SimplexValue3DPart(point, ix + 1, iy, iz);
+				<mark>if (y >= z) {</mark>
+					<mark>sample += SimplexValue3DPart(point, ix + 1, iy + 1, iz);</mark>
+				<mark>}</mark>
+				<mark>else {</mark>
+					<mark>sample += SimplexValue3DPart(point, ix + 1, iy, iz + 1);</mark>
+				<mark>}</mark>
+			}
+			else {
+				sample += SimplexValue3DPart(point, ix, iy, iz + 1);
+				<mark>sample += SimplexValue3DPart(point, ix + 1, iy, iz + 1);</mark>
+			}
+		}
+		else {
+			if (y >= z) {
+				sample += SimplexValue3DPart(point, ix, iy + 1, iz);
+				<mark>if (x >= z) {</mark>
+					<mark>sample += SimplexValue3DPart(point, ix + 1, iy + 1, iz);</mark>
+				<mark>}</mark>
+				<mark>else {</mark>
+					<mark>sample += SimplexValue3DPart(point, ix, iy + 1, iz + 1);</mark>
+				<mark>}</mark>
+			}
+			else {
+				sample += SimplexValue3DPart(point, ix, iy, iz + 1);
+				<mark>sample += SimplexValue3DPart(point, ix, iy + 1, iz + 1);</mark>
+			}
+		}</pre>
+			
+			<figure>
+				<img alt="2" src="02-03-falloff-2.png" width="200" height="200">
+				<img alt="8" src="02-03-falloff-8.png" width="200" height="200">
+				<figcaption>Complete tetrahedron falloff.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>We once again get a triangular grid, but it doesn't look the same as the 2D grid. This is because the tetrahedra aren't aligned with any of the three main axes. They follow the main diagonal, so you're seeing a slanted slice through tetrahedra when sampling in an axis-aligned plane, which causes an obvious diagonal undulation.</p>
+				<p>So how does it look with hash values?</p>
+			</div>
+			
+			<pre translate="no">			<mark>float h = hash[hash[hash[ix &amp; hashMask] + iy &amp; hashMask] + iz &amp; hashMask];</mark>
+			sample.value = <mark>h *</mark> f3;</pre>
+			
+			<div class="instructions">
+				<p>Don't forget to readjust the scale of the result.</p>
+			</div>
+			
+			<pre translate="no">		return sample * (8f * 2f <mark>/ hashMask</mark>) - 1f;</pre>
+			
+			<figure>
+				<img alt="value simplex 2" src="02-03-f2.png" width="200" height="200">
+				<img alt="value simplex 4" src="02-03-f4.png" width="200" height="200">
+				<img alt="value simplex 8" src="02-03-f8.png" width="200" height="200">
+				<figcaption>3D Simplex Value noise, frequency 2, 4, and 8.</figcaption>
+			</figure>
+			
+			<figure>
+				<img alt="Z 0%" src="02-03-z-00.png" width="120" height="120">
+				<img alt="Z 20%" src="02-03-z-02.png" width="120" height="120">
+				<img alt="Z 40%" src="02-03-z-04.png" width="120" height="120">
+				<img alt="Z 60%" src="02-03-z-06.png" width="120" height="120">
+				<img alt="Z 80%" src="02-03-z-08.png" width="120" height="120">
+				<img alt="Z 100%" src="02-03-z-10.png" width="120" height="120">
+				<figcaption>Moving along Z.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>Unlike regular Value noise, this pattern doesn't really change appearance when moving along Z. The circles slide along the diagonal, but it doesn't alternate between fuzzy and sharp results as it passes lattice boundaries. Actually, this does happen, just not all at once. Instead, you get the sharp and fuzzy bands along the diagonal. It's like hypercube-based Value noise that's rotated around X and Y.</p>
+			</div>
+			
+			<figure>
+				<img alt="Simplex Value" src="02-03-rotated.png" width="200" height="200">
+				<img alt="Value" src="02-03-rotated-value.png" width="200" height="200">
+				<figcaption>Simplex Value noise vs. Value noise, rotated to look down the main diagonal.</figcaption>
+			</figure>
+			
+			<h3>Derivatives</h3>
+			
+			<div class="instructions">
+				<p>So what about the derivatives? Fortunately, they are quite simple. The derivative of the falloff function <b>(1 - <i>x</i><sup>2</sup>)<sup>3</sup></b> is <b>-6<i>x</i>(1 - <i>x</i><sup>2</sup>)<sup>2</sup></b>. Factor the hash value into this, and you have the 1D derivative.</p>
+			</div>
+			
+			<pre translate="no">		NoiseSample sample = new NoiseSample();
+		sample.value = h * f3;
+		<mark>sample.derivative.x = -6f * h * x * f2;</mark>
+		return sample;
+</pre>
+			
+			<div class="instructions">
+				<p>Of course we still need to adjust for the frequency, so do this right before returning the final result. In fact, do this for 2D and 3D right now as well so we won't forget.</p>
+			</div>
+			
+			<pre translate="no">		<mark>sample.derivative *= frequency;</mark></pre>
+			
+			<figure>
+				<img src="02-04-1d.png" width="300" height="180">
+				<figcaption>1D Simplex Value noise surface with analytical normals.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>For two dimensions, we can use the exact same approach. The only difference between the derivative components is which component to multiply with. As the rest of the formula is the same, we might as well compute it only once.</p>
+			</div>
+			
+			<pre translate="no">			float h = hash[hash[ix &amp; hashMask] + iy &amp; hashMask];
+			<mark>float h6f2 = -6f * h * f2;</mark>
+			sample.value = h * f3;
+			<mark>sample.derivative.x = h6f2 * x;</mark>
+			<mark>sample.derivative.y = h6f2 * y;</mark></pre>
+			
+			<div class="instructions">
+				<p>It's just as easy for three dimensions.</p>
+			</div>
+			
+			<pre translate="no">			float h = hash[hash[hash[ix &amp; hashMask] + iy &amp; hashMask] + iz &amp; hashMask];
+			<mark>float h6f2 = -6f * h * f2;</mark>
+			sample.value = h * f3;
+			<mark>sample.derivative.x = h6f2 * x;</mark>
+			<mark>sample.derivative.y = h6f2 * y;</mark>
+			<mark>sample.derivative.z = h6f2 * z;</mark></pre>
+			
+			<figure>
+				<img alt="2D" src="02-04-2d.png" width="340" height="250">
+				<img alt="3D" src="02-04-3d.png" width="340" height="250">
+				<figcaption>2D and 3D Simplex Value noise surface with analytical normals.</figcaption>
+			</figure>
+			
+			<h2>Gradient Noise</h2>
+			
+			<div class="instructions">
+				<p>It's time to tackle Gradient Simplex noise, which we'll just name Simplex noise. So we add a new noise type.</p>
+			</div>
+			
+			<pre translate="no">public enum NoiseMethodType {
+	Value,
+	Perlin,
+	SimplexValue<mark>,</mark>
+	<mark>Simplex</mark>
+}</pre>
+			
+			<div class="instructions">
+				<p>And of course we adjust the method arrays.</p>
+			</div>
+			
+			<pre translate="no">	<mark>public static NoiseMethod[] simplexMethods = {</mark>
+		<mark>Simplex1D,</mark>
+		<mark>Simplex2D,</mark>
+		<mark>Simplex3D</mark>
+	<mark>};</mark>
+
+	public static NoiseMethod[][] methods = {
+		valueMethods,
+		perlinMethods,
+		simplexValueMethods<mark>,</mark>
+		<mark>simplexMethods</mark>
+	};</pre>
+			
+			<div class="instructions">
+				<p>Now copy and rename the Simplex Value methods. Make sure you have them call their own part methods. I've only shown the changes for the 1D case.</p>
+			</div>
+			
+			<pre translate="no">	private static NoiseSample <mark>Simplex1DPart</mark> (Vector3 point, int ix) {
+		float x = point.x - ix;
+		float f = 1f - x * x;
+		float f2 = f * f;
+		float f3 = f * f2;
+		float h = hash[ix &amp; hashMask];
+		NoiseSample sample = new NoiseSample();
+		sample.value = h * f3;
+		sample.derivative.x = -6f * h * x * f2;
+		return sample;
+	}
+	
+	public static NoiseSample <mark>Simplex1D</mark> (Vector3 point, float frequency) {
+		point *= frequency;
+		int ix = Mathf.FloorToInt(point.x);
+		NoiseSample sample = <mark>Simplex1DPart</mark>(point, ix);
+		sample += <mark>Simplex1DPart</mark>(point, ix + 1);
+		sample.derivative *= frequency;
+		return sample * (2f / hashMask) - 1f;
+	}</pre>
+			
+			<h3>1D</h3>
+			
+			<div class="instructions">
+				<p>Continuing with 1D, we now have to retrieve a 1D gradient instead of just the hash value. As with Perlin noise, we compute the gradient value by taking the dot product of the gradient vector and the vector from the corner to our sample point. For 1D this is a simple multiplication.</p>
+				<p>Once again just as with Perlin noise, the gradient now has to include the falloff multiplied by the gradient vector.</p>
+			</div>
+			
+			<pre translate="no">		float <mark>g</mark> = <mark>gradients1D[</mark>hash[ix &amp; hashMask] <mark>&amp; gradientsMask1D]</mark>;
+		<mark>float v = g * x;</mark>
+		NoiseSample sample = new NoiseSample();
+		sample.value = <mark>v</mark> * f3;
+		sample.derivative.x = <mark>g * f3 - 6f * v</mark> * x * f2;
+		return sample;</pre>
+			
+			<div class="instructions">
+				<p>Now we have to determine the maximum value of the noise. Like Perlin noise, the maximum value is reached halfway along the line segment when the gradients on both ends are pointing towards each other. This means that the maximum is <b>2<i>x</i>(1 - <i>x</i><sup>2</sup>)<sup>3</sup></b> where <b><i>x</i> = &frac12;</b>, which is <b>27 / 64</b>. So we have to divide the final result by this value, which means multiplying by <b>64 / 27</b>.</p>
+			</div>
+			
+			<pre translate="no">		return sample * <mark>(64f / 27f)</mark>;</pre>
+			
+			<figure>
+				<img alt="Simplex" src="03-01-1d.png" width="200" height="200">
+				<img alt="Perlin" src="03-01-1d-perlin.png" width="200" height="200">
+				<figcaption>1D Simplex noise vs. Perlin noise.</figcaption>
+			</figure>
+			
+			<figure>
+				<img src="03-01-surface.png" width="280" height="180">
+				<figcaption>1D Simplex noise surface with analytical normals.</figcaption>
+			</figure>
+			
+			<h3>2D</h3>
+			
+			<div class="instructions">
+				<p>It goes the same for 2D. Get the gradient vector, compute the dot product, include them in the value and the partial derivatives.</p>
+			</div>
+			
+			<pre translate="no">			Vector2 <mark>g</mark> = <mark>gradients2D[</mark>hash[hash[ix &amp; hashMask] + iy &amp; hashMask] <mark>&amp; gradientsMask2D]</mark>;
+			<mark>float v = Dot(g, x, y);</mark>
+			float <mark>v6f2</mark> = -6f * <mark>v</mark> * f2;
+			sample.value = <mark>v</mark> * f3;
+			sample.derivative.x = <mark>g.x * f3 + v6f2</mark> * x;
+			sample.derivative.y = <mark>g.y * f3 + v6f2</mark> * y;</pre>
+			
+			<div class="instructions">
+				<p>The question is now where the maximum lies. Along the edge of a triangle, or at its center? Let's compute them both.</p>
+				<p>Remember that the edge length is <b>&radic;&frac23;</b> or <b>&radic;6 / 3</b>. So halfway along an edge we get <b>2<i>x</i>(&frac12; - <i>x</i><sup>2</sup>)<sup>3</sup></b> where <b><i>x</i> = &radic;6 / 6</b>, which is <b>&radic;6 / 81</b>.</p>
+				<p>Next, the distance from a corner to the center of an equilateral triangle is equal to its edge length multiplied by <b>&radic;3 / 3</b> or <b> &radic;&frac13;</b>. So at the center we get <b>3<i>x</i>(&frac12; - <i>x</i><sup>2</sup>)<sup>3</sup></b> where <b><i>x</i> = &radic;2 / 3</b>, which gives us <b>125&radic;2 / 5832</b>. As this value is a tiny bit larger than the other one, it is our theoretical maximum. Its multiplicative inverse can be written as <b>2916&radic;2 / 125</b>, so that's our final scale.</p>
+			</div>
+			
+			<figure>
+				<img src="03-02-maximum.png" width="220" height="190">
+				<figcaption>Visualizing maximum possible values. The white center is highest.</figcaption>
+			</figure>
+			
+			<pre translate="no">	<mark>private static float simplexScale2D = 2916f * sqr2 / 125f;</mark></pre>
+			
+			<div class="instructions">
+				<p>Now we just need to factor it in at the end, and we're done.</p>
+			</div>
+			
+			<pre translate="no">		return sample * <mark>simplexScale2D</mark>;</pre>
+			
+			<figure>
+				<img alt="simplex 2" src="03-02-f2.png" width="200" height="200">
+				<img alt="simplex 4" src="03-02-f4.png" width="200" height="200">
+				<img alt="simplex 8" src="03-02-f8.png" width="200" height="200"><br>
+				<img alt="perlin 2" src="03-02-f2-perlin.png" width="200" height="200">
+				<img alt="perlin 4" src="03-02-f4-perlin.png" width="200" height="200">
+				<img alt="perlin 8" src="03-02-f8-perlin.png" width="200" height="200">
+				<figcaption>2D Simplex noise vs. Perlin noise, frequency 2, 4, and 8.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>An additional question is whether we actually cover the entire -1&ndash;1 range, because we didn't consider that we're only using eight gradient vectors. It turns out that our eight 45-degree rotated gradient vectors produce maximum values that can get very close to -1 and 1. So yes, we're effectively covering the entire range.</p>
+			</div>
+			
+			<figure>
+				<img src="03-02-surface.png" width="360" height="250">
+				<figcaption>2D Simplex noise surface with analytical normals.</figcaption>
+			</figure>
+			
+			<h3>3D</h3>
+			
+			<div class="instructions">
+				<p>The changes required for 3D Simplex noise should hold no surpises.</p>
+			</div>
+			
+			<pre translate="no">			Vector3 <mark>g</mark> = <mark>gradients3D[</mark>hash[hash[hash[ix &amp; hashMask] + iy &amp; hashMask] + iz &amp; hashMask] <mark>&amp;</mark>
+				<mark>gradientsMask3D];</mark>
+			<mark>float v = Dot(g, x, y, z);</mark>
+			float <mark>v6f2</mark> = -6f * <mark>v</mark> * f2;
+			sample.value = <mark>v</mark> * f3;
+			sample.derivative.x = <mark>g.x * f3 + v6f2</mark> * x;
+			sample.derivative.y = <mark>g.y * f3 + v6f2</mark> * y;
+			sample.derivative.z = <mark>g.z * f3 + v6f2</mark> * z;</pre>
+			
+			<div class="instructions">
+				<p>To get the maximum, it makes sense to look at the middle of short edges of our skewed tetrahedron. We obviously won't find the maximum on the longer edge. In case of a regular triangle, the difference between the middle and halfway across an edge was extremely small. Turning it into a right triangle only increases the distance between two corners, so the face middle is also out. The distance to the tetrahedron's center is even larger, so we can ignore it too.</p>
+			</div>
+			
+			<figure>
+				<img src="03-03-maximum.png" width="200" height="240">
+				<figcaption>Visualizing maximum possible values. The white centers are highest.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>As the shortest edge length is <b>&radic;3 / 2</b>, we get <b>2<i>x</i>(&frac12; - <i>x</i><sup>2</sup>)<sup>3</sup></b> where <b><i>x</i> = &radic;3 / 4</b>, which ends up being <b>125&radic;3 / 8192</b>. The reciprocal of that can be written as <b>8192&radic;3 / 375</b>, so that is our scale factor.</p>
+				<p>Actually, because our 3D gradient array contains vectors of length &radic;2 we have to compensate by factoring this into our denominator.</p>
+			</div>
+			
+			<pre translate="no">	<mark>private static float simplexScale3D = 8192f * Mathf.Sqrt(3f) / (sqr2 * 375f);</mark></pre>
+			
+			<div class="instructions">
+				<p>After multiplying our final result with that, we can check out the noise.</p>
+			</div>
+			
+			<pre translate="no">		return sample * <mark>simplexScale3D</mark>;</pre>
+			
+			<figure>
+				<img src="03-03-wrong-range.png" width="200" height="200">
+				<figcaption>3D Simplex noise with insufficient range.</figcaption>
+			</figure>
+			
+			<div class="instructions">
+				<p>It looks nice, but it turns out that our current set of gradient vectors doesn't fill the entire range. The maximum amplitude appears to be roughly 0.85 instead of 1. How could we fix this?</p>
+				<p>We know that all tetrahedrons have one of their shortest edges aligned with the main diagonal. So if we include two opposite vectors along the main diagonal, we can cover the entire -1&ndash;1 range.</p>
+				<p>The gradient array we're currently using was designed by Ken Perlin. It contains vectors pointing to the middle of the twelve edges of a cube. Four of these are duplicated to increase the array size to 16.</p>
+				<p>To include the main diagonal, we have to add vectors pointing to two corners of the cube. To maintain symmetry, we should add all eight corner vectors. Twelve edges plus eight corners gives us twenty vectors, which isn't a power of two. However, if we include the edges twice, we end up with 32 vectors. To keep them all the same length, we have to normalize them.</p>
+			</div>
+			
+			<pre translate="no">	<mark>private static Vector3[] simplexGradients3D = {</mark>
+		<mark>new Vector3( 1f, 1f, 0f).normalized,</mark>
+		<mark>new Vector3(-1f, 1f, 0f).normalized,</mark>
+		<mark>new Vector3( 1f,-1f, 0f).normalized,</mark>
+		<mark>new Vector3(-1f,-1f, 0f).normalized,</mark>
+		<mark>new Vector3( 1f, 0f, 1f).normalized,</mark>
+		<mark>new Vector3(-1f, 0f, 1f).normalized,</mark>
+		<mark>new Vector3( 1f, 0f,-1f).normalized,</mark>
+		<mark>new Vector3(-1f, 0f,-1f).normalized,</mark>
+		<mark>new Vector3( 0f, 1f, 1f).normalized,</mark>
+		<mark>new Vector3( 0f,-1f, 1f).normalized,</mark>
+		<mark>new Vector3( 0f, 1f,-1f).normalized,</mark>
+		<mark>new Vector3( 0f,-1f,-1f).normalized,</mark>
+		
+		<mark>new Vector3( 1f, 1f, 0f).normalized,</mark>
+		<mark>new Vector3(-1f, 1f, 0f).normalized,</mark>
+		<mark>new Vector3( 1f,-1f, 0f).normalized,</mark>
+		<mark>new Vector3(-1f,-1f, 0f).normalized,</mark>
+		<mark>new Vector3( 1f, 0f, 1f).normalized,</mark>
+		<mark>new Vector3(-1f, 0f, 1f).normalized,</mark>
+		<mark>new Vector3( 1f, 0f,-1f).normalized,</mark>
+		<mark>new Vector3(-1f, 0f,-1f).normalized,</mark>
+		<mark>new Vector3( 0f, 1f, 1f).normalized,</mark>
+		<mark>new Vector3( 0f,-1f, 1f).normalized,</mark>
+		<mark>new Vector3( 0f, 1f,-1f).normalized,</mark>
+		<mark>new Vector3( 0f,-1f,-1f).normalized,</mark>
+		
+		<mark>new Vector3( 1f, 1f, 1f).normalized,</mark>
+		<mark>new Vector3(-1f, 1f, 1f).normalized,</mark>
+		<mark>new Vector3( 1f,-1f, 1f).normalized,</mark>
+		<mark>new Vector3(-1f,-1f, 1f).normalized,</mark>
+		<mark>new Vector3( 1f, 1f,-1f).normalized,</mark>
+		<mark>new Vector3(-1f, 1f,-1f).normalized,</mark>
+		<mark>new Vector3( 1f,-1f,-1f).normalized,</mark>
+		<mark>new Vector3(-1f,-1f,-1f).normalized</mark>
+	};
+	
+	<mark>private const int simplexGradientsMask3D = 31;</mark></pre>
+			
+			<div class="instructions">
+				<p>Now we can use these new gradients instead of those used by Perlin noise.</p>
+			</div>
+			
+			<pre translate="no">			Vector3 g = <mark>simplexGradients3D</mark>[hash[hash[hash[ix &amp; hashMask] + iy &amp; hashMask] + iz &amp; hashMask] &amp;
+				<mark>simplexGradientsMask3D</mark>];
+</pre>
+			
+			<div class="instructions">
+				<p>And we no longer need to divide by &radic;2.</p>
+			</div>
+			
+			<pre translate="no">	private static float simplexScale3D = 8192f * Mathf.Sqrt(3f) / <mark>375f</mark>;</pre>
+			
+			<div class="instructions">
+				<p>With this, our noise covers the entire range.</p>
+			</div>
+			
+			<figure>
+				<img alt="2" src="03-03-f2.png" width="200" height="200">
+				<img alt="4" src="03-03-f4.png" width="200" height="200">
+				<img alt="8" src="03-03-f8.png" width="200" height="200">
+				<figcaption>3D Simplex noise, frequency 2, 4, and 8.</figcaption>
+			</figure>
+			
+			<figure>
+				<img alt="Z 0%" src="03-03-z-00.png" width="120" height="120">
+				<img alt="Z 20%" src="03-03-z-02.png" width="120" height="120">
+				<img alt="Z 40%" src="03-03-z-04.png" width="120" height="120">
+				<img alt="Z 60%" src="03-03-z-06.png" width="120" height="120">
+				<img alt="Z 80%" src="03-03-z-08.png" width="120" height="120">
+				<img alt="Z 100%" src="03-03-z-10.png" width="120" height="120">
+				<figcaption>Moving along Z.</figcaption>
+			</figure>
+			
+			<figure>
+				<img alt="Simplex" src="03-03-rotated.png" width="200" height="200">
+				<img alt="Perlin" src="03-03-rotated-perlin.png" width="200" height="200">
+				<figcaption>Simplex noise vs. Perlin noise, rotated to look down the main diagonal.</figcaption>
+			</figure>
+			
+			<figure>
+				<img src="03-03-surface.png" width="370" height="230">
+				<figcaption>3D Simplex noise surface with analytical normals.</figcaption>
+			</figure>
+			
+			
+			<div class="instructions">
+				<p>And that's how you can make Simplex noise.</p>
+				<p>Enjoyed the tutorial? <a href="https://www.patreon.com/catlikecoding">Help me make more by becoming a patron!</a></p>
+			</div>
+			
+			<aside class="share"></aside>
+			
+			<h2>Downloads</h2>
+
+			<dl>
+				<dt><a href="simplex-noise-finished.unitypackage" onclick="_gaq.push(['_trackEvent', 'Tutorial Download', 'Simplex Noise', 'Final']);" target="_blank" download rel="nofollow">simplex-noise-finished.unitypackage</a></dt>
+				<dd>The finished project.</dd>
+			</dl>
+		</article>
+		
+		<dl class="questions-answers">
+			<dt><a href="index.html#q-patented" id="a-patented">Isn't Simplex noise patented?</a></dt>
+			<dd>
+				<p>When people mention that Simplex Noise is patented, they refer to patent US 6867776 B2, "Standard for perlin noise" which is owned by Nokia. Look it up online if you want to know the specifics, I'll give a quick summary.</p>
+				<p>The patent's claims are all made in the context of producing a texture without visible grid artifacts. This means that Simplex Value noise doesn't infringe any of them, as its grid is obvious. Also, they're specifically about 3D or higher dimensions, so 1D and 2D Simplex noise aren't covered by them.</p>
+				<p>The first independent claim is about bit-manipulation of a 3D lattice point. Simply put, if you perform multiple lookups in a hash and gradient array and compute dot products, you don't infringe this.</p>
+				<p>The second independent claim is specifically about finding simplex grid points in 3D using a skew factor of &frac13;. So only 3D Simplex noise infringes this. Working around it requires finding a different way to construct a grid, or using higher-dimensional noise. It has a sub-claim that adds flooring of the skewed coordinates to get the corner of a unit cube. A further sub-claim of that includes evaluating the entire simplex.</p>
+				<p>The third independent claim is about splitting an n-dimensional hypercube into n! simplices by obivous edge traversal. It mentions that n is at least three, so it applies to 3D and up. Working around it requires not splitting hypercubes into simplices. It has a sub-claim that mentions it has computational complexity O(n<sup>2</sup>).</p>
+				<p>So what is the validity of this patent? As that is a legal question, I have no idea. No one knows until it has been tried in court. I've never heard of it being enforced or licensed, despite multiple implementations of Simplex noise being available and having been used for years.</p>
+				<p>If you want to play it safe, don't include code for gradient noise using a simplex grid for 3D and up in your products. Or contact Nokia.</p>
+			</dd>
+
+			<dt><a href="index.html#q-nonzero-derivatives" id="a-nonzero-derivatives">Why can the derivatives be nonzero?</a></dt>
+			<dd>
+				<p>As we're working with a decreasing function of the distance from a point, the value goes down no matter in what direction you're moving away from it. Conversely, the value increases when approaching the point from any direction. As you reach the point and then continue to move past it, you'll suddenly go from increasing to decreasing. This means that the rate of change and thus the first derivative went from positive to negative, which means that it should be zero at the center. However, for the first derivative to do so, its rate of change must be decreasing, suggesting that the second derivative can be negative at the center. So the first derivative will be zero, but second needn't be.</p>
+			</dd>
+			<dt><a href="index.html#q-falloff-derivatives" id="a-falloff-derivatives">How do you find the falloff derivatives?</a></dt>
+			<dd>
+				<p>The derivative of <b>(1 - <i>x</i><sup>2</sup>)<sup>2</sup></b> can be quickly derived by applying the <a href="../noise-derivatives/index.html#a-chain-rule">chain rule</a>, as explained in the Noise Derivatives tutorial. The first derivative becomes <b>2(1 - <i>x</i><sup>2</sup>)(-2<i>x</i>) = -4x(1 - <i>x</i><sup>2</sup>)</b>. We continue to the second derivative by applying the <a href="../noise-derivatives/index.html#a-product-rule">product rule</a>, which leads to <b>(-4)(1 - <i>x</i><sup>2</sup>) + (-4<i>x</i>)(-2<i>x</i>) = -4(1 - <i>x</i><sup>2</sup>) + 8<i>x</i><sup>2</sup></b>. We leave it in that form so it's easy to see that the first part becomes zero when <b><i>x</i> = 1</b>, while the second part does not.</p>
+				<p>The first derivative of <b>(1 - <i>x</i><sup>2</sup>)<sup>3</sup></b> similarly becomes <b>3(1 - <i>x</i><sup>2</sup>)<sup>2</sup>(-2<i>x</i>) = -6<i>x</i>(1 - <i>x</i><sup>2</sup>)<sup>2</sup></b>. The second derivative now requires an application of both the the chain and the product rule. As we already know what the derivative of the <b>(1 - <i>x</i><sup>2</sup>)<sup>2</sup></b> part is, we can direcly insert it. The end result is <b>-6(1 - <i>x</i><sup>2</sup>)<sup>2</sup> + (-6<i>x</i>)(-4<i>x</i>(1 - <i>x</i><sup>2</sup>)) = -6(1 - <i>x</i><sup>2</sup>)<sup>2</sup> + 24<i>x</i><sup>2</sup>(1 - <i>x</i><sup>2</sup>)</b>, which drops to zero as desired, and produces <b>-6</b> when <b><i>x</i> = 0</b>.</p>
+			</dd>
+			<dt><a href="index.html#q-quadratic-formula" id="a-quadratic-formula">What's the quadratic formula?</a></dt>
+			<dd>
+				<p>The quadratic formula is a way to solve equations of the form <b>a<i>x</i><sup>2</sup> + b<i>x</i> + c = 0</b>. It states that <b><i>x</i> = (-b &plusmn; &radic;(b<sup>2</sup> - 4ac)) / 2a</b>. The parabola described by such quadratic equations can end up going through zero twice, that's why there can be two solutions. If the <b>b<sup>2</sup> - 4ac</b> part becomes zero then there is only one solution, which happens when the tip of the parabola touches zero. If it doesn't touch zero at all, then <b>b<sup>2</sup> - 4ac</b> will be negative and you end up with complex numbers.</p>
+				<p>As we have <b>a = 6</b>, <b>b = -6</b>, and <b>c = 1</b> our solution becomes <b>(6 &plusmn; &radic;12) / 12 = (6 &plusmn; 2&radic;3) / 12 = (3 &plusmn; &radic;3) / 6</b>.</p>
+			</dd>
+			<dt><a href="index.html#q-equalities" id="a-equalities">How do you derive those equalities?</a></dt>
+			<dd>
+				<p>To isolate <b>s</b> from <b><i>x</i> + 2s<i>x</i> = 1</b>, divide by <b>2<i>x</i></b> to get <b>&frac12; + s = 1 / 2<i>x</i></b>, then move <b>&frac12;</b> to the other side to get <b>s = 1 / 2<i>x</i> - &frac12;</b>.</p>
+				<p>Next, <b><i>x</i></b> represents the transformed X coordinate of <b>C</b>, which is <b>1 - 2s</b> with the first scale factor <b>s = (3 - &radic;3) / 6</b>. This leads to <b><i>x</i> = 1 - (3 - &radic;3) / 3 = 1 - 1 + &radic;3 / 3 =  &radic;3 / 3 = 1 / &radic;3</b>.</p>
+				<p>Now we know what the new scale factor is. <b>s = 1 / (2 / &radic;3) - &frac12; = &radic;3 / 2 - &frac12; = (&radic;3 - 1) / 2</b>.</p>
+			</dd>
+			<dt><a href="index.html#q-calculate-length" id="a-calculate-length">How do you calculate that length?</a></dt>
+			<dd>
+				<p>We have <b>2s<sup>2</sup> - 2s + 1</b> with <b>s = (3 - &radic;3) / 6</b>. First isolate <b>s<sup>2</sup> = (9 - 6&radic;3 + 3) / 36 = (12 - 6&radic;3) / 36 = (2 - &radic;3) / 6</b>. Replacing both <b>s</b> and <b>s<sup>2</sup></b>, we end up with <b>(2 - &radic;3) / 3 - (3 - &radic;3) / 3 + 1 = -&frac13; + 1 = &frac23;</b>.</p>
+				<p>That's the square edge length, so the triangle's height is <b>&radic;&frac23;&radic;3 / 2 = &radic;2 / 2</b>.</p>
+			</dd>
+			<dt><a href="index.html#q-calculate-height" id="a-calculate-height">How do you calculate that height?</a></dt>
+			<dd>
+				<p>First determine the height of a face triangle, which is the the distance from the middle of its long edge to the opposite corner. We can do that by cutting the triangle in half along that line, ending up with a right triangle. The Pythagorean theorem then gives us the length we want, <b>&radic;(&radic;&frac34;<sup>2</sup> - &frac12;<sup>2</sup>)</b>, which is <b>&radic;&frac12;</b>.</p>
+				<p>Now consider two of the terahedron's faces that are connected along their long edge. One lies flat and the other point up. What is the height of the top corner? Look at the triangle defined by the two height lines of these faces and the long tetrahedon edge between the corners that aren't touching. This triangles has edges of length <b>&radic;&frac12;</b>, <b>&radic;&frac12;</b>, and <b>1</b>. This is a right triangle, which means that the angle between the two faces is 90&deg;. The second face is pointing straight up, so the tetrahedon's height is also <b>&radic;&frac12;</b>.</p>
+				<p>In case of a regular tetrahedron, its height is equal to its edge length multiplied by <b>&radic;&frac23;</b>. So <b>&radic;&frac34;&radic;&frac23; = &radic;(6 / 12) = &radic;&frac12;</b>.</p>
+			</dd>
+		</dl>
+		
+		<footer></footer>
+		<script src="../../jquery.js"></script>
+		<script src="../../default.js"></script>
+	</body>
+</html>

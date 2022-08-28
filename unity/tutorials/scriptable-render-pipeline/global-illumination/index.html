@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/global-illumination/">
+		<meta property="og:type" content="article">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/global-illumination/tutorial-image.jpg">
+		<meta property="og:title" content="Global Illumination">
+		<meta property="og:description" content="A Unity Scriptable Render Pipeline tutorial about supporting both static and dynamic global illumination.">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta name="viewport" content="width=768">
+		<title>Global Illumination</title>
+		<link href="../../tutorials.css" rel="stylesheet">
+
+				<link rel="manifest" href="../../../../site.webmanifest">
+		<link rel="mask-icon" href="../../../../safari-pinned-tab.svg" color="#aa0000">
+
+		<script type="application/ld+json">{
+			"@context": "http://schema.org",
+			"@type": "WebPage",
+			"mainEntity": {
+				"@type": "TechArticle",
+				"@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/global-illumination/#article",
+				"headline": "Global Illumination",
+				"alternativeHeadline": "Indirect Lighting",
+				"datePublished": "2019-04-29",
+				"author": { "@type": "Person", "name": "Jasper Flick", "@id": "https://catlikecoding.com/jasper-flick/#person" },
+				"publisher": { "@type": "Organization", "name": "Catlike Coding", "@id": "https://catlikecoding.com/#organization" },
+				"description": "A Unity Scriptable Render Pipeline tutorial about supporting both static and dynamic global illumination",
+				"image": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/global-illumination/tutorial-image.jpg",
+				"dependencies": "Unity 2018.3.0f2",
+				"proficiencyLevel": "Expert"
+			},
+			"breadcrumb": {
+				"@type": "BreadcrumbList",
+				"itemListElement": [
+					{ "@type": "ListItem", "position": 1, "item": { "@id": "https://catlikecoding.com/unity/", "name": "Unity" }},
+					{ "@type": "ListItem", "position": 2, "item": { "@id": "https://catlikecoding.com/unity/tutorials/", "name": "Tutorials" }},
+					{ "@type": "ListItem", "position": 3, "item": { "@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/", "name": "Scriptable Render Pipeline" }}
+				]
+			}
+		}</script>
+		<script>
+			var customTypes = {
+				ClipMode: 1,
+				DoubleSidedMeshMenuItem: 1,
+				InstancedMaterialProperties: 1,
+				LitShaderGUI: 1,
+				LitSurface: 1,
+				MyPipeline: 1,
+				MyPipelineAsset: 1,
+				MyPipelineAssetEditor: 1,
+				ShadowCascades: 1,
+				ShadowMapSize: 1
+			};
+			
+			var defaultCodeClass = "shader";
+		</script>
+	</head>
+	<body>
+		<header>
+			<a href="../../../../index.html"><img src="../../../../catlike-coding-logo.svg" alt="Catlike Coding" width="45" height="45"></a>
+			<nav>
+				<ol>
+					<li><a href="../../../../index.html">Catlike Coding</a></li>
+					<li><a href="../../../index.html">Unity</a></li>
+					<li><a href="../../../tutorials">Tutorials</a></li>
+					<li><a href="../index.html">Scriptable Render Pipeline</a></li>
+				</ol>
+			</nav>
+		</header>
+		
+		<main>
+			<article>
+				<header>
+					<h1>Global Illumination</h1>
+					<p>Indirect Lighting</p>
+					<ul>
+						<li>Bake and sample light maps.</li>
+						<li>Show indirect light.</li>
+						<li>Create emissive materials.</li>
+						<li>Sample lighting via probes and LPPVs.</li>
+						<li>Support precomputed realtime global illumination.</li>
+					</ul>
+				</header>
+				
+				<p>This is the eighth installment of a tutorial series covering Unity's <a href="../index.html">scriptable render pipeline</a>. It's about supporting both static and dynamic global illumination.</p>
+				
+				<p>This tutorial is made with Unity 2018.3.0f2.</p>
+				
+				<figure>
+					<img src="tutorial-image.jpg" width="512" height="256">
+					<figcaption>Light finds a way around corners and out of objects.</figcaption>
+				</figure>
+				
+				<aside>
+					<h3>Fixes</h3>
+					<div>
+						<p>There were two bugs in previous tutorials that you'll have to fix if you did them a while ago. First, when rendering cascading shadows only, the squares shadow distance must also be set.</p>
+						
+						<pre class="csharp">	void RenderCascadedShadows (ScriptableRenderContext context) {
+		float tileSize = shadowMapSize / 2;
+		cascadedShadowMap = SetShadowRenderTarget();
+		shadowBuffer.BeginSample("Render Shadows");
+		<ins>shadowBuffer.SetGlobalVector(</ins>
+			<ins>globalShadowDataId, new Vector4(0f, shadowDistance * shadowDistance)</ins>
+		<ins>);</ins>
+		context.ExecuteCommandBuffer(shadowBuffer);
+		&hellip;
+	}</pre>
+						
+						<p>Second, the environment probe blending interpolator contained the wrong code.</p>
+						
+						<pre>float3 SampleEnvironment (LitSurface s) {
+	&hellip;
+	if (blend &lt; 0.99999) {
+		&hellip;
+		color = lerp(
+			<ins>DecodeHDREnvironment(sample, unity_SpecCube1_HDR)</ins>, <ins>color</ins>, blend
+		);
+	}
+	return color;
+}</pre>
+					</div>
+				</aside>
+				
+				<section>
+					<h2>Light Maps</h2>
+					
+					<p>Realtime lighting only deals with direct light. Only surfaces that are directly exposed to a light are brightened by it. What's missing is the indirect light, caused by light traveling from surface to surface, and finally to the camera. This is also known as global illumination. We can add this light in Unity by baking it into light maps. The <a href="../../rendering/part-16/index.html">Rendering 16, Static Lighting</a> tutorial covers the basics of baking light in Unity, but for the legacy pipeline with the Enlighten lightmapper only.</p>
+					
+					<section>
+						<h3>Setting the Scene</h3>
+						
+						<p>It's easiest to see that there is no indirect light by having only a single directional light in the scene. All shadowed areas will be nearby black.</p>
+						
+						<figure>
+							<img src="light-maps/realtime.png" width="380" height="190">
+							<figcaption>Scene with realtime lighting only.</figcaption>
+						</figure>
+						
+						<p>Some very big shadows make this more obvious.</p>
+						
+						<figure>
+							<img src="light-maps/shadowed.png" width="380" height="190">
+							<figcaption>Large shadows.</figcaption>
+						</figure>
+						
+						<p>We can still see the objects inside the shadows because specular environment reflections are added to the direct lighting. If there are no reflection probes in use then we'll see the skybox reflected, which is bright. Eliminate the contribution of the skybox by lowering its <em>Intensity Multiplier</em> to zero. That will make all shadowed areas completely black.</p>
+						
+						<figure>
+							<img src="light-maps/environmental-reflections-inspector.png" width="388" height="110" alt="inspector">
+							<img src="light-maps/no-environmental-reflections.png" width="380" height="190" alt="scene">
+							<figcaption>Black environment.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Baking Light</h3>
+						
+						<p>Baking indirect light is done by enabling <em>Baked Global Illumination</em> under <em>Mixed Lighting</em> in the scene lighting settings and selecting <em>Baked Indirect</em> for its <em>Lighting Mode</em>. That will make Unity bake lighting, although we won't see it yet.</p>
+						
+						<figure>
+							<img src="light-maps/baked-indirect.png" width="388" height="98">
+							<figcaption>Baking indirect lighting.</figcaption>
+						</figure>
+						
+						<p>I'll use the default <em>Lightmapping Settings</em>, with a few changes. The default is to use the progressive lightmapper, which I'll keep. Because I have a small scene I increased the <em>Lightmap Resolution</em> from 10 to 20. I also disabled <em>Compress Lightmaps</em> to get the best quality, skipping the map compression step. Also, change the <em>Directional Mode</em> to <em>Non-Directional</em>, because that only makes sense when using normal maps, which we don't.</p>
+						
+						<figure>
+							<img src="light-maps/lightmapping-settings.png" width="388" height="314">
+							<figcaption>Lightmapping settings.</figcaption>
+						</figure>
+						
+						<p>Baked lighting is static, so cannot change while in play mode. Only game objects that are marked as lightmap-static will have their indirect light contribution baked. It's quickest to just mark all geometry as completely static.</p>
+						
+						<figure>
+							<img src="light-maps/static-object.png" width="320" height="44">
+							<figcaption>Static game object.</figcaption>
+						</figure>
+
+						
+						<p>While baking, Unity might complain about overlapping UVs. That can happen when an object's UV unwrap ends up too small in the light map, which causes the light information to overlap. You can tweak and object's scale in the lightmap, by adjusting its <em>Scale in Lightmap</em> factor. Also, for objects like the default sphere enabling <em>Stitch Seams</em> will improve the baked light.</p>
+						
+						<figure>
+							<img src="light-maps/lightmap-scale-stitch.png" width="320" height="74">
+							<figcaption>Scale in lightmap and seam stitching.</figcaption>
+						</figure>
+						
+						<p>Finally, to bake the contribution of the main light, set its <em>Mode</em> to <em>Mixed</em>. That means it will be used for realtime lighting, while its indirect light will also be baked.</p>
+						
+						<figure>
+							<img src="light-maps/mixed-light.png" width="320" height="60">
+							<figcaption>Mixed light mode.</figcaption>
+						</figure>
+						
+						<p>After baking is complete, you can inspect the maps via the <em>Baked Lightmaps</em> tab of the <em>Lighting</em> window. You can end up with multiple maps, depending on the map size and how much space is required to bake all static geometry.</p>
+						
+						<figure>
+							<img src="light-maps/light-maps.png" width="210" height="216">
+							<figcaption>Two light maps.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Sampling the Light Map</h3>
+						
+						<p>To sample the light map we need to instruct Unity to make the maps available to our shader and include the lightmap UV coordinates in the vertex data. That's done by enabling the <code class="csharp">RendererConfiguration.PerObjectLightmaps</code> flag in <code>MyPipeline.Render</code>, just like we enabled the reflection probes.</p>
+						
+						<pre class="csharp">		drawSettings.rendererConfiguration |=
+			RendererConfiguration.PerObjectReflectionProbes <ins>|</ins>
+			<ins>RendererConfiguration.PerObjectLightmaps</ins>;</pre>
+						
+						<p>When an object with a light map gets rendered, Unity will now provide the required data and will also pick a shader variant for the <em>LIGHTMAP_ON</em> keyword. So we have to add a multi-compile directive for it to our shader.</p>
+						
+						<pre>			#pragma multi_compile _ _SHADOWS_SOFT
+			<ins>#pragma multi_compile _ LIGHTMAP_ON</ins></pre>
+						
+						<p>The light map is made available via <code>unity_Lightmap</code> and its accompanying sampler state, so add those to <em>Lit.hlsl</em>.
+						
+						<pre><ins>TEXTURE2D(unity_Lightmap);</ins>
+<ins>SAMPLER(samplerunity_Lightmap);</ins></pre>
+						
+						<p>The lightmap coordinates are provided via the second UV channel, so add then to <code>VertexInput</code>.</p>
+						
+						<pre>struct VertexInput {
+	float4 pos : POSITION;
+	float3 normal : NORMAL;
+	float2 uv : TEXCOORD0;
+	<ins>float2 lightmapUV : TEXCOORD1;</ins>
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};</pre>
+						
+						<p>We have to add them to <code>VertexOutput</code> as well, but that's only needed when a light map is used.</p>
+						
+						<pre>struct VertexOutput {
+	float4 clipPos : SV_POSITION;
+	float3 normal : TEXCOORD0;
+	float3 worldPos : TEXCOORD1;
+	float3 vertexLighting : TEXCOORD2;
+	float2 uv : TEXCOORD3;
+	<ins>#if defined(LIGHTMAP_ON)</ins>
+		<ins>float2 lightmapUV : TEXCOORD4;</ins>
+	<ins>#endif</ins>
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};</pre>
+						
+						<p>Light maps also have a scale and offset, but they don't apply to the map in its entirety. Instead, they're used to tell where in the light map an object's UV unwrap is located. It's defined as <code>unity_LightmapST</code> as part of the <code>UnityPerDraw</code> buffer. Because it doesn't match the naming convention expected by <code>TRANSFORM_TEX</code>, we have to transform the coordinates ourselves in <code>LitPassVertex</code>, if needed.</p>
+						
+						<pre>CBUFFER_START(UnityPerDraw)
+	&hellip;
+	<ins>float4 unity_LightmapST;</ins>
+CBUFFER_END
+
+&hellip;
+
+VertexOutput LitPassVertex (VertexInput input) {
+	&hellip;
+	output.uv = TRANSFORM_TEX(input.uv, _MainTex);
+	<ins>#if defined(LIGHTMAP_ON)</ins>
+		<ins>output.lightmapUV =</ins>
+			<ins>input.lightmapUV * unity_LightmapST.xy + unity_LightmapST.zw;</ins>
+	<ins>#endif</ins>
+	return output;
+}</pre>
+						
+						<aside>
+							<h3>Can objects that use light maps be instanced?</h3>
+							<div>
+								<p><code>unity_LightmapST</code> is set per draw, however it gets overruled by a macro definition when we include <em>UnityInstancing</em>, if instancing is enabled. So GPU instancing works with light mapping, but only for objects that end up sampling from the same light map.</p>
+								
+								<p>Be aware that static batching will override instancing, but only in play mode. This happens when objects are marked as batching-static and static batching is enabled in the player settings.</p>
+							</div>
+						</aside>
+						
+						<p>Let's create a separate <code>SampleLightmap</code> function that samples the light map, given some UV coordinates. In it, we'll forward the invocation to the <code>SampleSingleLightmap</code> function defined in the Core <em>EntityLighting</em> file. We have to provide it the map, sampler state, and coordinates. The first two have to be passed via the <code>TEXTURE2D_PARAM</code> macro.</p>
+						
+						<pre><ins>float3 SampleLightmap (float2 uv) {</ins>
+	<ins>return SampleSingleLightmap(</ins>
+		<ins>TEXTURE2D_PARAM(unity_Lightmap, samplerunity_Lightmap), uv</ins>
+	<ins>);</ins>
+<ins>}</ins></pre>
+						
+						<aside>
+							<h3>Shouldn't that be <code>TEXTURE2D_ARGS</code>?</h3>
+							<div>
+								<p>That would make more sense, but the macros are defined the other way around, at least in the experimental version that we're using in Unity 2018.3. They've been swapped in future versions.</p>
+							</div>
+						</aside>
+						
+						<p><code>SampleSingleLightmap</code> needs a few more arguments. The next is a scale-offset transformation for the UV coordinates. But we already did that in the vertex program, so here we'll supply an identity transformation.</p>
+						
+						<pre>	return SampleSingleLightmap(
+		TEXTURE2D_PARAM(unity_Lightmap, samplerunity_Lightmap), uv<ins>,</ins>
+		<ins>float4(1, 1, 0, 0)</ins>
+	);</pre>
+						
+						<p>After that comes a boolean to indicate whether the data in the light map needs to be decoded. This depends on the target platform. If Unity uses full HDR light maps then this isn't necessary, which is the case when <em>UNITY_LIGHTMAP_FULL_HDR</em> is defined.</p>
+						
+						<pre>	return SampleSingleLightmap(
+		TEXTURE2D_PARAM(unity_Lightmap, samplerunity_Lightmap), uv,
+		float4(1, 1, 0, 0),
+		<ins>#if defined(UNITY_LIGHTMAP_FULL_HDR)</ins>
+			<ins>false</ins>
+		<ins>#else</ins>
+			<ins>true</ins>
+		<ins>#endif</ins>
+	);</pre>
+						
+						<p>Finally, we need to provide decoding instructions to bring the lighting in the correct range. We need to use <code>float4(LIGHTMAP_HDR_MULTIPLIER, LIGHTMAP_HDR_EXPONENT, 0.0, 0.0)</code> for that.</p>
+						
+						<pre>	return SampleSingleLightmap(
+		TEXTURE2D_PARAM(unity_Lightmap, samplerunity_Lightmap), uv,
+		float4(1, 1, 0, 0),
+		#if defined(UNITY_LIGHTMAP_FULL_HDR)
+			false<ins>,</ins>
+		#else
+			true<ins>,</ins>
+		#endif
+		<ins>float4(LIGHTMAP_HDR_MULTIPLIER, LIGHTMAP_HDR_EXPONENT, 0.0, 0.0)</ins>
+	);</pre>
+						
+						<p>We sample the light map because we want to add global illumination. So let's create a <code>GlobalIllumination</code> function for that, which takes care of the details. Give it a <code>VertexOutput</code> parameter, which means that it needs to be defined after that struct. If there is a light map, sample it, otherwise return zero.</p>
+						
+						<pre>struct VertexOutput {
+	&hellip;
+};
+
+<ins>float3 GlobalIllumination (VertexOutput input) {</ins>
+	<ins>#if defined(LIGHTMAP_ON)</ins>
+		<ins>return SampleLightmap(input.lightmapUV);</ins>
+	<ins>#endif</ins>
+	<ins>return 0;</ins>
+<ins>}</ins></pre>
+						
+						<p>Invoke this function at the end of <code>LitPassFragment</code>, initially replacing all other lighting so we can see it in isolation.</p>
+						
+						<pre>float4 LitPassFragment (
+	VertexOutput input, FRONT_FACE_TYPE isFrontFace : FRONT_FACE_SEMANTIC
+) : SV_TARGET {
+	&hellip;
+	
+	color += ReflectEnvironment(surface, SampleEnvironment(surface));
+	<ins>color = GlobalIllumination(input);</ins>
+	
+	return float4(color, albedoAlpha.a);
+}</pre>
+						
+						<figure>
+							<img src="light-maps/global-illumination-only.png" width="380" height="190">
+							<figcaption>Only global illumination.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Transparent Surfaces</h3>
+						
+						<p>The results should look mostly soft, but discontinuity artifacts can appear near transparent surfaces, especially for fade materials. The progressive lightmapper uses the material's render queue to detect transparency, and relies on the <em>_Cutoff</em> shader property for clipped materials. So that works, but it has trouble with exposed back faces. Double-sided geometry can also cause trouble when the front and back faces overlap, which is the case for the double-sided geometry that we generated ourselves.</p>
+						
+						<figure>
+							<img src="light-maps/artifacts.png" width="280" height="240">
+							<figcaption>Transparency artifacts.</figcaption>
+						</figure>
+						
+						<p>The problem is that lightmapping only applies to front faces. Back faces cannot contain data. Rendering back faces works, but they end up using the light data from the front face. The artifacts appear because the lightmapper hits back faces when sampling, which produce no valid light information. You can mitigate this problem by assigning custom <em>Lightmap Parameters</em> to objects that end up with artifacts, and lowering the <em>Backface Tolerance</em> threshold so the lightmapper accepts more missing data and smoothes it out.</p>
+						
+						<figure>
+							<img src="light-maps/tolerant-inspector.png" width="320" height="42" alt="inspector"><br>
+							<img src="light-maps/tolerant.png" width="280" height="240" alt="scene">
+							<figcaption>Tolerant lightmapping.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Combining Direct and Indirect Light</h3>
+						
+						<p>Now that we know that global illumination works, add it to the direct light. As the indirect light is diffuse only, multiply it with the surface's diffuse property.</p>
+						
+						<pre>	color <ins>+=</ins> GlobalIllumination(input) <ins>* surface.diffuse</ins>;</pre>
+						
+						<figure>
+							<img src="light-maps/global-illumination-added.png" width="380" height="190">
+							<figcaption>Direct and global illumination.</figcaption>
+						</figure>
+						
+						<p>The result is brighter than without global illumination, which is expected. However, the scene is now quite a lot brighter than before. That's because the skybox is factored into global illumination. Let's only add the indirect light of the single directional light so we can better examine it, by reducing the intensity of the environment lighting to zero.</p>
+						
+						<figure>
+							<img src="light-maps/black-enviroment-settings.png" width="380" height="74" alt="settings">
+							<img src="light-maps/black-environment.png" width="380" height="190" alt="scene">
+							<figcaption>Black environment.</figcaption>
+						</figure>
+						
+					</section>
+					
+					<section>
+						<h3>Only Baked Lighting</h3>
+						
+						<p>It is also possible to set the <em>Mode</em> of our light to <em>Baked</em>. That means it no longer is a realtime light. Instead, both its direct and indirect light is baked into the light map. In our case, we end up with a scene without any realtime lighting. It also eliminates all specular lighting and softens shadows.</p>
+						
+						<figure>
+							<img src="light-maps/baked-only-inspector.png" width="320" height="58" alt="inspector"><br>
+							<img src="light-maps/baked-only.png" width="380" height="190" alt="scene">
+							<figcaption>Fully baked light.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Meta Pass</h3>
+						
+						<p>To bake light the lightmapper must know the surface properties of the objects in the scene. It retrieves them by rendering them with a special meta pass. Our shader doesn't have such a pass, so Unity used a default meta pass. However, the default doesn't work perfectly for our shader. So we're going to create our own. Add a pass with its light mode set to <em>Meta</em>, without culling, with its code in a separate <em>Meta.hlsl</em> file.</p>
+						
+						<pre>		<ins>Pass {</ins>
+			<ins>Tags {</ins>
+				<ins>"LightMode" = "Meta"</ins>
+			<ins>}</ins>
+			
+			<ins>Cull Off</ins>
+			
+			<ins>HLSLPROGRAM</ins>
+			
+			<ins>#pragma vertex MetaPassVertex</ins>
+			<ins>#pragma fragment MetaPassFragment</ins>
+			
+			<ins>#include "../ShaderLibrary/Meta.hlsl"</ins>
+			
+			<ins>ENDHLSL</ins>
+		<ins>}</ins></pre>
+						
+						<p><em>Meta.hlsl</em> can start as a trimmed version of <em>Lit.hlsl</em>. We only need the <code>unity_MatrixVP</code> matrix, <code>unity_LightmapST</code>, the main texture, and the non-instanced material properties. There is no object-to-world transformation, so directly go from object space to clip space. Initially, have the fragment program return zero.</p>
+						
+						<pre><ins>#ifndef MYRP_LIT_META_INCLUDED</ins>
+<ins>#define MYRP_LIT_META_INCLUDED</ins>
+
+<ins>#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"</ins>
+<ins>#include "Lighting.hlsl"</ins>
+
+<ins>CBUFFER_START(UnityPerFrame)</ins>
+	<ins>float4x4 unity_MatrixVP;</ins>
+<ins>CBUFFER_END</ins>
+
+<ins>CBUFFER_START(UnityPerDraw)</ins>
+	<ins>float4 unity_LightmapST;</ins>
+<ins>CBUFFER_END</ins>
+
+<ins>CBUFFER_START(UnityPerMaterial)</ins>
+	<ins>float4 _MainTex_ST;</ins>
+	<ins>float4 _Color;</ins>
+	<ins>float _Metallic;</ins>
+	<ins>float _Smoothness;</ins>
+<ins>CBUFFER_END</ins>
+
+<ins>TEXTURE2D(_MainTex);</ins>
+<ins>SAMPLER(sampler_MainTex);</ins>
+
+<ins>struct VertexInput {</ins>
+	<ins>float4 pos : POSITION;</ins>
+	<ins>float2 uv : TEXCOORD0;</ins>
+	<ins>float2 lightmapUV : TEXCOORD1;</ins>
+<ins>};</ins>
+
+<ins>struct VertexOutput {</ins>
+	<ins>float4 clipPos : SV_POSITION;</ins>
+	<ins>float2 uv : TEXCOORD0;</ins>
+<ins>};</ins>
+
+<ins>VertexOutput MetaPassVertex (VertexInput input) {</ins>
+	<ins>VertexOutput output;</ins>
+	<ins>output.clipPos = mul(unity_MatrixVP, float4(input.pos.xyz, 1.0));</ins>
+	<ins>output.uv = TRANSFORM_TEX(input.uv, _MainTex);</ins>
+	<ins>return output;</ins>
+<ins>}</ins>
+
+<ins>float4 MetaPassFragment (VertexOutput input) : SV_TARGET {</ins>
+	<ins>float4 meta = 0;</ins>
+	<ins>return meta;</ins>
+<ins>}</ins>
+
+<ins>#endif // MYRP_LIT_META_INCLUDED</ins></pre>
+						
+						<p>Like when sampling the light map, when rendering light data <code>unity_LightmapST</code> is used to get to the correct region of the map. In this case we have to adjust the input position XY coordinates. Also, a trick is used to make OpenGL rendering work, because apparently it fails when the Z position isn't adjusted.</p>
+						
+						<pre>VertexOutput MetaPassVertex (VertexInput input) {
+	VertexOutput output;
+	<ins>input.pos.xy =</ins>
+		<ins>input.lightmapUV * unity_LightmapST.xy + unity_LightmapST.zw;</ins>
+	<ins>input.pos.z = input.pos.z > 0 ? FLT_MIN : 0.0;</ins>
+	output.clipPos = mul(unity_MatrixVP, float4(input.pos.xyz, 1.0));
+	output.uv = TRANSFORM_TEX(input.uv, _MainTex);
+	return output;
+}</pre>
+						
+						<p>We're going to need to initialize out lit surface, but we only have the color, metallic, and smoothness information. Add a convenient <code>GetLitSurfaceMeta</code> function to <em>Lighting.hlsl</em> that sets all other values to zero.</p>
+						
+						<pre><ins>LitSurface GetLitSurfaceMeta (float3 color, float metallic, float smoothness) {</ins>
+	<ins>return GetLitSurface(0, 0, 0, color, metallic, smoothness);</ins>
+<ins>}</ins></pre>
+						
+						<p>Retrieve the surface data in the meta fragment program.</p>
+						
+						<pre>float4 MetaPassFragment (VertexOutput input) : SV_TARGET {
+	<ins>float4 albedoAlpha = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);</ins>
+	<ins>albedoAlpha *= _Color;</ins>
+	<ins>LitSurface surface = GetLitSurfaceMeta(</ins>
+		<ins>albedoAlpha.rgb, _Metallic, _Smoothness</ins>
+	<ins>);</ins>
+	float4 meta = 0;
+	return meta;
+}</pre>
+						
+						<p>We now have access to the proper albedo of the surface, which we have to output in the RGB channels, with the A channel set to one. However, its intensity can be adjusted, with an exponent provided via <code>unity_OneOverOutputBoost</code>, along with <code>unity_MaxOutputValue</code> that defines the maximum brightness. Apply it via the <code>PositivePow</code> function to arrive at the final color, and clamp it between zero and the maximum.</p>
+						
+						<pre><ins>CBUFFER_START(UnityMetaPass)</ins>
+	<ins>float unity_OneOverOutputBoost;</ins>
+	<ins>float unity_MaxOutputValue;</ins>
+<ins>CBUFFER_END</ins>
+
+&hellip;	
+
+float4 MetaPassFragment (VertexOutput input) : SV_TARGET {
+	&hellip;
+	
+	float4 meta = 0;
+	<ins>meta = float4(surface.diffuse, 1);</ins>
+	<ins>meta.rgb = clamp(</ins>
+		<ins>PositivePow(meta.rgb, unity_OneOverOutputBoost), 0, unity_MaxOutputValue</ins>
+	<ins>);</ins>
+	return meta;
+}</pre>
+						
+						<p>We now output the albedo used for lightmapping, but the meta pass is also used to generate other data. Which data is requested is made known via boolean flags defined in <code>unity_MetaFragmentControl</code>. If its first component is set, then we're supposed to output albedo. Otherwise, we'll output zero.</p>
+						
+						<pre>CBUFFER_START(UnityMetaPass)
+	float unity_OneOverOutputBoost;
+	float unity_MaxOutputValue;
+	<ins>bool4 unity_MetaFragmentControl;</ins>
+CBUFFER_END
+
+&hellip;
+
+float4 MetaPassFragment (VertexOutput input) : SV_TARGET {
+	&hellip;
+	
+	float4 meta = 0;
+	<ins>if (unity_MetaFragmentControl.x) {</ins>
+		meta = float4(surface.diffuse, 1);
+		meta.rgb = clamp(
+			PositivePow(meta.rgb, unity_OneOverOutputBoost),
+			0,unity_MaxOutputValue
+		);
+	<ins>}</ins>
+	return meta;
+}</pre>
+						
+						<p>Up to this point we get the same result as the default meta pass. However, the default meta pass also adds half the specular color multiplied by roughness to albedo. The idea behind this is that highly specular but rough materials also pass along some indirect light. The default shades does this, but expects the smoothness value to be stored in something else than <em>_Smoothness</em>. So we have to do it ourselves.</p>
+						
+						<pre>	meta = float4(surface.diffuse, 1);
+	<ins>meta.rgb += surface.specular * surface.roughness * 0.5</ins>;</pre>
+						
+						<p>The best way to see the difference is with a white metallic sphere with zero smoothness, then render indirect light only.</p>
+						
+						<figure>
+							<img src="light-maps/without-boost.png" width="160" height="150" alt="without">
+							<img src="light-maps/with-boost.png" width="160" height="150" alt="with">
+							<figcaption>Without and with boost.</figcaption>
+						</figure>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Emission</h2>
+					
+					<p>Besides reflecting or absorbing and then re-emitting light, objects can also emit light on their own. That's how real light sources work, but that's not taken into consideration while rendering. To create an emissive material, a color is simply added to the calculated lighting.
+					
+					<section>
+						<h3>Emission Color</h3>
+						
+						<p>Add an <em>_EmissionColor</em> property to our shader, set to black by default. As emitted light can potentially be of any intensity, mark the color as high-dynamic-range, by applying the <code>HDR</code> attribute to it.</p>
+						
+						<pre>		_Smoothness ("Smoothness", Range(0, 1)) = 0.5
+		<ins>[HDR] _EmissionColor ("Emission Color", Color) = (0, 0, 0, 0)</ins></pre>
+						
+						<figure>
+							<img src="emission/emission-color.png" width="320" height="56">
+							<figcaption>Emission color.</figcaption>
+						</figure>
+						
+						<p>Add the emission color to <code class="csharp">InstancedMaterialProperties</code> as well. In this case, mark it as HDR by applying the <code class="csharp">ColorUsage</code> attribute with <code>true</code> as its second argument. Its first argument indicates whether the alpha channel should be shown, which is not the case here.</p>
+						
+						<pre class="csharp">	<ins>static int emissionColorId = Shader.PropertyToID("_EmissionColor");</ins>
+
+	&hellip;
+
+	<ins>[SerializeField, ColorUsage(false, true)]</ins>
+	<ins>Color emissionColor = Color.black;</ins>
+
+	&hellip;
+
+	void OnValidate () {
+		&hellip;
+		<ins>propertyBlock.SetColor(emissionColorId, emissionColor);</ins>
+		GetComponent&lt;MeshRenderer>().SetPropertyBlock(propertyBlock);
+	}</pre>
+						
+						<figure>
+							<img src="emission/emission-color-per-object.png" width="320" height="110">
+							<figcaption>Emission color per object.</figcaption>
+						</figure>
+						
+						<p>Add the emission color as another instanced property to <em>Lit.hlsl</em>. Then add it to the fragment's color at the end of <code>LitPassFragment</code>.</p>
+						
+						<pre>UNITY_INSTANCING_BUFFER_START(PerInstance)
+	&hellip;
+	<ins>UNITY_DEFINE_INSTANCED_PROP(float4, _EmissionColor)</ins>
+UNITY_INSTANCING_BUFFER_END(PerInstance)
+
+&hellip;
+
+float4 LitPassFragment (
+	VertexOutput input, FRONT_FACE_TYPE isFrontFace : FRONT_FACE_SEMANTIC
+) : SV_TARGET {
+	&hellip;
+
+	color += GlobalIllumination(input) * surface.diffuse;
+	<ins>color += UNITY_ACCESS_INSTANCED_PROP(PerInstance, _EmissionColor).rgb;</ins>
+	return float4(color, albedoAlpha.a);
+}</pre>
+						
+						<figure>
+							<img src="emission/direct-emission.png" width="380" height="190">
+							<figcaption>Direct emission, some white, green, and red.</figcaption>
+						</figure>
+						
+					</section>
+					
+					<section>
+						<h3>Indirect Emission</h3>
+						
+						<p>The emission color brightens the object's own surface, but doesn't affect other surfaces, because it isn't a light. The best we can do is take it into consideration when rendering the light map, effectively turning it into a baked light.</p>
+						
+						<p>The lightmapper also uses the meta pass to gather light emitted from surfaces. When this is the case, the second component flag of <code>unity_MetaFragmentControl</code> is set. Output the emission color, with alpha set to one, when this is the case.</p>
+						
+						<pre>CBUFFER_START(UnityPerMaterial)
+	float4 _MainTex_ST;
+	float4 _Color<ins>, _EmissionColor</ins>;
+	float _Metallic;
+	float _Smoothness;
+CBUFFER_END
+
+&hellip;
+
+float4 MetaPassFragment (VertexOutput input) : SV_TARGET {
+	&hellip;
+	if (unity_MetaFragmentControl.x) {
+		&hellip;
+	}
+	<ins>if (unity_MetaFragmentControl.y) {</ins>
+		<ins>meta = float4(_EmissionColor.rgb, 1);</ins>
+	<ins>}</ins>
+	return meta;
+}</pre>
+						
+						<p>This isn't enough to make the emissive light affect other surfaces yet. By default, the lightmapper doesn't collect emissive light from objects, as it requires more work. It has to be enabled per material. To make this possible, we'll add a global illumination property to our shader GUI, by invoking <code class="csharp">LightmapEmissionPropertry</code> on the editor in <code class="csharp">LitShaderGUI.OnGUI</code>. Let's put it below the toggle for shadow casting.</p>
+						
+						<pre class="csharp">	public override void OnGUI (
+		MaterialEditor materialEditor, MaterialProperty[] properties
+	) {
+		&hellip;
+		CastShadowsToggle();
+
+		<ins>editor.LightmapEmissionProperty();</ins>
+
+		&hellip;
+	}</pre>
+						
+						<figure>
+							<img src="emission/baked-emission-inspector.png" width="320" height="40">
+							<figcaption>Baked emission.</figcaption>
+						</figure>
+						
+						<p>Setting it to <em>Baked</em> is not enough, because Unity uses another optimization. If a material's emission ends up as black, it will also be skipped. This is indicated by setting the <code class="csharp">MaterialGlobalIlluminationFlags.EmissiveIsBlack</code> flag of a material's <code class="csharp">globalIlluminationFlags</code>. However, this flag isn't adjusted automatically. We have to do it ourselves.</p>
+						
+						<p>We'll simply remove the flag when the global illumination property gets changed, rather than be smart about it. This means that emissive light will get baked for all object that use a material set to bake global illumination. So we should use such a material only when needed.</p>
+						
+						<pre class="csharp">		<ins>EditorGUI.BeginChangeCheck();</ins>
+		editor.LightmapEmissionProperty();
+		<ins>if (EditorGUI.EndChangeCheck()) {</ins>
+			<ins>foreach (Material m in editor.targets) {</ins>
+				<ins>m.globalIlluminationFlags &=</ins>
+					<ins>~MaterialGlobalIlluminationFlags.EmissiveIsBlack;</ins>
+			<ins>}</ins>
+		<ins>}</ins></pre>
+						
+						<figure>
+							<img src="emission/baked-emission.png" width="380" height="190">
+							<figcaption>Baked indirect emission.</figcaption>
+						</figure>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Light Probes</h2>
+					
+					<p>Light maps only work in combination with static geometry. They cannot be used for dynamic objects, and also aren't a good fit for many small objects. However, combining lightmapped and non-lightmapped objects doesn't work well, because the differences are visually obvious. To illustrate this, I've made all white spheres that aren't emissive dynamic.</p>
+					
+					<figure>
+						<img src="light-probes/white-spheres-are-dynamic.png" width="380" height="190">
+						<figcaption>Non-emissive white spheres are dynamic.</figcaption>
+					</figure>
+					
+					<p>The difference becomes even greater when setting the light to fully baked. In that case the dynamic objects receive no lighting at all and are fully black.</p>
+					
+					<figure>
+						<img src="light-probes/baked-lightmapped-only.png" width="380" height="190">
+						<figcaption>Fully baked.</figcaption>
+					</figure>
+					
+					<p>When light maps cannot be used, we can rely on light probes instead. A light probe is a sample of the lighting at a specific point, encoded as spherical harmonics. How spherical harmonics work is explained in <a href="../../rendering/part-5/index.html">Rendering 5, Multiple Lights</a>.</p>
+					
+					<section>
+						<h3>Sampling Probes</h3>
+						
+						<p>Light probe information has to be passed to the shader, just like light map data. In this case, we have to enable it with the <code class="csharp">RendererConfiguration.PerObjectLightProbe</code> flag.</p>
+						
+						<pre class="csharp">		drawSettings.rendererConfiguration |=
+			RendererConfiguration.PerObjectReflectionProbes |
+			RendererConfiguration.PerObjectLightmaps <ins>|</ins>
+			<ins>RendererConfiguration.PerObjectLightProbe</ins>;</pre>
+						
+						<p>The spherical harmonics coefficients are made available in the shader via seven <code>float4</code> vectors, in the <code>UnityPerDraw</code> buffer. Create a <code>SampleLightProbes</code> function with a normal vector parameter, which puts the coefficients in an array and passes them&mdash;along with the normal&mdash;to the <code>SampleSH9</code> function, also defined in <em>EntityLighting</em>. Make sure the result isn't negative before returning it.</p>
+						
+						<pre>CBUFFER_START(UnityPerDraw)
+	&hellip;
+	<ins>float4 unity_SHAr, unity_SHAg, unity_SHAb;</ins>
+	<ins>float4 unity_SHBr, unity_SHBg, unity_SHBb;</ins>
+	<ins>float4 unity_SHC;</ins>
+CBUFFER_END
+
+&hellip;
+
+<ins>float3 SampleLightProbes (LitSurface s) {</ins>
+	<ins>float4 coefficients[7];</ins>
+	<ins>coefficients[0] = unity_SHAr;</ins>
+	<ins>coefficients[1] = unity_SHAg;</ins>
+	<ins>coefficients[2] = unity_SHAb;</ins>
+	<ins>coefficients[3] = unity_SHBr;</ins>
+	<ins>coefficients[4] = unity_SHBg;</ins>
+	<ins>coefficients[5] = unity_SHBb;</ins>
+	<ins>coefficients[6] = unity_SHC;</ins>
+	<ins>return max(0.0, SampleSH9(coefficients, s.normal));</ins>
+<ins>}</ins></pre>
+						
+						<aside>
+							<h3>Can objects that use light probes be instanced?</h3>
+							<div>
+								<p>Just as with light maps, <em>UnityInstancing</em> will override the coefficients so instancing works, when appropriate. To make this work, make sure that the <code>SampleLightProbes</code> function is defined after including <em>UnityInstancing</em>.</p>
+							</div>
+						</aside>
+						
+						<p>Add a parameter for the surface to the <code>GlobalIllumination</code> function and have it return the result of <code>SampleLightProbes</code> if light maps aren't used, instead of zero.</p>
+						
+						<pre>float3 GlobalIllumination (VertexOutput input<ins>, LitSurface surface</ins>) {
+	#if defined(LIGHTMAP_ON)
+		return SampleLightmap(input.lightmapUV);
+	<ins>#else</ins>
+		<ins>return SampleLightProbes(surface);</ins>
+	<ins>#endif</ins>
+	<del>//return 0;</del>
+}</pre>
+						
+						<p>Then add the required argument in <code>LitPassFragment</code>.</p>
+						
+						<pre>	color += GlobalIllumination(input<ins>, surface</ins>) * surface.diffuse;</pre>
+						
+					</section>
+					
+					<section>
+						<h3>Placing Light Probes</h3>
+						
+						<p>Dynamic objects now use light probes, but currently only the environment lighting is stored in them, which we set to black. To make baked light available via light probes we have to add a light probe group to the scene, via <em>GameObject / Light / Light Probe Group</em>. That creates a group with eight probes, which you'll have to edit to fit the scene, as explained in <a href="../../rendering/part-16/index.html">Rendering 16, Static Lighting</a>.</p>
+						
+						<figure>
+							<img src="light-probes/light-probe-group-inspector.png" width="320" height="86" alt="inspector"><br>
+							<img src="light-probes/light-probe-group.png" width="380" height="190" alt="scene">
+							<figcaption>Light probe group.</figcaption>
+						</figure>
+						
+						<p>Once a light probe group has been added, dynamic objects will pick up the indirect lighting. Unity interpolates nearby light probes to arrive at a probe value at the local origin for each object. This means that dynamic objects cannot be instanced when they're inside a light probe group. It is possible to override the position to be used for interpolation per object, so you can have nearby objects use the same probe data, which still allows them to be instanced.</p>
+					</section>
+					
+					<section>
+						<h3>Light Probe Proxy Volumes</h3>
+						
+						<p>Because light probe data is based on an object's local origin, it only works for relatively small objects. To illustrate this I have added a long thin dynamic cube to the scene. It should be subject to varying baked light levels, but ends up uniformly lit.</p>
+						
+						<figure>
+							<img src="light-probes/large-dynamic-object.png" width="380" height="190">
+							<figcaption>Large dynamic object.</figcaption>
+						</figure>
+						
+						<p>For an object like this we can only get reasonable results if we sample more than one probe. We can achieve that by using a light probe proxy volume&mdash;LPPV for short&mdash;which can be added to the object via <em>Component / Rendering / Light Probe Proxy Volume</em>, as explained in <a href="../../rendering/part-18/index.html">Rendering 18, Realtime GI, Probe Volumes, LOD Groups</a>.</p>
+						
+						<figure>
+							<img src="light-probes/lppv-inspector.png" width="320" height="246" alt="inspector"><br>
+							<img src="light-probes/lppv-scene.png" width="380" height="42" alt="scene">
+							<figcaption>LPPV component, set to use 2&times;2&times;16 local probes.</figcaption>
+						</figure>
+						
+						<p>To enable LPPV usage, the object's <em>Light Probes</em> mode has to be set to <em>Use Proxy Volume</em>.</p>
+						
+						<figure>
+							<img src="light-probes/lppv-mesh-renderer.png" width="320" height="40">
+							<figcaption>Using proxy volume.</figcaption>
+						</figure>
+						
+						<p>We also have to instruct Unity to send the necessary data to the GPU, in this case with the <code class="csharp">RendererConfiguration.PerObjectLightProbeProxyVolume</code> flag.</p>
+						
+						<pre class="csharp">		drawSettings.rendererConfiguration |=
+			RendererConfiguration.PerObjectReflectionProbes |
+			RendererConfiguration.PerObjectLightmaps |
+			RendererConfiguration.PerObjectLightProbe <ins>|</ins>
+			<ins>RendererConfiguration.PerObjectLightProbeProxyVolume</ins>;</pre>
+						
+						<p>The LPPV configuration is put in a <code>UnityProbeVolume</code> buffer, containing some parameters, a transformation matrix, and sizing data. The probe volume data is stored in a floating-point 3D texture, which we can define as <code>TEXTURE3D_FLOAT(unity_ProbeVolumeSH)</code>, with accompanying sampler state.</p>
+						
+						<pre><ins>CBUFFER_START(UnityProbeVolume)</ins>
+	<ins>float4 unity_ProbeVolumeParams;</ins>
+	<ins>float4x4 unity_ProbeVolumeWorldToObject;</ins>
+	<ins>float3 unity_ProbeVolumeSizeInv;</ins>
+	<ins>float3 unity_ProbeVolumeMin;</ins>
+<ins>CBUFFER_END</ins>
+
+<ins>TEXTURE3D_FLOAT(unity_ProbeVolumeSH);</ins>
+<ins>SAMPLER(samplerunity_ProbeVolumeSH);</ins></pre>
+						
+						<p>In <code>SampleLightProbes</code>, check whether the first component of <code>unity_ProbeVolumeParams</code> is set. If so, we have to sample a LPPV instead of a regular probe. We do that by invoking <code>SampleProbeVolumeSH4</code> from <em>EntityLighting</em>, with the texture, surface position and normal, transformation matrix, the second and third parameter values, and the sizing configuration as arguments.</p>
+						
+						<pre>float3 SampleLightProbes (LitSurface s) {
+	<ins>if (unity_ProbeVolumeParams.x) {</ins>
+		<ins>return SampleProbeVolumeSH4(</ins>
+			<ins>TEXTURE3D_PARAM(unity_ProbeVolumeSH, samplerunity_ProbeVolumeSH),</ins>
+			<ins>s.position, s.normal, unity_ProbeVolumeWorldToObject,</ins>
+			<ins>unity_ProbeVolumeParams.y, unity_ProbeVolumeParams.z,</ins>
+			<ins>unity_ProbeVolumeMin, unity_ProbeVolumeSizeInv</ins>
+		<ins>);</ins>
+	<ins>}</ins>
+	<ins>else {</ins>
+		&hellip;
+	<ins>}</ins>
+}</pre>
+						
+						<figure>
+							<img src="light-probes/object-with-lppv.png" width="380" height="190">
+							<figcaption>Large dynamic object with LPPV.</figcaption>
+						</figure>
+						
+						<aside>
+							<h3>Can objects that use LPPVs be instanced?</h3>
+							<div>
+								<p>Yes, if they use the same LPPV, which can be done by setting their <em>Proxy Volume Override</em> and using a LPPV from another game object.</p>
+							</div>
+						</aside>
+					</section>
+					
+				</section>
+				
+				<section>
+					<h2>Realtime Global Illumination</h2>
+					
+					<p>The downside of baking light is that it cannot change while in play mode. As explained in <a href="../../rendering/part-18/index.html">Rendering 18, Realtime GI, Probe Volumes, LOD Groups</a>, Unity makes it possible to precompute global illumination relationships, while the light intensity and direction can still be adjusted in play mode. This is done by enabling <em>Realtime Global Illumination</em> under <em>Realtime Lighting</em> in the <em>Lighting</em> window. Let's do that, while also disabling baked lighting, and set the light's <em>Mode</em> to <em>Realtime</em>.</p>
+					
+					<figure>
+						<img src="realtime-global-illumination/realtime-gi-settings.png" width="388" height="124">
+						<figcaption>Realtime global illumination only.</figcaption>
+					</figure>
+					
+					<p>Unity will use the Enlighten engine to precompute all data required for propagating indirect light, then stores that information to finalize the baking process later. This makes it possible to update the global illumination while playing. Initially only light probes pick up the realtime global illumination. Static objects use a dynamic light map instead.</p>
+					
+					<figure>
+						<img src="realtime-global-illumination/realtime-gi-dynamic-only.png" width="380" height="190">
+						<figcaption>Realtime global illumination via light probes.</figcaption>
+					</figure>
+					
+					<section>
+						<h3>Rendering Realtime Global Illumination</h3>
+						
+						<p>Rendering surface information for realtime lightmapping is also done with the meta pass. But the realtime light map will have a much lower resolution, and UV unwraps can be different. So we need different UV coordinates and transformation, made available via the third vertex UV channel and <code>unity_DynamicLightmapST</code>.</p>
+						
+						<pre>CBUFFER_START(UnityPerDraw)
+	float4 unity_LightmapST, <ins>unity_DynamicLightmapST</ins>;
+CBUFFER_END
+
+&hellip;
+
+struct VertexInput {
+	float4 pos : POSITION;
+	float2 uv : TEXCOORD0;
+	float2 lightmapUV : TEXCOORD1;
+	<ins>float2 dynamicLightmapUV : TEXCOORD2;</ins>
+};</pre>
+						
+						<p>The same output is needed for both baked and realtime light maps, so the only thing that differs is which coordinates we must use. That's indicated via <code>unity_MetaVertexControl</code>, with its first flag being set for baked and its second for realtime.</p>
+						
+						<pre>CBUFFER_START(UnityMetaPass)
+	float unity_OneOverOutputBoost;
+	float unity_MaxOutputValue;
+	bool4 <ins>unity_MetaVertexControl,</ins> unity_MetaFragmentControl;
+CBUFFER_END
+
+&hellip;
+
+VertexOutput MetaPassVertex (VertexInput input) {
+	VertexOutput output;
+	<ins>if (unity_MetaVertexControl.x) {</ins>
+		input.pos.xy =
+			input.lightmapUV * unity_LightmapST.xy + unity_LightmapST.zw;
+	<ins>}</ins>
+	<ins>if (unity_MetaVertexControl.y) {</ins>
+		<ins>input.pos.xy =</ins>
+			<ins>input.dynamicLightmapUV * unity_DynamicLightmapST.xy +</ins>
+			<ins>unity_DynamicLightmapST.zw;</ins>
+	<ins>}</ins>
+	input.pos.z = input.pos.z > 0 ? FLT_MIN : 0.0;
+	&hellip;
+}</pre>
+					</section>
+					
+					<section>
+						<h3>Sampling the Dynamic Light Map</h3>
+						
+						<p>Now we can sample the dynamic light map in <em>Lit.hlsl</em>, which works like the baked light map, but via the <code>unity_DynamicLightmap</code> texture and associated sampler state. Create a <code>SampleDynamicLightmap</code> function, which is a copy of <code>SampleLightmap</code> except that it uses the other texture and it is never encoded.</p>
+						
+						<pre><ins>TEXTURE2D(unity_DynamicLightmap);</ins>
+<ins>SAMPLER(samplerunity_DynamicLightmap);</ins>
+
+&hellip;
+
+<ins>float3 SampleDynamicLightmap (float2 uv) {</ins>
+	<ins>return SampleSingleLightmap(</ins>
+		<ins>TEXTURE2D_PARAM(unity_DynamicLightmap, samplerunity_DynamicLightmap), uv,</ins>
+		<ins>float4(1, 1, 0, 0), false,</ins>
+		<ins>float4(LIGHTMAP_HDR_MULTIPLIER, LIGHTMAP_HDR_EXPONENT, 0.0, 0.0)</ins>
+	<ins>);</ins>
+<ins>}</ins></pre>
+						
+						<p>When a dynamic light map needs to be sampled Unity will pick a shader variant with the <em>DYNAMICLIGHTMAP_ON</em> keyword set, so add a multi-compile directive for it.</p>
+						
+						<pre>			#pragma multi_compile _ LIGHTMAP_ON
+			<ins>#pragma multi_compile _ DYNAMICLIGHTMAP_ON</ins></pre>
+						
+						<p>Add the required UV coordinates and transformation, just like for the baked light map.</p>
+						
+						<pre>CBUFFER_START(UnityPerDraw)
+	&hellip;
+	float4 unity_LightmapST<ins>, unity_DynamicLightmapST</ins>;
+	&hellip;
+CBUFFER_END
+
+&hellip;
+
+struct VertexInput {
+	&hellip;
+	float2 lightmapUV : TEXCOORD1;
+	<ins>float2 dynamicLightmapUV : TEXCOORD2;</ins>
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+struct VertexOutput {
+	&hellip;
+	#if defined(LIGHTMAP_ON)
+		float2 lightmapUV : TEXCOORD4;
+	#endif
+	<ins>#if defined(DYNAMICLIGHTMAP_ON)</ins>
+		<ins>float2 dynamicLightmapUV : TEXCOORD5;</ins>
+	<ins>#endif</ins>
+	UNITY_VERTEX_INPUT_INSTANCE_ID
+};
+
+&hellip;
+
+VertexOutput LitPassVertex (VertexInput input) {
+	&hellip;
+	<ins>#if defined(DYNAMICLIGHTMAP_ON)</ins>
+		<ins>output.dynamicLightmapUV =</ins>
+			<ins>input.dynamicLightmapUV * unity_DynamicLightmapST.xy +</ins>
+			<ins>unity_DynamicLightmapST.zw;</ins>
+	<ins>#endif</ins>
+	return output;
+}</pre>
+						
+						<p>In <code>GlobalIllumination</code>, sample the dynamic light map if it is available. Both baked and realtime light maps can be used at the same time, so add them in that case.</p>
+						
+						<pre>float3 GlobalIllumination (VertexOutput input, LitSurface surface) {
+	#if defined(LIGHTMAP_ON)
+		<ins>float3 gi =</ins> SampleLightmap(input.lightmapUV);
+		<ins>#if defined(DYNAMICLIGHTMAP_ON)</ins>
+			<ins>gi += SampleDynamicLightmap(input.dynamicLightmapUV);</ins>
+		<ins>#endif</ins>
+		<ins>return gi;</ins>
+	<ins>#elif defined(DYNAMICLIGHTMAP_ON)</ins>
+		<ins>return SampleDynamicLightmap(input.dynamicLightmapUV);</ins>
+	<ins>#else</ins>
+		return SampleLightProbes(surface);
+	#endif
+}</pre>
+							
+							
+						<p>Static objects now also receive realtime global illumination.</p>
+						
+						<figure>
+							<img src="realtime-global-illumination/realtime-gi.png" width="380" height="190">
+							<figcaption>Sampled dynamic light map.</figcaption>
+						</figure>
+						
+						
+					</section>
+					
+					<section>
+						<h3>Realtime Indirect Emission</h3>
+						
+						<p>Our static emissive objects can also have their emission contribute to realtime global illumination, instead of being baked. 
+						
+						<figure>
+							<img src="realtime-global-illumination/realtime-emission-inspector.png" width="320" height="22" alt="inspector"><br>
+							<img src="realtime-global-illumination/realtime-emission.png" width="380" height="190" alt="scene">
+							<figcaption>Realtime indirect emission.</figcaption>
+						</figure>
+						
+						<p>The benefit of this is that it makes it possible to adjust the emission color and have it affect the indirect light in play mode, just like adjusting the color and orientation of the main light affects it. To demonstrate this, add a pulse emission frequency configuration option to <code class="csharp">InstancedMaterialProperties</code>. If it is larger than zero, use a cosine to oscillate the emission color between its original value and black while in play mode.</p>
+						
+						<pre class="csharp">	<ins>[SerializeField]</ins>
+	<ins>float pulseEmissionFreqency;</ins>
+
+	void Awake () {
+		OnValidate();
+		<ins>if (pulseEmissionFreqency &lt;= 0f) {</ins>
+			<ins>enabled = false;</ins>
+		<ins>}</ins>
+	}
+
+	<ins>void Update () {</ins>
+		<ins>Color originalEmissionColor = emissionColor;</ins>
+		<ins>emissionColor *= 0.5f +</ins>
+			<ins>0.5f * Mathf.Cos(2f * Mathf.PI * pulseEmissionFreqency * Time.time);</ins>
+		<ins>OnValidate();</ins>
+		<ins>emissionColor = originalEmissionColor;</ins>
+	<ins>}</ins></pre>
+						
+						<figure>
+							<img src="realtime-global-illumination/pulsing-inspector.png" width="320" height="40" alt="inspector"><br>
+							<img src="realtime-global-illumination/pulsing.png" width="220" height="200" alt="scene">
+							<figcaption>Adjusted emission, but unchanging indirect light.</figcaption>
+						</figure>
+						
+						<p>Just changing the emission color doesn't automatically update the global illumination. We have to tell Unity that the lighting situation has changed, which can be done by invoking <code>UpdateGIMaterials</code> on the <code class="csharp">MeshRenderer</code> component of the changed object.</p>
+						
+						<pre class="csharp">		OnValidate();
+		<ins>GetComponent&lt;MeshRenderer>().UpdateGIMaterials();</ins>
+		emissionColor = originalEmissionColor;</pre>
+						
+						<p>That will trigger a meta pass render for our object, which is overkill when only changing a uniform color. In this case we can suffice with setting a uniform color directly, by invoking <code class="csharp">DynamicGI.SetEmissive</code> with the renderer and color, which is a lot faster to compute.</p>
+						
+						<pre class="csharp">		<del>//GetComponent&lt;MeshRenderer>().UpdateGIMaterials();</del>
+		<ins>DynamicGI.SetEmissive(GetComponent&lt;MeshRenderer>(), emissionColor);</ins>
+		emissionColor = originalEmissionColor;</pre>
+						
+						<figure>
+							<div class="vid" style="width: 220px; height:200px;"><iframe src='https://gfycat.com/ifr/likableagonizingdingo'></iframe></div>
+							<figcaption>Updating global illumination.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Transparency</h3>
+						
+						<p>Unity uses Enlighten to generate realtime global illumination, which doesn't work well with transparent surfaces by default.</p>
+						
+						<figure>
+							<img src="realtime-global-illumination/transparency-dark.png" width="280" height="240">
+							<figcaption>Transparency too dark.</figcaption>
+						</figure>
+						
+						<p>In this case we must explicitly mark objects as transparent, by giving it custom lightmapping parameters with <em>Is Transparent</em> enabled.</p>
+						
+						<figure>
+							<img src="realtime-global-illumination/transparency-inspector.png" width="320" height="36" alt="inspector"><br>
+							<img src="realtime-global-illumination/transparency-bright.png" width="280" height="240" alt="scene">
+							<figcaption>Too bright near transparency.</figcaption>
+						</figure>
+						
+						<p>Transparent surfaces don't block light, but they still contribute fully to the indirect light accumulation. The result is that global illumination becomes too strong near transparent surfaces. This becomes very obvious when making the object fully transparent.</p>
+						
+						<figure>
+							<img src="realtime-global-illumination/fully-transparent-bright.png" width="280" height="240">
+							<figcaption>Fully transparent, no illumination change.</figcaption>
+						</figure>
+						
+						<p>We can compensate for this by factoring opacity into the albedo and emissive color in the meta pass.</p>
+						
+						<pre>	float4 albedoAlpha = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
+	albedoAlpha *= _Color;
+	<ins>albedoAlpha.rgb *= albedoAlpha.a;</ins>
+	&hellip;
+	if (unity_MetaFragmentControl.y) {
+		meta = float4(_EmissionColor.rgb <ins>* albedoAlpha.a</ins>, 1);
+	}</pre>
+						
+						<p>Because the resolution of the dynamic light map is very low, the texture won't affect the final result much, but the uniform opacity value does.</p>
+						
+						<figure>
+							<img src="realtime-global-illumination/fully-transparent-adjusted.png" width="280" height="240">
+							<figcaption>Transparency factored into illumination.</figcaption>
+						</figure>
+						
+						<p>Note that Unity doesn't always pick up these changes, even when it recreates the precomputed data. It might cache old lighting results in edit mode, if it thinks they're still valid. I've found it most reliable to toggle play mode to make differences show up.</p>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Point and Spotlights</h2>
+					
+					<p>Up to this points we've only worked with a directional light. Let's check if everything also works with point and spotlights.</p>
+					
+					<figure>
+						<img src="point-and-spotlights/realtime.png" width="380" height="190">
+						<figcaption>Point and spotlight, realtime only.</figcaption>
+					</figure>
+					
+					<section>
+						<h3>Realtime Global Illumination</h3>
+						
+						<p>When realtime global illumination is enabled, both lights are baked as expected, but the results are incorrect. Shadows are not taken into consideration when their indirect lighting is computed. They're also too bright.</p>
+						
+						<figure>
+							<img src="point-and-spotlights/realtime-gi.png" width="380" height="190">
+							<figcaption>Unshadowed indirect lighting.</figcaption>
+						</figure>
+						
+						<p>It turns out that shadowed realtime indirect lighting is not supported for these lights, and Unity mentions this in their inspector. Dynamic global illumination was primarily added to support indirect light of the sun, to allow for a day-night cycle combined with global illumination. That only requires full support for directional lights.
+						
+						<figure>
+							<img src="point-and-spotlights/not-supported.png" width="320" height="100">
+							<figcaption>Not supported.</figcaption>
+						</figure>
+						
+						<p>You can still use these lights, but if you want them to contribute to dynamic global illumination you have to work around this limitation. Alternatively, set their <em>Indirect Multiplier</em> to zero for realtime lights so they don't contribute to dynamic global illumination at all.</p>
+					</section>
+					
+					<section>
+						<h3>Baked Global Illumination</h3>
+						
+						<p>Mixed and fully-baked point and spotlights don't suffer the above problem and can be used without problem, except that they still appear too bright.</p>
+						
+						<figure>
+							<img src="point-and-spotlights/baked-too-bright.png" width="380" height="190">
+							<figcaption>Baked only, too bright.</figcaption>
+						</figure>
+						
+						<p>The light contribution is too much because Unity assumes that the legacy light falloff of the default pipeline is used, while we use the physically-correct inverse squared falloff. This isn't an issue for directionals light because they don't have a falloff. To fix this <code class="csharp">MyPipeline</code> must tell Unity which falloff function to use when lightmapping. We need to use types from the <code class="csharp">Unity.Collections</code> and <code class="csharp">UnityEngine.Experimental.GlobalIllumination</code> for this. However, using the latter causes a type clash for <code class="csharp">LightType</code>, so use that explicitly as <code class="csharp">UnityEngine.LightType</code>.</p>
+						
+						<pre class="csharp"><ins>using Unity.Collections;</ins>
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Experimental.Rendering;
+<ins>using UnityEngine.Experimental.GlobalIllumination;</ins>
+<ins>using LightType = UnityEngine.LightType;</ins>
+using Conditional = System.Diagnostics.ConditionalAttribute;</pre>
+						
+						<p>We have to override how the lightmapper sets up its light data. That's done by providing it with a delegate to a method that transfers data from an input <code class="csharp">Light</code> array to an ouput <code class="csharp">LightDataGI</code> array. The delegate's type is <code class="csharp">Lightmapping.RequestLightsDelegate</code> and we'll define the method with a lambda expression as we won't need it anywhere else.</p>
+						
+						<pre class="csharp">	<ins>static Lightmapping.RequestLightsDelegate lightmappingLightsDelegate =</ins>
+		<ins>(Light[] inputLights, NativeArray&lt;LightDataGI> outputLights) => {};</ins></pre>
+						
+						<p>This delegate will only be used in the editor, so we can make its compilation conditional.</p>
+						
+						<pre class="csharp"><ins>#if UNITY_EDITOR</ins>
+	static Lightmapping.RequestLightsDelegate lightmappingLightsDelegate =
+		(Light[] inputLights, NativeArray&lt;LightDataGI> outputLights) => {};
+<ins>#endif</ins></pre>
+						
+						<p>We have to loop through all lights, configure a <code class="csharp">LightDataGI</code> struct appropriately, set its falloff to <code class="csharp">FalloffType.InverseSquared</code>, and copy it to the output array.</p>
+						
+						<pre class="csharp">	static Lightmapping.RequestLightsDelegate lightmappingLightsDelegate =
+		(Light[] inputLights, NativeArray&lt;LightDataGI> outputLights) => {
+			<ins>LightDataGI lightData = new LightDataGI();</ins>
+			<ins>for (int i = 0; i &lt; inputLights.Length; i++) {</ins>
+				<ins>Light light = inputLights[i];</ins>
+				<ins>lightData.falloff = FalloffType.InverseSquared;</ins>
+				<ins>outputLights[i] = lightData;</ins>
+			<ins>}</ins>
+		};</pre>
+						
+						<p>Each light type must be explicitly configured, even though we don't need to change anything of the default behavior except the falloff. We can use the <code class="csharp">LightmapperUtils.Extract</code> method to put the appropriate values in a light-specific struct, then copy those to the light data via its <code class="csharp">Init</code> method. If we end up with an unknown light type we invoke <code class="csharp">InitNoBake</code> instead, with the light's instance identifier.</p>
+						
+						<pre class="csharp">				Light light = inputLights[i];
+				<ins>switch (light.type) {</ins>
+					<ins>case LightType.Directional:</ins>
+						<ins>var directionalLight = new DirectionalLight();</ins>
+						<ins>LightmapperUtils.Extract(light, ref directionalLight);</ins>
+						<ins>lightData.Init(ref directionalLight);</ins>
+						<ins>break;</ins>
+					<ins>case LightType.Point:</ins>
+						<ins>var pointLight = new PointLight();</ins>
+						<ins>LightmapperUtils.Extract(light, ref pointLight);</ins>
+						<ins>lightData.Init(ref pointLight);</ins>
+						<ins>break;</ins>
+					<ins>case LightType.Spot:</ins>
+						<ins>var spotLight = new SpotLight();</ins>
+						<ins>LightmapperUtils.Extract(light, ref spotLight);</ins>
+						<ins>lightData.Init(ref spotLight);</ins>
+						<ins>break;</ins>
+					<ins>case LightType.Area:</ins>
+						<ins>var rectangleLight = new RectangleLight();</ins>
+						<ins>LightmapperUtils.Extract(light, ref rectangleLight);</ins>
+						<ins>lightData.Init(ref rectangleLight);</ins>
+						<ins>break;</ins>
+					<ins>default:</ins>
+						<ins>lightData.InitNoBake(light.GetInstanceID());</ins>
+						<ins>break;</ins>
+				<ins>}</ins>
+				lightData.falloff = FalloffType.InverseSquared;
+				outputLights[i] = lightData;</pre>
+						
+						<p>Override the default behavior with this delegate, by passing it to the <code class="csharp">Lightmapping.SetDelegate</code> method, at the end of our constructor method. We must also revert back to the default behavior when our pipeline object is disposed of, which we do by overriding its <code class="csharp">Dispose</code> method, to invoke the base implementation, followed by <code class="csharp">Lightmapping.ResetDelegate</code>.</p>
+						
+						<pre class="csharp">	public MyPipeline (
+		&hellip;
+	) {
+		&hellip;
+<ins>#if UNITY_EDITOR</ins>
+		<ins>Lightmapping.SetDelegate(lightmappingLightsDelegate);</ins>
+<ins>#endif</ins>
+	}
+
+<ins>#if UNITY_EDITOR</ins>
+	<ins>public override void Dispose () {</ins>
+		<ins>base.Dispose();</ins>
+		<ins>Lightmapping.ResetDelegate();</ins>
+	<ins>}</ins>
+<ins>#endif</ins></pre>
+						
+						<figure>
+							<img src="point-and-spotlights/baked.png" width="380" height="190">
+							<figcaption>Correctly baked.</figcaption>
+						</figure>
+						
+						<p>Want to know when the next tutorial is released? Keep tabs on my <a href="https://www.patreon.com/catlikecoding">Patreon</a> page!</p>
+					</section>
+					
+					<a href="https://bitbucket.org/catlikecodingunitytutorials/scriptable-render-pipeline-08-global-illumination/" class="repository">repository</a>
+					<a href="Global-Illumination.pdf" download rel="nofollow">PDF</a>
+				</section>
+				
+			</article>
+		</main>
+
+		<footer>
+			<p>Enjoying the <a href="../../../tutorials">tutorials</a>? Are they useful? Want more?</p>
+			<p><b><a href="https://www.patreon.com/catlikecoding">Please support me on Patreon!</a></b></p>
+			<p><a href="https://www.patreon.com/catlikecoding"><img src="../../become-a-patron.png" alt="Become my patron!" width="217" height="51"></a></p>
+			<p><b><a href="../../donating.html">Or make a direct donation</a>!</b></p>
+			<p>made by <a href="../../../../about/index.html" rel="author">Jasper Flick</a></p>
+		</footer>
+		
+		<script src="../../tutorials.js"></script>
+	</body>
+</html>

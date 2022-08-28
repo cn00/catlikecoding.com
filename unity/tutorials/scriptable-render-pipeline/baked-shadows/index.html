@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/baked-shadows/">
+		<meta property="og:type" content="article">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/baked-shadows/tutorial-image.jpg">
+		<meta property="og:title" content="Baked Shadows">
+		<meta property="og:description" content="A Unity Scriptable Render Pipeline tutorial about baking shadows with shadow masks or subtractive lighting.">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta name="viewport" content="width=768">
+		<title>Baked Shadows</title>
+		<link href="../../tutorials.css" rel="stylesheet">
+		<link rel="manifest" href="https://catlikecoding.com/site.webmanifest">
+		<link rel="mask-icon" href="https://catlikecoding.com/safari-pinned-tab.svg" color="#aa0000">
+
+		<script type="application/ld+json">{
+			"@context": "http://schema.org",
+			"@type": "WebPage",
+			"mainEntity": {
+				"@type": "TechArticle",
+				"@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/baked-shadows/#article",
+				"headline": "Baked Shadows",
+				"alternativeHeadline": "Mixed Lighting",
+				"datePublished": "2019-05-31",
+				"author": { "@type": "Person", "name": "Jasper Flick", "@id": "https://catlikecoding.com/jasper-flick/#person" },
+				"publisher": { "@type": "Organization", "name": "Catlike Coding", "@id": "https://catlikecoding.com/#organization" },
+				"description": "A Unity Scriptable Render Pipeline tutorial about baking shadows with shadow masks or subtractive lighting.",
+				"image": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/baked-shadows/tutorial-image.jpg",
+				"dependencies": "Unity 2018.3.0f2",
+				"proficiencyLevel": "Expert"
+			},
+			"breadcrumb": {
+				"@type": "BreadcrumbList",
+				"itemListElement": [
+					{ "@type": "ListItem", "position": 1, "item": { "@id": "https://catlikecoding.com/unity/", "name": "Unity" }},
+					{ "@type": "ListItem", "position": 2, "item": { "@id": "https://catlikecoding.com/unity/tutorials/", "name": "Tutorials" }},
+					{ "@type": "ListItem", "position": 3, "item": { "@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/", "name": "Scriptable Render Pipeline" }}
+				]
+			}
+		}</script>
+		<script>
+			var customTypes = {
+				ClipMode: 1,
+				DoubleSidedMeshMenuItem: 1,
+				InstancedMaterialProperties: 1,
+				LitShaderGUI: 1,
+				LitSurface: 1,
+				MyPipeline: 1,
+				MyPipelineAsset: 1,
+				MyPipelineAssetEditor: 1,
+				ShadowCascades: 1,
+				ShadowMapSize: 1
+			};
+			
+			var defaultCodeClass = "shader";
+			var hasMath = true;
+		</script>
+	</head>
+	<body>
+		<header>
+			<a href="https://catlikecoding.com"><img src="https://catlikecoding.com/catlike-coding-logo.svg" alt="Catlike Coding" width="45" height="45"></a>
+			<nav>
+				<ol>
+					<li><a href="https://catlikecoding.com">Catlike Coding</a></li>
+					<li><a href="https://catlikecoding.com/unity/">Unity</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/">Tutorials</a></li>
+					<li><a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">Scriptable Render Pipeline</a></li>
+				</ol>
+			</nav>
+		</header>
+		
+		<main>
+			<article>
+				<header>
+					<h1>Baked Shadows</h1>
+					<p>Mixed Lighting</p>
+					<ul>
+						<li>Fade realtime shadows.</li>
+						<li>Apply a shadowmask and shadow probes.</li>
+						<li>Use up to four baked shadows per object.</li>
+						<li>Choose between normal and distance shadowmask mode.</li>
+						<li>Support subtractive lighting.</li>
+					</ul>
+				</header>
+				
+				<p>This is the ninth installment of a tutorial series covering Unity's <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/">scriptable render pipeline</a>. It's about combining realtime lighting with baked shadows, and baked lighting with realtime shadows in the case of subtractive lighting.</p>
+				
+				<p>This tutorial is made with Unity 2018.3.0f2.</p>
+				
+				<figure>
+					<img src="tutorial-image.jpg" width="512" height="256">
+					<figcaption>Baked and realtime shadows working together.</figcaption>
+				</figure>
+				
+				<section>
+					<h2>Shadow Fading</h2>
+					
+					<p>Realtime lighting with shadows is expensive to render. Baked lighting is much cheaper, but doesn't contain specular reflections and cannot change at runtime. Unity supports a third approach, which combines realtime lighting with baked shadows. But some realtime shadows are used still, so both types of shadows have to be mixed somehow. The baked shadows are not subject to the shadow distance, but realtime shadows are. To make the sudden disappearance of realtime shadows less jarring, we'll begin by adding support to make them fade out as they approach the shadow distance.</p>
+					
+					<figure>
+						<img src="shadow-fading/clamped.jpg" width="390" height="200">
+						<figcaption>Realtime shadows clamped by shadow distance.</figcaption>
+					</figure>
+					
+					<section>
+						<h3>Fade Range</h3>
+						
+						<p>The simplest way to fade out shadows is to subtract the shadow distance from the fragment's distance to the camera, add one, and then saturate the result: `c - s + 1`. The final value is zero up to one unit less than the shadow distance, after which it linearly increases to 1 as it reaches the shadow distance. At that point realtime shadows are gone and we have to rely on baked shadows only.</p>
+						
+						<p>But we don't need to always fade across a range of one unit. We can use an arbitrary positive fade range by dividing both distances by it: `(c-s)/r+1`.</p>
+						
+						<figure>
+							<img src="shadow-fading/fade-graph.png" width="250" height="50">
+							<figcaption>`(c-4)/2+1`.</figcaption>
+						</figure>
+						
+						<p>Add a configuration option to <code class="csharp">MyPipelineAsset</code> for the fade range, with reasonable limits like 0.01&ndash;2, and a default of 1. Add it to the constructor arguments, after the shadow distance.</p>
+						
+						<pre class="csharp" translate="no">	<ins>[SerializeField, Range(0.01f, 2f)]</ins>
+	<ins>float shadowFadeRange = 1f;</ins>
+
+	&hellip;
+
+	protected override IRenderPipeline InternalCreatePipeline () {
+		Vector3 shadowCascadeSplit = shadowCascades == ShadowCascades.Four ?
+			fourCascadesSplit : new Vector3(twoCascadesSplit, 0f);
+		return new MyPipeline(
+			dynamicBatching, instancing, (int)shadowMapSize,
+			shadowDistance, <ins>shadowFadeRange,</ins>
+			(int)shadowCascades, shadowCascadeSplit
+		);
+	}</pre>
+						
+						<p><code class="csharp">MyPipeline</code> doesn't need to keep track of the actual fade range. We can rewrite the fade function to `c/r+(1-s/r)`, so we can pass two values to the shader and can make do with a single multiply-add instruction. We'll put `1/r` in the Y component of the global shadow data and `1-s/r` in its Z component. Let's move the global shadow data to a field and immediately set its Y value in the constructor method.</p>
+						
+						<pre class="csharp" translate="no">	<ins>Vector4 globalShadowData;</ins>
+
+	public MyPipeline (
+		bool dynamicBatching, bool instancing,
+		int shadowMapSize, float shadowDistance, <ins>float shadowFadeRange,</ins>
+		int shadowCascades, Vector3 shadowCascasdeSplit
+	) {
+		&hellip;
+		this.shadowDistance = shadowDistance;
+		<ins>globalShadowData.y = 1f / shadowFadeRange;</ins>
+		&hellip;
+	}</pre>
+						
+						<figure>
+							<img src="shadow-fading/fade-range.png" width="320" height="38">
+							<figcaption>Shadow fade range set to 1.</figcaption>
+						</figure>
+						
+						<p>From now on we'll set the global shadow data in <code class="csharp">Render</code>, where we also calculate its Z component, for which we can rely on its Y value.</p>
+						
+						<pre class="csharp" translate="no">	void Render (ScriptableRenderContext context, Camera camera) {
+		&hellip;
+		cameraBuffer.SetGlobalVectorArray(
+			visibleLightSpotDirectionsId, visibleLightSpotDirections
+		);
+		<ins>globalShadowData.z =</ins>
+			<ins>1f - cullingParameters.shadowDistance * globalShadowData.y;</ins>
+		<ins>cameraBuffer.SetGlobalVector(globalShadowDataId, globalShadowData);</ins>
+		context.ExecuteCommandBuffer(cameraBuffer);
+		&hellip;
+	}</pre>
+						
+						<p>Remove the global shadow data code from both <code class="csharp">RenderCascadedShadows</code> and <code class="csharp">RenderShadows</code>, except that in the latter case we still need to put the tile scale in its X component.</p>
+						
+						<pre class="csharp" translate="no">	void RenderCascadedShadows (ScriptableRenderContext context) {
+		&hellip;
+		<del>//shadowBuffer.SetGlobalVector(</del>
+		<del>//	globalShadowDataId, new Vector4(0f, shadowDistance * shadowDistance)</del>
+		<del>//);</del>
+		&hellip;
+	}
+
+	void RenderShadows (ScriptableRenderContext context) {
+		&hellip;
+		float tileScale = 1f / split;
+		<ins>globalShadowData.x = tileScale;</ins>
+		shadowMap = SetShadowRenderTarget();
+		shadowBuffer.BeginSample("Render Shadows");
+		<del>//shadowBuffer.SetGlobalVector(</del>
+		<del>//	globalShadowDataId, new Vector4(</del>
+		<del>//		tileScale, shadowDistance * shadowDistance</del>
+		<del>//	)</del>
+		<del>//);</del>
+		&hellip;
+	}</pre>
+						
+					</section>
+					
+					<section>
+						<h3>Fixing Shadow Clipping</h3>
+						
+						<p>Shadows no longer get clipped at the shadow distance, because we changed the global shadow data. To fix that, first remove the <code>DistanceToCameraSqr</code> function from <em translate="no">Lit.hlsl</em>. Replace it with a function that calculates the shadow blend factor based on the global shadow data.
+						
+						<pre translate="no"><del>//float DistanceToCameraSqr (float3 worldPos) {</del>
+<del>//	float3 cameraToFragment = worldPos - _WorldSpaceCameraPos;</del>
+<del>//	return dot(cameraToFragment, cameraToFragment);</del>
+<del>//}</del>
+
+<ins>float RealtimeToBakedShadowsInterpolator (float3 worldPos) {</ins>
+	<ins>float d = distance(worldPos, _WorldSpaceCameraPos);</ins>
+	<ins>return saturate(d * _GlobalShadowData.y + _GlobalShadowData.z);</ins>
+<ins>}</ins></pre>
+						
+						<p>When this value reaches 1 then realtime shadows are no longer used, so we can skip sampling them. Create a convenient function that checks this and use it in <code>ShadowAttenuation</code> and <code>CascadedShadowAttenuation</code>.</p>
+						
+						<pre translate="no"><ins>bool SkipRealtimeShadows (float3 worldPos) {</ins>
+	<ins>return RealtimeToBakedShadowsInterpolator(worldPos) >= 1.0;</ins>
+<ins>}</ins>
+
+&hellip;
+
+float ShadowAttenuation (int index, float3 worldPos) {
+	&hellip;
+	if (
+		_ShadowData[index].x &lt;= 0 || <ins>SkipRealtimeShadows(worldPos)</ins>
+		<del>//DistanceToCameraSqr(worldPos) > _GlobalShadowData.y</del>
+	) {
+		return 1.0;
+	}
+	&hellip;
+}
+
+&hellip;
+
+float CascadedShadowAttenuation (float3 worldPos) {
+	&hellip;
+	<del>//if (DistanceToCameraSqr(worldPos) > _GlobalShadowData.y) {</del>
+	<ins>if (SkipRealtimeShadows(worldPos)) {</ins>
+		return 1.0;
+	}
+	
+	&hellip;
+}</pre>
+						
+						<p>The shadows are now once again clipped beyond the shadow distance.</p>
+					</section>
+					
+					<section>
+						<h3>Fading</h3>
+						
+						<p>Fading realtime shadows is just a special case of mixing realtime and baked shadows, when no baked shadows are available. We'll do that in a new <code>MixRealtimeAndBakedShadowAttenuation</code> function, which initially has parameters for only the realtime shadow attenuation and the world position. Nonexistent baked shadows have an attenuation of 1, so interpolate between the realtime shadows and that based on the interpolator.</p>
+						
+						<pre translate="no">float RealtimeToBakedShadowsInterpolator (float3 worldPos) {
+	float d = distance(worldPos, _WorldSpaceCameraPos);
+	return saturate(d * _GlobalShadowData.y + _GlobalShadowData.z);
+}
+
+<ins>float MixRealtimeAndBakedShadowAttenuation (float realtime, float3 worldPos) {</ins>
+	<ins>float t = RealtimeToBakedShadowsInterpolator(worldPos);</ins>
+	<ins>float fadedRealtime = lerp(realtime, 1, t);</ins>
+	<ins>return fadedRealtime;</ins>
+<ins>}</ins></pre>
+						
+						<p>Shadow attenuation is either 0 or 1, with a little bit of filtering along the edges. Effectively we end up of with either <code>lerp(0, 1, t)</code> which is simply <code>t</code>, or <code>lerp(1, 1, t)</code> which is always <code>1</code>. We can get the same results by adding the interpolator to the realtime shadow attenuation and saturating the result, which is a little cheaper to compute.</p>
+						
+						<pre translate="no">	float fadedRealtime = <ins>saturate(realtime + t)</ins>;</pre>
+						
+						<p>Pull the shadow sampling out of <code>MainLight</code> to be consistent with <code>GenericLight</code>, then mix the shadows before passing the final attenuation to the two light functions in <code>LitPassFragment</code>.</p>
+						
+						<pre translate="no">float3 MainLight (LitSurface s<ins>, float shadowAttenuation</ins>) {
+	<del>//float shadowAttenuation = CascadedShadowAttenuation(s.position);</del>
+	&hellip;
+}
+
+&hellip;
+
+float4 LitPassFragment (
+	VertexOutput input, FRONT_FACE_TYPE isFrontFace : FRONT_FACE_SEMANTIC
+) : SV_TARGET {
+	&hellip;
+	
+	float3 color = input.vertexLighting * surface.diffuse;
+	#if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)
+		<ins>float shadowAttenuation = MixRealtimeAndBakedShadowAttenuation(</ins>
+			<ins>CascadedShadowAttenuation(surface.position), surface.position</ins>
+		<ins>);</ins>
+		color += MainLight(surface<ins>, shadowAttenuation</ins>);
+
+	#endif
+	
+	for (int i = 0; i &lt; min(unity_LightIndicesOffsetAndCount.y, 4); i++) {
+		int lightIndex = unity_4LightIndices0[i];
+		<del>//float shadowAttenuation = ShadowAttenuation(lightIndex, input.worldPos);</del>
+		<ins>float shadowAttenuation = MixRealtimeAndBakedShadowAttenuation(</ins>
+			<ins>ShadowAttenuation(lightIndex, surface.position), surface.position</ins>
+		<ins>);</ins>
+		color += GenericLight(lightIndex, surface, shadowAttenuation);
+	}
+	
+	&hellip;
+}</pre>
+						
+						<figure>
+							<img src="shadow-fading/fading.jpg" width="390" height="200">
+							<figcaption>Fading realtime shadows.</figcaption>
+						</figure>
+						
+					</section>
+				</section>
+				
+				<section>
+					<h2>Shadowmask</h2>
+					
+					<p>To bake shadows, set Unity's mixed lighting mode to <em translate="no">Shadowmask</em>. Also disable realtime global illumination so we can focus on the shadows. We'll initially work with only the main directional light, which should be set to <em translate="no">Mixed</em> mode.</p>
+					
+					<figure>
+						<img src="shadowmask/baked-shadowmask.png" width="390" height="152">
+						<figcaption>Baking shadowmask.</figcaption>
+					</figure>
+					
+					<p>There are two ways that shadowmask mode can be used: either regular <em translate="no">Shadowmask</em> or <em translate="no">Distance Shadowmask</em>. We'll use the regular mode for now, which is a quality setting found under the project settings.</p>
+					
+					<figure>
+						<img src="shadowmask/shadowmask-mode.png" width="380" height="40">
+						<figcaption>Shadowmask mode.</figcaption>
+					</figure>
+					
+					<p>When inspecting the baked light map, you can now select <em translate="no">Baked Shadowmask</em> from the top-right dropdown menu. When using only a single directional light, the resulting map is black and red. Unshadowed fragments are red, because the red channel is used to store the shadow attenuation. Besides that, the regular lightmap contains baked indirect lighting, exactly like the <em translate="no">Baked Indirect</em> mixed lighting mode.</p>
+					
+					<figure>
+						<img src="shadowmask/shadowmask.jpg" width="270" height="270">
+						<figcaption>Baked shadowmask for plane.</figcaption>
+					</figure>
+					
+					<p>Now that the static shadows are baked, static geometry is no longer included when rendering realtime shadow maps. As we're not yet using the baked shadows, they have disappeared.</p>
+					
+					<figure>
+						<img src="shadowmask/no-static-shadows.jpg" width="390" height="200">
+						<figcaption>No static shadows, only realtime.</figcaption>
+					</figure>
+					
+					<section>
+						<h3>Detecting a Shadowmask</h3>
+						
+						<p>To use baked shadows we must first know that they exist. Whether a shadowmask is used varies per light, so  we must check this in <code class="csharp">MyPipeline.ConfigureLights</code>. If a shadow mask exists, we'll enable the <em translate="no">_SHADOWMASK</em> shader keyword.</p>
+						
+						<pre class="csharp" translate="no">	<ins>const string shadowmaskKeyword = "_SHADOWMASK";</ins>
+	
+	&hellip;
+	
+	void ConfigureLights () {
+		mainLightExists = false;
+		<ins>bool shadowmaskExists = false;</ins>
+		shadowTileCount = 0;
+		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+		}
+		
+		<ins>CoreUtils.SetKeyword(cameraBuffer, shadowmaskKeyword, shadowmaskExists);</ins>
+
+		&hellip;
+	}</pre>
+						
+						<p>For each visible light, we can check how it was baked by retrieving the baking output from the light object. If its bake type is mixed, then a shadowmask is in used if the light's mixed baking mode is set to shadowmask.</p>
+						
+						<pre class="csharp" translate="no">		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			if (i == maxVisibleLights) {
+				break;
+			}
+			VisibleLight light = cull.visibleLights[i];
+			visibleLightColors[i] = light.finalColor;
+			Vector4 attenuation = Vector4.zero;
+			attenuation.w = 1f;
+			Vector4 shadow = Vector4.zero;
+
+			<ins>LightBakingOutput baking = light.light.bakingOutput;</ins>
+			<ins>if (baking.lightmapBakeType == LightmapBakeType.Mixed) {</ins>
+				<ins>shadowmaskExists |=</ins>
+					<ins>baking.mixedLightingMode == MixedLightingMode.Shadowmask;</ins>
+			<ins>}</ins>
+			
+			&hellip;
+		}</pre>
+						
+						<p>Add a multi-compile directive to our shader for the keyword.</p>
+						
+						<pre translate="no">			#pragma multi_compile _ DYNAMICLIGHTMAP_ON
+			<ins>#pragma multi_compile _ _SHADOWMASK</ins></pre>
+						
+					</section>
+					
+					<section>
+						<h3>Sampling Baked Shadows</h3>
+						
+						<p>The shadow mask is made available via a <code>unity_ShadowMask</code> texture handle and its associated sampler state. Add those to <em translate="no">Lit.hlsl</em>.</p>
+						
+						<pre translate="no"><ins>TEXTURE2D(unity_ShadowMask);</ins>
+<ins>SAMPLER(samplerunity_ShadowMask);</ins></pre>
+						
+						<p>The shadow mask uses the same texture coordinates as the light map. Create a function to get the baked shadows, like <code>GlobalIllumination</code> with the input and surface as parameters. We don't use the position yet but we will later. The default is to return 1, indicating no baked shadows. What else needs to be done depends on whether we're rendering a static or dynamic object. The result is a <code>float4</code> because a shadow mask sample can contain shadow attenuation for up to four lights.</p>
+						
+						<pre translate="no">float3 GlobalIllumination (VertexOutput input, LitSurface surface) {
+	&hellip;
+}
+
+<ins>float4 BakedShadows (VertexOutput input, LitSurface surface) {</ins>
+	<ins>#if defined(LIGHTMAP_ON)</ins>
+	<ins>#else</ins>
+	<ins>#endif</ins>
+	<ins>return 1.0;</ins>
+<ins>}</ins></pre>
+						
+						<p>In the case of a static fragment, if there is a shadow mask we'll sample it and that's the result.</p>
+						
+						<pre translate="no">	#if defined(LIGHTMAP_ON)
+		<ins>#if defined(_SHADOWMASK)</ins>
+			<ins>return SAMPLE_TEXTURE2D(</ins>
+				<ins>unity_ShadowMask, samplerunity_ShadowMask, input.lightmapUV</ins>
+			<ins>);</ins>
+		<ins>#endif</ins>
+	#else</pre>
+						
+						<p>Retrieve the baked shadows in <code>LitPassFragment</code> and pass them to both invocations of <code>MixRealtimeAndBakedShadowAttenuation</code>, after the realtime shadow attenuation argument.</p>
+						
+						<pre translate="no">float4 LitPassFragment (
+	VertexOutput input, FRONT_FACE_TYPE isFrontFace : FRONT_FACE_SEMANTIC
+) : SV_TARGET {
+	&hellip;
+		
+	<ins>float4 bakedShadows = BakedShadows(input, surface);</ins>
+	
+	float3 color = input.vertexLighting * surface.diffuse;
+	#if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)
+		float shadowAttenuation = MixRealtimeAndBakedShadowAttenuation(
+			CascadedShadowAttenuation(surface.position), <ins>bakedShadows,</ins>
+			surface.position
+		);
+		color += MainLight(surface, shadowAttenuation);
+	#endif
+	
+	for (int i = 0; i &lt; min(unity_LightIndicesOffsetAndCount.y, 4); i++) {
+		int lightIndex = unity_4LightIndices0[i];
+		float shadowAttenuation = MixRealtimeAndBakedShadowAttenuation(
+			ShadowAttenuation(lightIndex, surface.position), <ins>bakedShadows,</ins>
+			surface.position
+		);
+		color += GenericLight(lightIndex, surface, shadowAttenuation);
+	}
+	
+	&hellip;
+}</pre>
+						
+						<p>Add a corresponding parameter to <code>MixRealtimeAndBakedShadowAttenuation</code>. As we only support the main light, the baked shadow attenuation that we need is stored in the first channel of the baked shadows. Return it instead of the faded realtime shadow attenuation if there is a shadow mask.</p>
+						
+						<pre translate="no">float MixRealtimeAndBakedShadowAttenuation (
+	float realtime, <ins>float4 bakedShadows,</ins> float3 worldPos
+) {
+	float t = RealtimeToBakedShadowsInterpolator(worldPos);
+	float fadedRealtime = saturate(realtime + t);
+	<ins>float baked = bakedShadows.x;</ins>
+	
+	<ins>#if defined(_SHADOWMASK)</ins>
+		<ins>return baked;</ins>
+	<ins>#endif</ins>
+	return fadedRealtime;
+}</pre>
+						
+						<p>This causes all shadows to disappear, because we haven't told Unity yet that it should send the shadow mask data to the GPU. That's done by enabling the <code class="csharp">RendererConfiguration.PerObjectShadowMask</code> flag of the renderer configuration.</p>
+						
+						<pre class="csharp" translate="no">		drawSettings.rendererConfiguration |=
+			RendererConfiguration.PerObjectReflectionProbes |
+			RendererConfiguration.PerObjectLightmaps |
+			RendererConfiguration.PerObjectLightProbe |
+			RendererConfiguration.PerObjectLightProbeProxyVolume <ins>|</ins>
+			<ins>RendererConfiguration.PerObjectShadowMask</ins>;</pre>
+						
+						<figure>
+							<img src="shadowmask/only-baked-shadows.jpg" width="390" height="200">
+							<figcaption>Only baked shadows.</figcaption>
+						</figure>
+						
+						<p>Baked shadows now show up. To mix them with the realtime shadows return the minimum of both attenuations.</p>
+						
+						<pre translate="no">	#if defined(_SHADOWMASK)
+		return <ins>min(fadedRealtime,</ins> baked<ins>)</ins>;
+	#endif
+</pre>
+						
+						<figure>
+							<img src="shadowmask/mixed-shadows.jpg" width="390" height="200">
+							<figcaption>Mixed realtime and baked shadows.</figcaption>
+						</figure>
+						
+						<p>Note that although the baked shadows cannot change in play mode, the light itself can be adjusted. Changing the light's orientation would produce obviously wrong results, as only the realtime shadows will change along with it. But the light's color and intensity can be changed without invalidating the baked shadows. However, if indirect lighting is baked then the light shouldn't change too much. For example the inconsistency of a red light with blue indirect lighting would be obvious, but a slight inconsistency in intensity won't be.</p>
+					</section>
+					
+					<section>
+						<h3>Shadow Probes</h3>
+						
+						<p>Because dynamic objects do not have light maps, they also cannot sample the shadow mask texture. But just as with regular baked lighting Unity also bakes shadow attenuation in light probes. So light probes also function as shadow probes. We can tell Unity to send this data to the GPU by enabling the <code class="csharp">RendererConfiguration.PerObjectOcclusionProbe</code> flag.</p>
+						
+						<pre class="csharp" translate="no">			RendererConfiguration.PerObjectShadowMask <ins>|</ins>
+			<ins>RendererConfiguration.PerObjectOcclusionProbe</ins>;</pre>
+						
+						<p>It's made available via <code>float4 unity_ProbesOcclusion</code>, which is part of the <em translate="no">UnityPerDraw</em> buffer.</p>
+						
+						<pre translate="no">CBUFFER_START(UnityPerDraw)
+	float4x4 unity_ObjectToWorld, unity_WorldToObject;
+	float4 unity_LightIndicesOffsetAndCount;
+	float4 unity_4LightIndices0, unity_4LightIndices1;
+	<ins>float4 unity_ProbesOcclusion;</ins>
+	&hellip;
+CBUFFER_END</pre>
+						
+						<p>Although this data is provided via interpolated light probes, it serves the exact same purpose as the shadow mask, but for dynamic objects. So return it in <code>BakedShadows</code> when appropriate.</p>
+						
+						<pre translate="no">float4 BakedShadows (VertexOutput input, LitSurface surface) {
+	#if defined(LIGHTMAP_ON)
+		&hellip;
+	<ins>#elif defined(_SHADOWMASK)</ins>
+		<ins>return unity_ProbesOcclusion;</ins>
+	#endif
+	return 1.0;
+}</pre>
+						
+						<figure>
+							<img src="shadowmask/shadow-probes.jpg" width="390" height="200">
+							<figcaption>Baked shadows also via light probes.</figcaption>
+						</figure>
+						
+						<p>GPU Instancing can also work with <code>unity_ProbesOcclusion</code>, but it relies on <em translate="no">SHADOWS_SHADOWMASK</em> being defined, which doesn't happen automatically. We have to do this ourselves before including <em translate="no">UnityInstancing.hlsl</em>. This should only be done when necessary, so only for dynamic objects while a shadow mask is in use.</p>
+						
+						<pre translate="no"><ins>#if !defined(LIGHTMAP_ON)</ins>
+	<ins>#if defined(_SHADOWMASK)</ins>
+		<ins>#define SHADOWS_SHADOWMASK</ins>
+	<ins>#endif</ins>
+<ins>#endif</ins>
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"</pre>
+						
+					</section>
+					
+					<section>
+						<h3>LPPV Shadows</h3>
+						
+						<p>Shadow probes can also work with light probe proxy volumes. Once again, we have to explicitly enable this, via the <code class="csharp">RendererConfiguration.PerObjectOcclusionProbeProxyVolume</code> flag.</p>
+						
+						<pre class="csharp" translate="no">			RendererConfiguration.PerObjectShadowMask |
+			RendererConfiguration.PerObjectOcclusionProbe <ins>|</ins>
+			<ins>RendererConfiguration.PerObjectOcclusionProbeProxyVolume;</ins></pre>
+						
+						<p><code>BakedShadows</code> can use the exact same approach as <code>SampleLightProbes</code>, except that it needs to invoke the <code>SampleProbeOcclusion</code> function instead of <code>SampleProbeVolumeSH4</code>, which doesn't have a normal vector parameter.</p>
+						
+						<pre translate="no">	#elif defined(_SHADOWMASK)
+		<ins>if (unity_ProbeVolumeParams.x) {</ins>
+			<ins>return SampleProbeOcclusion(</ins>
+				<ins>TEXTURE3D_PARAM(unity_ProbeVolumeSH, samplerunity_ProbeVolumeSH),</ins>
+				<ins>surface.position, unity_ProbeVolumeWorldToObject,</ins>
+				<ins>unity_ProbeVolumeParams.y, unity_ProbeVolumeParams.z,</ins>
+				<ins>unity_ProbeVolumeMin, unity_ProbeVolumeSizeInv</ins>
+			<ins>);</ins>
+		<ins>}</ins>
+		return unity_ProbesOcclusion;
+	#endif</pre>
+						
+						<figure>
+							<img src="shadowmask/lppv-shadows.jpg" width="390" height="200">
+							<figcaption>Baked shadows via LPPV.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Multiple Lights</h3>
+						
+						<p>The shadow mask texture has four channels, so can support up to four lights. That's true per fragment, but it can support an arbitrary amount of lights, by reusing the same channel for multiple lights. The only restriction is that no more than four lights affect the same fragment of the map. If too many lights affect the same area then some are forced to fall back to being fully baked.</p>
+						
+						<p>Because we only support the main light, additional lights all end up using the same baked shadows, even if they are realtime lights. For example, add two mixed-mode spotlights to the scene, plus a realtime point light. Make sure that the spotlights cast shadows. The point light cannot cast shadows as we don't support it, but it still ends up affected by the baked shadows of the main light.</p>
+						
+						<figure>
+							<img src="shadowmask/four-lights.jpg" width="390" height="200">
+							<figcaption>Four lights all affected by the main baked shadows.</figcaption>
+						</figure>
+						
+						<p>Inspecting the shadow mask will reveal that the spotlights got baked in the R and G channels. It is also possible that a light gets baked in the A channel, but then it won't be visible via the preview window.</p>
+												
+						<figure>
+							<img src="shadowmask/multi-shadowmask.jpg" width="270" height="270">
+							<figcaption>Baked shadows for three lights.</figcaption>
+						</figure>
+						
+						<p>Each light gets its own channel in the map. We can select the correct one by taking the dot product of the baked shadows and a mask that has the appropriate channel set to 1. We have to send those masks to the shader, for which we'll create an occlusion mask array. Add a shader identifier and vector array for that to <code class="csharp">MyPipeline</code>.</p>
+						
+						<pre class="csharp" translate="no">	<ins>static int visibleLightOcclusionMasksId =</ins>
+		<ins>Shader.PropertyToID("_VisibleLightOcclusionMasks");</ins>
+	&hellip;
+	<ins>Vector4[] visibleLightOcclusionMasks = new Vector4[maxVisibleLights];</ins></pre>
+						
+						<p>There are four possible mask, which we can predefine in a static array. But it is also possible that some lights don't use the shadow mask. We'll indicate that by setting the first mask component to &minus;1. Make that case the first element of the array, so its length is five.</p>
+						
+						<pre class="csharp" translate="no">	<ins>static Vector4[] occlusionMasks = {</ins>
+		<ins>new Vector4(-1f, 0f, 0f, 0f),</ins>
+		<ins>new Vector4(1f, 0f, 0f, 0f),</ins>
+		<ins>new Vector4(0f, 1f, 0f, 0f),</ins>
+		<ins>new Vector4(0f, 0f, 1f, 0f),</ins>
+		<ins>new Vector4(0f, 0f, 0f, 1f)</ins>
+	<ins>};</ins></pre>
+						
+						<p>In <code class="csharp">ConfigureLights</code>, set the occlusion mask for each visible light based on the occlusion mask channel of the baking output. The channel is &minus;1 if the light doesn't use a shadow mask, so add 1 when retrieving the predefined occlusion masks.</p>
+						
+						<pre class="csharp" translate="no">			LightBakingOutput baking = light.light.bakingOutput;
+			<ins>visibleLightOcclusionMasks[i] =</ins>
+				<ins>occlusionMasks[baking.occlusionMaskChannel + 1];</ins></pre>
+						
+						<p>Set the occlusion masks array in <code>Render</code>, along with the other visible light data.</p>
+						
+						<pre class="csharp" translate="no">		cameraBuffer.SetGlobalVectorArray(
+			visibleLightSpotDirectionsId, visibleLightSpotDirections
+		);
+		<ins>cameraBuffer.SetGlobalVectorArray(</ins>
+			<ins>visibleLightOcclusionMasksId, visibleLightOcclusionMasks</ins>
+		<ins>);</ins></pre>
+						
+						<p>In <em translate="no">Lit.hlsl</em>, add the array to the light buffer.</p>
+						
+						<pre translate="no">CBUFFER_START(_LightBuffer)
+	&hellip;
+	<ins>float4 _VisibleLightOcclusionMasks[MAX_VISIBLE_LIGHTS];</ins>
+CBUFFER_END</pre>
+						
+						<p>Add a light index parameter to <code>MixRealtimeAndBakedShadowAttenuation</code>. Then we can have it retrieve the occlusion mask, extract the relevant baked shadow attenuation, and check whether the light has baked shadows at all. Only mix realtime and baked shadows when we have valid baked data.</p>
+						
+						<pre translate="no">float MixRealtimeAndBakedShadowAttenuation (
+	float realtime, float4 bakedShadows, <ins>int lightIndex,</ins> float3 worldPos
+) {
+	float t = RealtimeToBakedShadowsInterpolator(worldPos);
+	float fadedRealtime = saturate(realtime + t);
+	<ins>float4 occlusionMask = _VisibleLightOcclusionMasks[lightIndex];</ins>
+	float baked = <ins>dot(bakedShadows, occlusionMask)</ins>;
+	<ins>bool hasBakedShadows = occlusionMask.x >= 0.0;</ins>
+	#if defined(_SHADOWMASK)
+		<ins>if (hasBakedShadows) {</ins>
+			return min(fadedRealtime, baked);
+		<ins>}</ins>
+	#endif
+	return fadedRealtime;
+}</pre>
+						
+						<p>Add the required light index arguments in <code>LitPassFragment</code>.</p>
+						
+						<pre translate="no">	#if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)
+		float shadowAttenuation = MixRealtimeAndBakedShadowAttenuation(
+			CascadedShadowAttenuation(surface.position), bakedShadows,
+			<ins>0,</ins> surface.position
+		);
+		color += MainLight(surface, shadowAttenuation);
+	#endif
+	
+	for (int i = 0; i &lt; min(unity_LightIndicesOffsetAndCount.y, 4); i++) {
+		int lightIndex = unity_4LightIndices0[i];
+		float shadowAttenuation = MixRealtimeAndBakedShadowAttenuation(
+			ShadowAttenuation(lightIndex, surface.position), bakedShadows,
+			<ins>lightIndex,</ins> surface.position
+		);
+		color += GenericLight(lightIndex, surface, shadowAttenuation);
+	}
+</pre>
+						
+						<figure>
+							<img src="shadowmask/correct-shadowmask.jpg" width="390" height="200">
+							<figcaption>Baked shadows affect the correct lights.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Distance Shadowmask</h3>
+						
+						<p>While using the regular shadowmask mode, only dynamic objects cast realtime shadows. That can eliminate a lot of realtime shadows, replacing them with shadowmask samples and interpolated probe data. While potentially cheaper to render, the results are of lower quality than when everything uses realtime shadows. On the other hand, the baked shadows are not limited to the shadow distance. The <em translate="no">Distance Shadowmask</em> mode takes advantage of the latter while doing away with the former. All shadows are realtime, while baked shadows are used beyond the shadow distance. Hence, this mode is more expensive than using only realtime shadows, instead of being cheaper.</p>
+						
+						<figure>
+							<img src="shadowmask/distance-shadowmask-mode.png" width="380" height="40">
+							<figcaption>Distance shadowmask mode.</figcaption>
+						</figure>
+						
+						<p>The baked data of both shadowmask modes is the same. The only difference is which objects get included when rendering realtime shadows and how the shader combines bakes and realtime shadows. So we need yet another shader variant, this time controlled via the <em translate="no">_DISTANCE_SHADOWMASK</em> keyword. It's an alternative shadowmask mode, so add it to the same multi-compile directive as <em translate="no">_SHADOWMASK</em>.</p>
+						
+						<pre translate="no">			#pragma multi_compile _ _SHADOWMASK <ins>_DISTANCE_SHADOWMASK</ins></pre>
+						
+						<p>Now we must define <em translate="no">SHADOWS_SHADOWMASK</em> when either <em translate="no">_SHADOWMASK</em> or <em translate="no">_DISTANCE_SHADOWMASK</em> is defined.</p>
+						
+						<pre translate="no">#if !defined(LIGHTMAP_ON)
+	#if defined(_SHADOWMASK) <ins>|| defined(_DISTANCE_SHADOWMASK)</ins>
+		#define SHADOWS_SHADOWMASK
+	#endif
+#endif
+</pre>
+						
+						<p>And the same goes for the conditional compilation in <code>BakedShadows</code>.</p>
+						
+						<pre translate="no">float4 BakedShadows (VertexOutput input, LitSurface surface) {
+	#if defined(LIGHTMAP_ON)
+		#if defined(_SHADOWMASK) <ins>|| defined(_DISTANCE_SHADOWMASK)</ins>
+			&hellip;
+		#endif
+	#elif defined(_SHADOWMASK) <ins>|| defined(_DISTANCE_SHADOWMASK)</ins>
+		&hellip;
+	#endif
+	return 1.0;
+}</pre>
+						
+						<p>But in <code>MixRealtimeAndBakedShadowAttenuation</code> we have to do something different for each mode. In the case of the regular shadowmask mode, we take the minimum of faded realtime and baked shadows attenuation. But for the distance shadowmask mode we have to transition from the realtime to the baked shadow attenuation based on the interpolator.</p>
+						
+						<pre translate="no">	#if defined(_SHADOWMASK)
+		if (hasBakedShadows) {
+			return min(fadedRealtime, baked);
+		}
+	<ins>#elif defined(_DISTANCE_SHADOWMASK)</ins>
+		<ins>if (hasBakedShadows) {</ins>
+			<ins>return lerp(realtime, baked, t);</ins>
+		<ins>}</ins>
+	#endif
+</pre>
+						
+						<p>Finally, in <code class="csharp">MyPipeline</code> we have to enable the correct keyword, based on the <code class="csharp">QualitySettings.shadowmaskMode</code> property.</p>
+						
+						<pre class="csharp" translate="no">	<ins>const string distanceShadowmaskKeyword = "_DISTANCE_SHADOWMASK";</ins>
+	
+	&hellip;
+	
+	void ConfigureLights () {
+		&hellip;
+
+		<ins>bool useDistanceShadowmask =</ins>
+			<ins>QualitySettings.shadowmaskMode == ShadowmaskMode.DistanceShadowmask;</ins>
+		CoreUtils.SetKeyword(
+			cameraBuffer, shadowmaskKeyword,
+			shadowmaskExists <ins>&amp;&amp; !useDistanceShadowmask</ins>
+		);
+		<ins>CoreUtils.SetKeyword(</ins>
+			<ins>cameraBuffer, distanceShadowmaskKeyword,</ins>
+			<ins>shadowmaskExists && useDistanceShadowmask</ins>
+		<ins>);</ins>
+
+		&hellip;
+	}</pre>
+						
+						<figure>
+							<img src="shadowmask/distance-shadowmask.jpg" width="390" height="200">
+							<figcaption>Distance shadowmask mode.</figcaption>
+						</figure>
+						
+					</section>
+					
+					<section>
+						<h3>Baked Point Light Shadows</h3>
+						
+						<p>Although we do not support realtime shadows for point lights, this restriction does not apply to baked shadows. Thus, the baked shadows of a mixed-mode point light show up. At least, that is the case when the regular shadowmask mode is used. Because distance shadowmask mode transitions from realtime to baked shadows, we end up with no point light shadows up to the shadow distance, and baked shadows beyond that.
+						
+						<figure>
+							<img src="shadowmask/point-light-incorrect.jpg" width="390" height="200">
+							<figcaption>Partially missing point light shadows.</figcaption>
+						</figure>
+						
+						<p>As baked shadows are better than no shadows, let's always use baked shadows for point lights in the case of distance shadowmask mode. To make that possible the shader must be able to detect a point light. We're currently not using the fourth component of the <code class="csharp">visibleLightSpotDirections</code> vectors, so let's set it to 1 in case of a point light, instead of adding yet another array. As the rest of the vector ends up unused anyway, we can simply use <code class="csharp">Vector4.one</code> in <code>ConfigureLights</code>.</p>
+						
+						<pre class="csharp" translate="no">				if (light.lightType == LightType.Spot) {
+					&hellip;
+				}
+				<ins>else {</ins>
+					<ins>visibleLightSpotDirections[i] = Vector4.one;</ins>
+				<ins>}</ins></pre>
+						
+						<p>In <em translate="no">Lit.hlsl</em>, have <code>MixRealtimeAndBakedShadowAttenuation</code> return the baked attenuation in case of a point light, but only in distance shadowmask mode.</p>
+						
+						<pre translate="no">	#elif defined(_DISTANCE_SHADOWMASK)
+		if (hasBakedShadows) {
+			<ins>bool bakedOnly = _VisibleLightSpotDirections[lightIndex].w > 0.0;</ins>
+			<ins>if (bakedOnly) {</ins>
+				<ins>return baked;</ins>
+			<ins>}</ins>
+			return lerp(realtime, baked, t);
+		}
+	#endif
+</pre>
+						
+						<figure>
+							<img src="shadowmask/point-light-correct.jpg" width="390" height="200">
+							<figcaption>Always baked point light shadows.</figcaption>
+						</figure>
+						
+						<p>This check never has to be made for the main light, so let's optimize that away by adding an optional boolean parameter that indicates whether we're mixing shadows for the main light.</p>
+						
+						<pre translate="no">float MixRealtimeAndBakedShadowAttenuation (
+	float realtime, float4 bakedShadows, int lightIndex, float3 worldPos<ins>,</ins>
+	<ins>bool isMainLight = false</ins>
+) {
+	&hellip;
+			if (<ins>!isMainLight &amp;&amp;</ins> bakedOnly) {
+				return baked;
+			}
+	&hellip;
+}</pre>
+						
+						<p>Enable the optimization when working on the main light in <code>LitPassFragment</code>.</p>
+						
+						<pre translate="no">	#if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)
+		float shadowAttenuation = MixRealtimeAndBakedShadowAttenuation(
+			CascadedShadowAttenuation(surface.position), bakedShadows,
+			0, surface.position<ins>, true</ins>
+		);
+		color += MainLight(surface, shadowAttenuation);
+	#endif
+</pre>
+						
+					</section>
+				</section>
+				
+				<section>
+					<h2>Subtractive Lighting</h2>
+					
+					<p>There is a third mixed lighting mode: subtractive. This is a budget option that supports mixed lighting for the main directional light only. When this mode is selected another option is revealed to set the realtime shadow color, which we'll use later.</p>
+					
+					<figure>
+						<img src="subtractive-lighting/subtractive-mode.jpg" width="390" height="84">
+						<figcaption>Subtractive mixed lighting mode.</figcaption>
+					</figure>
+					
+					<p>When subtractive lighting is enabled the main light gets fully baked. The light map is used for static objects, but dynamic objects are still lit realtime and cast realtime shadows. This is true for all other mixed-mode lights as well, but only the shadows of the main light can be mixed. But initially our shader applies both the light map and realtime lighting to static objects, making them too bright.</p>
+					
+					<figure>
+						<img src="subtractive-lighting/main-light-double.jpg" width="390" height="200">
+						<figcaption>Main light applied twice to static objects.</figcaption>
+					</figure>
+					
+					<section>
+						<h3>Fixing the Main Light</h3>
+						
+						<p>We need another shader variant for mixed lighting. This time we'll use the <em translate="no">_SUBTRACTIVE_LIGHTING</em> keyword. Add it to the multi-compile directive.</p>
+						
+						<pre translate="no">			#pragma multi_compile _ _SHADOWMASK _DISTANCE_SHADOWMASK <ins>_SUBTRACTIVE_LIGHTING</ins></pre>
+						
+						<p>Detecting subtractive lighting and setting the keyword works the same as for the other shadowmask modes. The modes are exclusive, so we can check them separately in <code class="csharp">MyPipeline.ConfigureLights</code>.</p>
+						
+						<pre class="csharp" translate="no">	<ins>const string subtractiveLightingKeyword = "_SUBTRACTIVE_LIGHTING";</ins>
+	
+	&hellip;
+	
+	void ConfigureLights () {
+		mainLightExists = false;
+		bool shadowmaskExists = false;
+		<ins>bool subtractiveLighting = false;</ins>
+		shadowTileCount = 0;
+		for (int i = 0; i &lt; cull.visibleLights.Count; i++) {
+			&hellip;
+			if (baking.lightmapBakeType == LightmapBakeType.Mixed) {
+				shadowmaskExists |=
+					baking.mixedLightingMode == MixedLightingMode.Shadowmask;
+				<ins>subtractiveLighting |=</ins>
+					<ins>baking.mixedLightingMode == MixedLightingMode.Subtractive;</ins>
+			}
+
+			&hellip;
+		}
+
+		&hellip;
+		CoreUtils.SetKeyword(
+			cameraBuffer, distanceShadowmaskKeyword,
+			shadowmaskExists && useDistanceShadowmask
+		);
+		<ins>CoreUtils.SetKeyword(</ins>
+			<ins>cameraBuffer, subtractiveLightingKeyword, subtractiveLighting</ins>
+		<ins>);</ins>
+
+		&hellip;
+	}</pre>
+						
+						<p>In <em translate="no">Lit.hlsl</em>, we must skip the realtime main light in <code>LitPassFragment</code> for static objects when subtractive lighting is used.</p>
+						
+						<pre translate="no">	#if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)
+		<ins>#if !(defined(LIGHTMAP_ON) && defined(_SUBTRACTIVE_LIGHTING))</ins>
+			float shadowAttenuation = MixRealtimeAndBakedShadowAttenuation(
+				CascadedShadowAttenuation(surface.position), bakedShadows,
+				0, surface.position, true
+			);
+			color += MainLight(surface, shadowAttenuation);
+		<ins>#endif</ins>
+	#endif</pre>
+						
+						<figure>
+							<img src="subtractive-lighting/main-light-single.jpg" width="390" height="200">
+							<figcaption>Only baked main light used for static objects.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Shadowing Baked Light</h3>
+						
+						<p>The idea of subtractive lighting is that realtime and baked shadows are mixed, even though a fully-baked light map is used. This means that we have to adjust the baked lighting. We'll do that in a new <code>SubtractiveLighting</code> function that takes the surface and sampled global illumination as arguments. Invoke it in <code>GlobalIllumination</code> to modify its result, if needed.</p>
+						
+						<pre translate="no">float3 GlobalIllumination (VertexOutput input, LitSurface surface) {
+	#if defined(LIGHTMAP_ON)
+		float3 gi = SampleLightmap(input.lightmapUV);
+		<ins>#if defined(_SUBTRACTIVE_LIGHTING)</ins>
+			<ins>gi = SubtractiveLighting(surface, gi);</ins>
+		<ins>#endif</ins>
+		#if defined(DYNAMICLIGHTMAP_ON)
+			gi += SampleDynamicLightmap(input.dynamicLightmapUV);
+		#endif
+		return gi;
+	#elif defined(DYNAMICLIGHTMAP_ON)
+	&hellip;
+}</pre>
+						
+						<p><code>SubtractiveLighting</code> has to somehow figure out whether a baked lighting sample is shadowed or not. As baked lighting is diffuse only, begin by computing the diffuse lighting of the main light, as if it were realtime. If we use that as the result we simply end up with an unshadowed diffuse-only main light.</p>
+						
+						<pre translate="no"><ins>float3 SubtractiveLighting (LitSurface s, float3 bakedLighting) {</ins>
+	<ins>float3 lightColor = _VisibleLightColors[0].rgb;</ins>
+	<ins>float3 lightDirection = _VisibleLightDirectionsOrPositions[0].xyz;</ins>
+	<ins>float3 diffuse = lightColor * saturate(dot(lightDirection, s.normal));</ins>
+	<ins>return diffuse;</ins>
+<ins>}</ins></pre>
+						
+						<p>Also compute the faded realtime shadow attenuation. That's the shadowing caused by dynamic objects, which are not part of the baked lighting. We can guess how much of the baked lighting would've been shadowed if those objects were baked instead, by scaling the realtime diffuse lighting by one minus the realtime shadow attenuation. That would be correct if there were no baked shadows, no indirect lighting, nor any other baked lights. So it's not perfect but the best that we can do. Finally, we find the final lighting by subtracting the guess from the baked lighting. The result should be saturated because an incorrect guess could produce negative lighting.</p>
+						
+						<pre translate="no">float3 SubtractiveLighting (LitSurface s, float3 bakedLighting) {
+	float3 lightColor = _VisibleLightColors[0].rgb;
+	float3 lightDirection = _VisibleLightDirectionsOrPositions[0].xyz;
+	float3 diffuse = lightColor * saturate(dot(lightDirection, s.normal));
+	<ins>float shadowAttenuation = saturate(</ins>
+		<ins>CascadedShadowAttenuation(s.position) +</ins>
+		<ins>RealtimeToBakedShadowsInterpolator(s.position)</ins>
+	<ins>);</ins>
+	<ins>float3 shadowedLightingGuess = diffuse * (1.0 - shadowAttenuation);</ins>
+	<ins>float3 subtractedLighting = bakedLighting - shadowedLightingGuess;</ins>
+	return <ins>saturate(subtractedLighting)</ins>;
+}</pre>
+						
+						<figure>
+							<img src="subtractive-lighting/subtracted.jpg" width="390" height="200">
+							<figcaption>Subtracted lighting.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Shadow Color</h3>
+						
+						<p>The initial results look acceptable, but only when black shadows are correct. Setting the intensity multiplier of the environmental lighting to 1 reveals that our guess is quite wrong.</p>
+						
+						<figure>
+							<img src="subtractive-lighting/subtracted-too-dark.jpg" width="390" height="200">
+							<figcaption>Guessed too dark.</figcaption>
+						</figure>
+						
+						<p>We cannot improve our guess in the shader, but what we can do is limit how much light we subtract. That's what the shadow color setting is for. It can be retrieved via <code class="csharp">RenderSettings.subtractiveShadowColor</code> and we should set it in <code class="csharp">ConfigureLights</code> when we detect subtractive lighting mode, via a <code>_SubtractiveShadowColor</code> shader property.</p>
+						
+						<pre class="csharp" translate="no">	<ins>static int subtractiveShadowColorId =</ins>
+		<ins>Shader.PropertyToID("_SubtractiveShadowColor");</ins>
+		
+	&hellip;
+		
+	void ConfigureLights () {
+		&hellip;
+				shadowmaskExists |=
+					baking.mixedLightingMode == MixedLightingMode.Shadowmask;
+				<del>//subtractiveLighting =</del>
+					<del>//baking.mixedLightingMode |= MixedLightingMode.Subtractive;</del>
+				<ins>if (baking.mixedLightingMode == MixedLightingMode.Subtractive) {</ins>
+					<ins>subtractiveLighting = true;</ins>
+					<ins>cameraBuffer.SetGlobalColor(</ins>
+						<ins>subtractiveShadowColorId,</ins>
+						<ins>RenderSettings.subtractiveShadowColor.linear</ins>
+					<ins>);</ins>
+				<ins>}</ins>
+		&hellip;
+	}</pre>
+						
+						<p>Add the color to the shadow buffer.</p>
+						
+						<pre translate="no">CBUFFER_START(_ShadowBuffer)
+	&hellip;
+	<ins>float4 _SubtractiveShadowColor;</ins>
+CBUFFER_END</pre>
+						
+						<p>In <code>SubtractiveLighting</code>, take the maximum of the subtracted lighting and the shadow color, to limit how much light gets removed. But this could brighten the baked lighting, which should never happen. So the final result is the minimum of the baked and subtracted lighting.</p>
+						
+						<pre translate="no">	float3 subtractedLighting = bakedLighting - shadowedLightingGuess;
+	<ins>subtractedLighting = max(subtractedLighting, _SubtractiveShadowColor);</ins>
+	return <ins>min(bakedLighting, subtractedLighting)</ins>;</pre>
+						
+						<figure>
+							<img src="subtractive-lighting/colored-shadow.jpg" width="390" height="200">
+							<figcaption>Colored shadows.</figcaption>
+						</figure>
+						
+						<p>This produces reasonable results if the environmental lighting is mostly uniform and matches the shadow color. The default shadow color is a good guess for Unity's standard environmental lighting settings.</p>
+					</section>
+					
+					<section>
+						<h3>Shadow Strength</h3>
+						
+						<p>If the main light's shadows strength is reduced, the effect of the subtracted lighting should be reduced by the same amount. Because that also affects the shadow color, we should apply the shadow strength after applying the color, by interpolating between the baked and subtracted light based on the shadow strength.</p>
+						
+						<pre translate="no">	subtractedLighting = max(subtractedLighting, _SubtractiveShadowColor);
+	<ins>subtractedLighting =</ins>
+		<ins>lerp(bakedLighting, subtractedLighting, _CascadedShadowStrength);</ins>
+	return min(bakedLighting, subtractedLighting);
+</pre>
+						
+						<p>But that would apply the shadow strength twice to the realtime shadows, because <code>CascadedShadowAttenuation</code> also applies it. So let's make it possible for that function to ignore the shadow strength.</p>
+						
+						<pre translate="no">float CascadedShadowAttenuation (float3 worldPos<ins>, bool applyStrength = true</ins>) {
+	&hellip;
+	
+	<ins>if (applyStrength) {</ins>
+		return lerp(1, attenuation, _CascadedShadowStrength);
+	<ins>}</ins>
+	<ins>else {</ins>
+		<ins>return attenuation;</ins>
+	<ins>}</ins>
+}</pre>
+						
+						<p>Only in <code>SubtractiveLighting</code> should it not apply the strength.</p>
+						
+						<pre translate="no">	float shadowAttenuation = saturate(
+		CascadedShadowAttenuation(s.position<ins>, false</ins>) +
+		RealtimeToBakedShadowsInterpolator(s.position)
+	);</pre>
+					</section>
+					
+					<section>
+						<h3>Shadow Probes</h3>
+						
+						<p>Subtractive lighting now works correctly for static objects, but dynamic objects only receive realtime shadows. Once again we can rely on shadow probes. First, also define <em translate="no">SHADOWS_SHADOWMASK</em> for dynamic objects when subtractive lighting is used, so GPU instancing remains functional.</p>
+						
+						<pre translate="no">#if !defined(LIGHTMAP_ON)
+	#if defined(_SHADOWMASK) || defined(_DISTANCE_SHADOWMASK) <ins>|| \</ins>
+		<ins>defined(_SUBTRACTIVE_LIGHTING)</ins>
+		
+		#define SHADOWS_SHADOWMASK
+	#endif
+#endif
+</pre>
+						
+						<p>Sample the shadow probes in <code>BakedShadows</code> in the same case.</p>
+						
+						<pre translate="no">float4 BakedShadows (VertexOutput input, LitSurface surface) {
+	&hellip;
+	#elif defined(_SHADOWMASK) || defined(_DISTANCE_SHADOWMASK) <ins>|| \</ins>
+		<ins>defined(_SUBTRACTIVE_LIGHTING)</ins>
+		
+		if (unity_ProbeVolumeParams.x) {
+			&hellip;
+		}
+		return unity_ProbesOcclusion;
+	#endif
+	return 1.0;
+}</pre>
+						
+						<p>In <code>MixRealtimeAndBakedShadowAttenuation</code>, if we have subtractive lighting and are working on dynamic objects, then we must mix shadows like the regular shadowmask mode, but only for the main light. Thus, we always use the first channel of the baked shadows.</p>
+						
+						<pre translate="no">float MixRealtimeAndBakedShadowAttenuation (
+	float realtime, float4 bakedShadows, int lightIndex, float3 worldPos,
+	bool isMainLight = false
+) {
+	&hellip;
+	#if defined(_SHADOWMASK)
+		&hellip;
+	#elif defined(_DISTANCE_SHADOWMASK)
+		&hellip;
+	<ins>#elif defined(_SUBTRACTIVE_LIGHTING)</ins>
+		<ins>#if !defined(LIGHTMAP_ON)</ins>
+			<ins>if (isMainLight) {</ins>
+				<ins>return min(fadedRealtime, bakedShadows.x);</ins>
+			<ins>}</ins>
+		<ins>#endif</ins>
+	#endif
+	return fadedRealtime;
+}</pre>
+						
+						<figure>
+							<img src="subtractive-lighting/shadow-probes.jpg" width="390" height="200">
+							<figcaption>Shadow probes in use.</figcaption>
+						</figure>
+						
+						<p>This works when a main light exists, but it is possible that we don't render a main light even though subtractive lighting is used. That happens when realtime shadows are omitted because none end up within the shadow distance. In that case we can suffice with directly returning the baked shadow attenuation. But because there is no separate main light we have to check whether we're dealing with the first light index.</p>
+						
+						<pre translate="no">	#elif defined(_SUBTRACTIVE_LIGHTING)
+		#if !defined(LIGHTMAP_ON)
+			if (isMainLight) {
+				return min(fadedRealtime, bakedShadows.x);
+			}
+		#endif
+		<ins>#if !defined(_CASCADED_SHADOWS_HARD) &amp;&amp; !defined(_CASCADED_SHADOWS_SOFT)</ins>
+			<ins>if (lightIndex == 0) {</ins>
+				<ins>return bakedShadows.x;</ins>
+			<ins>}</ins>
+		<ins>#endif</ins>
+	#endif</pre>
+						
+												
+						<p>The next tutorial is <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/level-of-detail/">Level of Detail</a>.</p>
+					</section>
+					
+					<a href="https://bitbucket.org/catlikecodingunitytutorials/scriptable-render-pipeline-09-baked-shadows/" class="repository">repository</a>
+					<a href="Baked-Shadows.pdf" download rel="nofollow">PDF</a>
+				</section>
+				
+			</article>
+		</main>
+
+		<footer>
+			<p>Enjoying the <a href="https://catlikecoding.com/unity/tutorials/">tutorials</a>? Are they useful? Want more?</p>
+			<p><b><a href="https://www.patreon.com/catlikecoding">Please support me on Patreon!</a></b></p>
+			<p><a href="https://www.patreon.com/catlikecoding"><img src="https://catlikecoding.com/unity/tutorials/become-a-patron.png" alt="Become my patron!" width="217" height="51"></a></p>
+			<p><b><a href="https://catlikecoding.com/unity/tutorials/donating.html">Or make a direct donation</a>!</b></p>
+			<p>made by <a href="https://catlikecoding.com/jasper-flick/" rel="author">Jasper Flick</a></p>
+		</footer>
+		
+		<script src="../../tutorials.js"></script>
+	</body>
+</html>

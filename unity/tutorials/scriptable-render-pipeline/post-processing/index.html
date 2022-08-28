@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head prefix="og: http://ogp.me/ns#">
+		<meta charset="utf-8">
+		<meta property="og:url" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/post-processing/">
+		<meta property="og:type" content="article">
+		<meta property="og:image:width" content="1024">
+		<meta property="og:image:height" content="512">
+		<meta property="og:image" content="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/post-processing/tutorial-image.jpg">
+		<meta property="og:title" content="Post-Processing">
+		<meta property="og:description" content="A Unity Scriptable Render Pipeline tutorial about creating a post-processing stack.">
+		<meta property="twitter:card" content="summary_large_image">
+		<meta property="twitter:creator" content="@catlikecoding">
+		<meta name="viewport" content="width=768">
+		<title>Post-Processing</title>
+		<link href="../../tutorials.css" rel="stylesheet">
+		<link rel="manifest" href="../../../../site.webmanifest">
+		<link rel="mask-icon" href="../../../../safari-pinned-tab.svg" color="#aa0000">
+
+		<script type="application/ld+json">{
+			"@context": "http://schema.org",
+			"@type": "WebPage",
+			"mainEntity": {
+				"@type": "TechArticle",
+				"@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/post-processing/#article",
+				"headline": "Post-Processing",
+				"alternativeHeadline": "Full-Screen Effects",
+				"datePublished": "2019-07-31",
+				"author": { "@type": "Person", "name": "Jasper Flick", "@id": "https://catlikecoding.com/jasper-flick/#person" },
+				"publisher": { "@type": "Organization", "name": "Catlike Coding", "@id": "https://catlikecoding.com/#organization" },
+				"description": "A Unity Scriptable Render Pipeline tutorial about creating a post-processing stack.",
+				"image": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/post-processing/tutorial-image.jpg",
+				"dependencies": "Unity 2018.4.4f1",
+				"proficiencyLevel": "Expert"
+			},
+			"breadcrumb": {
+				"@type": "BreadcrumbList",
+				"itemListElement": [
+					{ "@type": "ListItem", "position": 1, "item": { "@id": "https://catlikecoding.com/unity/", "name": "Unity" }},
+					{ "@type": "ListItem", "position": 2, "item": { "@id": "https://catlikecoding.com/unity/tutorials/", "name": "Tutorials" }},
+					{ "@type": "ListItem", "position": 3, "item": { "@id": "https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/", "name": "Scriptable Render Pipeline" }}
+				]
+			}
+		}</script>
+		<script>
+			var customTypes = {
+				ClipMode: 1,
+				DoubleSidedMeshMenuItem: 1,
+				InstancedmaterialProperties: 1,
+				LitShaderGUI: 1,
+				LitSurface: 1,
+				MyPipeline: 1,
+				MyPipelineAsset: 1,
+				MyPipelineAssetEditor: 1,
+				MyPipelineCamera: 1,
+				MyPipelineShaderPreprocessor: 1,
+				MyPostProcessingStack: 1,
+				Pass: 1,
+				ShadowCascades: 1,
+				ShadowMapSize: 1
+			};
+			var hasMath = true;
+		</script>
+	</head>
+	<body>
+		<header>
+			<a href="../../../../index.html"><img src="../../../../catlike-coding-logo.svg" alt="Catlike Coding" width="45" height="45"></a>
+			<nav>
+				<ol>
+					<li><a href="../../../../index.html">Catlike Coding</a></li>
+					<li><a href="../../../index.html">Unity</a></li>
+					<li><a href="../../../tutorials">Tutorials</a></li>
+					<li><a href="../index.html">Scriptable Render Pipeline</a></li>
+				</ol>
+			</nav>
+		</header>
+		
+		<main>
+			<article>
+				<header>
+					<h1>Post-Processing</h1>
+					<p>Full-Screen Effects</p>
+					<ul>
+						<li>Create a post-processing stack asset.</li>
+						<li>Use render textures.</li>
+						<li>Draw a full-screen triangle.</li>
+						<li>Apply a multi-step blur effect and depth-based stripes.</li>
+						<li>Configure a stack per camera.</li>
+					</ul>
+				</header>
+				
+				<p>This is the eleventh installment of a tutorial series covering Unity's <a href="../index.html">scriptable render pipeline</a>. It covers the creation of a post-processing stack.</p>
+				
+				<p>This tutorial is made with Unity 2018.4.4f1.</p>
+				
+				<figure>
+					<img src="tutorial-image.jpg" width="512" height="256">
+					<figcaption>Messing with the image.</figcaption>
+				</figure>
+				
+				<section>
+					<h2>Post-Processing Stack</h2>
+					
+					<p>Besides rendering geometry that's part of the scene, it is also possible to alter the generated image afterwards. This is used to apply full-screen effects like ambient occlusion, bloom, color grading, and depth-of-field. Usually multiple post-processing steps are applied in a specific order, which is configured via one or multiple assets or components, collectively forming a post-processing stack. Unity has multiple implementations of such a stack.</p>
+					
+					<p>In this tutorial we'll create a simple post-processing stack of our own, with two effects to see it in action. You could extend it to support more useful effects, or alter the approach so you can connect to an existing solution.
+					
+					<section>
+						<h3>Asset</h3>
+						
+						<p>We'll introduce a <code>MyPostProcessingStack</code> asset type to control post-processing. Give it a public <code>Render</code> method, with a <code>CommandBuffer</code> parameter that it can use to do its work. The idea is that the stack will fill the buffer with commands, but executing and clearing the buffer is the responsibility of the pipeline. Initially, just log that the stack's method got invoked.</p>
+						
+						<pre translate="no"><ins>using UnityEngine;</ins>
+<ins>using UnityEngine.Rendering;</ins>
+
+<ins>[CreateAssetMenu(menuName = "Rendering/My Post-Processing Stack")]</ins>
+<ins>public class MyPostProcessingStack : ScriptableObject {</ins>
+
+	<ins>public void Render (CommandBuffer cb) {</ins>
+		<ins>Debug.Log("Rendering Post-Processing Stack");</ins>
+	<ins>}</ins>
+<ins>}</ins></pre>
+						
+						<p>Create an asset for our stack. It doesn't have any configuration options yet, but we'll add some later.</p>
+						
+						<figure>
+							<img src="post-processing-stack/post-processing-stack.png" width="320" height="70">
+							<figcaption>Post-processing stack asset.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Default Stack</h3>
+						
+						<p>To use a stack <code>MyPipeline</code> needs a reference to it. Give it a field to keep track of a default stack, which is set via its constructor.</p>
+						
+						<pre translate="no">	<ins>MyPostProcessingStack defaultStack;</ins>
+
+	public MyPipeline (
+		bool dynamicBatching, bool instancing<ins>, MyPostProcessingStack defaultStack,</ins>
+		Texture2D ditherTexture, float ditherAnimationSpeed,
+		int shadowMapSize, float shadowDistance, float shadowFadeRange,
+		int shadowCascades, Vector3 shadowCascasdeSplit
+	) {
+		&hellip;
+		if (instancing) {
+			drawFlags |= DrawRendererFlags.EnableInstancing;
+		}
+
+		<ins>this.defaultStack = defaultStack;</ins>
+
+		&hellip;
+	}</pre>
+						
+						<p>Give <code>MyPipelineAsset</code> a configuration option for a default stack as well, so it can pass it to the pipeline instance.</p>
+						
+						<pre translate="no">	<ins>[SerializeField]</ins>
+	<ins>bool dynamicBatching;</ins>
+
+	&hellip;
+	
+	protected override IRenderPipeline InternalCreatePipeline () {
+		Vector3 shadowCascadeSplit = shadowCascades == ShadowCascades.Four ?
+			fourCascadesSplit : new Vector3(twoCascadesSplit, 0f);
+		return new MyPipeline(
+			dynamicBatching, instancing, <ins>defaultStack,</ins>
+			ditherTexture, ditherAnimationSpeed,
+			(int)shadowMapSize, shadowDistance, shadowFadeRange,
+			(int)shadowCascades, shadowCascadeSplit
+		);
+	}</pre>
+						
+						<p>Make our single stack asset the default.</p>
+						
+						<figure>
+							<img src="post-processing-stack/default-stack.png" width="320" height="72">
+							<figcaption>Default stack assigned.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Rendering the Stack</h3>
+						
+						<p>To isolate rendering of the stack, add a command buffer dedicated to post-processing effects to <code>MyPipeline</code>. If a default stack exists, have it render with the buffer, then execute and clear the buffer. Post-processing happens after regular rendering is finished, so after invoking <code>DrawDefaultPipeline</code> in <code>Render</code>.</p>
+						
+						<pre translate="no">	<ins>CommandBuffer postProcessingBuffer = new CommandBuffer {</ins>
+		<ins>name = "Post-Processing"</ins>
+	<ins>};</ins>
+	
+	&hellip;
+	
+	void Render (ScriptableRenderContext context, Camera camera) {
+		&hellip;
+		
+		DrawDefaultPipeline(context, camera);
+
+		<ins>if (defaultStack) {</ins>
+			<ins>defaultStack.Render(postProcessingBuffer);</ins>
+			<ins>context.ExecuteCommandBuffer(postProcessingBuffer);</ins>
+			<ins>postProcessingBuffer.Clear();</ins>
+		<ins>}</ins>
+
+		cameraBuffer.EndSample("Render Camera");
+		context.ExecuteCommandBuffer(cameraBuffer);
+		cameraBuffer.Clear();
+
+		context.Submit();
+
+		&hellip;
+	}</pre>
+						<p>At this point the stack should log that it gets invoked each time a frame is rendered.</p>
+						
+					</section>
+				</section>
+				
+				<section>
+					<h2>Render Targets</h2>
+					
+					<p>To alter the rendered image we have to read from it. The simplest and most robust way to make that possible is to have our pipeline render to a texture. Up to this point we've always rendered to whatever the camera's target is. It's usually the frame buffer, but it can also be a render texture, for example when rendering the faces of a reflection probe. Unity also always renders to a texture for the scene window and its small camera preview when one is selected.</p>
+					
+					<section>
+						<h3>Rendering to a Texture</h3>
+						
+						<p>Before clearing the render target, we have to get a temporary render texture if there is a stack. This time we'll use <code>CommandBuffer.GetTemporaryRT</code> to schedule the acquisition of the texture, using the camera buffer. This approach requires us to supply a shader property ID, along with the width and height of the texture, which should match the camera's pixel dimensions. Let's use <em translate="no">_CameraColorTexture</em> for the shader property name.</p>
+						
+						<pre translate="no">	<ins>static int cameraColorTextureId = Shader.PropertyToID("_CameraColorTexture");</ins>
+	
+	&hellip;
+	
+	void Render (ScriptableRenderContext context, Camera camera) {
+		&hellip;
+		context.SetupCameraProperties(camera);
+
+		<ins>if (defaultStack) {</ins>
+			<ins>cameraBuffer.GetTemporaryRT(</ins>
+				<ins>cameraColorTextureId, camera.pixelWidth, camera.pixelHeight</ins>
+			<ins>);</ins>
+		<ins>}</ins>
+
+		CameraClearFlags clearFlags = camera.clearFlags;
+		
+		&hellip;
+	}</pre>
+						
+						<p>That will give us our texture, bound to the provided ID. Next, we have to make it the render target. That's done by invoking <code>SetRenderTarget</code> on the camera buffer with the ID as a parameter. The ID has be a <code>RenderTargetIdentifier</code>, but there is an implicit cast from <code>int</code> to that type, assuming that it is a shader property ID. Also, we can specify the load and store actions. We'll simply assume that we're working with a single camera, so don't care about the initial state of the texture, as we'll clear it next.</p>
+						
+						<pre translate="no">		if (defaultStack) {
+			cameraBuffer.GetTemporaryRT(
+				cameraColorTextureId, camera.pixelWidth, camera.pixelHeight
+			);
+			<ins>cameraBuffer.SetRenderTarget(</ins>
+				<ins>cameraColorTextureId,</ins>
+				<ins>RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store</ins>
+			<ins>);</ins>
+		}</pre>
+						
+						<p>We have to release the render texture after post-processing, if applicable. That's done by invoking <code>ReleaseTemporaryRT</code> on the camera buffer with the same ID. This isn't strictly necessary as textures claimed by the buffer should be released automatically once the camera is done rendering, but it's good practice to clean up explicitly as soon as possible.</p>
+						
+						<pre translate="no">		if (defaultStack) {
+			defaultStack.Render(postProcessingBuffer);
+			context.ExecuteCommandBuffer(postProcessingBuffer);
+			postProcessingBuffer.Clear();
+			<ins>cameraBuffer.ReleaseTemporaryRT(cameraColorTextureId);</ins>
+		}</pre>
+						
+						<aside>
+							<h3>Could we cache the <code>RenderTargetIdentifier</code> for reuse?</h3>
+							<div>
+								<p>Yes, that way the conversion only happens once, which is more efficient. However, I won't bother with that in this tutorial.</p>
+							</div>
+						</aside>
+					</section>
+					
+					<section>
+						<h3>Blitting</h3>
+						
+						<p>At this point our scene appears to no longer get rendered, because we're rendering to a texture instead of the camera's target. To fix this we'll have <code>MyPostProcessingStack.Render</code> copy the texture's contents to the final target. We can do that by invoking <code>Blit</code> on the buffer with the source and destination IDs as arguments. Add the camera texture's color ID as a parameter for this purpose, and use <code>BuiltinRenderTextureType.CameraTarget</code> for the destination, which also implicitly gets converted to <code>RenderTargetIdentifier</code>.</p>
+						
+						<pre translate="no">	public void Render (CommandBuffer cb<ins>, int cameraColorId</ins>) {
+		<del>//Debug.Log("Rendering Post-Processing Stack");</del>
+		<ins>cb.Blit(cameraColorId, BuiltinRenderTextureType.CameraTarget);</ins>
+	}</pre>
+						
+						<aside>
+							<h3>What does blit mean?</h3>
+							<div>
+								<p>It comes from an old bit boundary block transfer routine name <em translate="no">BitBLT</em>, shortened to blit.</p>
+							</div>
+						</aside>
+						
+						<p>Add the color texture ID argument in <code>MyPipeline.Render</code>.</p>
+						
+						<pre translate="no">		if (defaultStack) {
+			defaultStack.Render(postProcessingBuffer<ins>, cameraColorTextureId</ins>);
+			context.ExecuteCommandBuffer(postProcessingBuffer);
+			postProcessingBuffer.Clear();
+			cameraBuffer.ReleaseTemporaryRT(cameraColorTextureId);
+		}</pre>
+						
+						<p>We see results again, but the skybox gets drawn on top of everything rendered before it, so only transparent objects remain visible. That happens because we're no longer using a depth buffer. We can reactive the depth buffer by adding another argument to <code>GetTemporaryRT</code> to specify the amount of bits used for depth. It's zero by default, which disables the depth buffer. We have to use 24 to reactivate it.</p>
+						
+						<pre translate="no">			cameraBuffer.GetTemporaryRT(
+				cameraColorTextureId, camera.pixelWidth, camera.pixelHeight<ins>, 24</ins>
+			);</pre>
+						
+						<aside>
+							<h3>Why 24 bits?</h3>
+							<div>
+								<p>The other option is 16 bits, but we want to use the highest possible precision for depth values, which is 24 bits. Sometimes the depth buffer precision is listed as 32, but the extra eight bits are for the stencil buffer, not depth. You could specify 32 but it would act the same as 24.</p>
+							</div>
+						</aside>
+						
+						<p>Our scene now appears to get rendered as usual. However, inspecting the frame debugger will reveal that another step was added. The nested execution of the post-processing command buffer automatically gets sampled. Inside its scope, the blit action is listed as <em translate="no">Draw Dynamic</em>.</p>
+						
+						<figure>
+							<img src="render-targets/post-processing-draw.png" width="298" height="130">
+							<figcaption>Post-processing draw call.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Separate Depth Texture</h3>
+						
+						<p>Some post-processing effects rely on depth information, which they have to acquire by reading from the depth buffer. To make that possible we have to explicitly render depth information to a texture with its own ID, for which we'll use <em translate="no">_CameraDepthTexture</em>. Getting a depth texture works the same as the color one, except that we have to use a different texture format. This require us to invoke <code>GetTemporaryRT</code> a second time, with two extra arguments. First the filter mode, which should be the default <code>FilterMode.Point</code>, followed by <code>RenderTextureFormat.Depth</code>. The depth bits of the color texture should be set back to zero, which is the default but let's be explicit.</p>
+						
+						<pre translate="no">	static int cameraColorTextureId = Shader.PropertyToID("_CameraColorTexture");
+	<ins>static int cameraDepthTextureId = Shader.PropertyToID("_CameraDepthTexture");</ins>
+	
+	&hellip;
+	
+	void Render (ScriptableRenderContext context, Camera camera) {
+		&hellip;
+		
+		if (defaultStack) {
+			cameraBuffer.GetTemporaryRT(
+				cameraColorTextureId, camera.pixelWidth, camera.pixelHeight<ins>, 0</ins>
+			);
+			<ins>cameraBuffer.GetTemporaryRT(</ins>
+				<ins>cameraDepthTextureId, camera.pixelWidth, camera.pixelHeight, 24,</ins>
+				<ins>FilterMode.Point, RenderTextureFormat.Depth</ins>
+			<ins>);</ins>
+			&hellip;
+		}
+
+		&hellip;
+	}</pre>
+						
+						<p>Next, we have to invoke the variant of <code>SetRenderTarget</code> that allows us to specify a separate depth buffer, with its own load and store actions.</p>
+						
+						<pre translate="no">			cameraBuffer.SetRenderTarget(
+				cameraColorTextureId,
+				RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store<ins>,</ins>
+				<ins>cameraDepthTextureId,</ins>
+				<ins>RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store</ins>
+			);</pre>
+						
+						<p>Pass the ID for depth to the stack as well, and release the depth texture once we're done.</p>
+						
+						<pre translate="no">		if (defaultStack) {
+			defaultStack.Render(
+				postProcessingBuffer, cameraColorTextureId<ins>, cameraDepthTextureId</ins>
+			);
+			context.ExecuteCommandBuffer(postProcessingBuffer);
+			postProcessingBuffer.Clear();
+			cameraBuffer.ReleaseTemporaryRT(cameraColorTextureId);
+			<ins>cameraBuffer.ReleaseTemporaryRT(cameraDepthTextureId);</ins>
+		}</pre>
+						
+						<p>Add the required parameter to <code>MyPostProcessingStack.Render</code>. After that the scene should be rendered as normal again.</p>
+						
+						<pre translate="no">	public void Render (CommandBuffer cb, int cameraColorId<ins>, int cameraDepthId</ins>) {
+		cb.Blit(cameraColorId, BuiltinRenderTextureType.CameraTarget);
+	}</pre>
+						
+						<p>It's now also possible to use the depth texture as the source for the blit, which would show the raw depth information instead of colors. The result of that depends on the graphics API.</p>
+						
+						<figure>
+							<img src="render-targets/depth.png" width="230" height="190">
+							<figcaption>Raw depth.</figcaption>
+						</figure>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Full-Screen Triangle</h2>
+					
+					<p>Blitting a texture is fundamentally the same as rendering regular geometry. It's done by rendering a full-screen quad with a shader that samples the texture based on its screen-space position. You can see a hint of this by inspecting the <em translate="no">Dynamic Draw</em> entry in the frame debugger. The color texture is assigned to <em translate="no">_MainTex</em> and it uses four vertices and indices.</p>
+					
+					<p>So <code>Blit</code> renders a quad made from two triangles. This works, but could be done in a more efficient way, by using a single triangle that cover the entire screen instead. The obvious benefit of that is the reduction of vertices and indices to three. However, the more significant difference is that it eliminates the diagonal where the two triangles of the quad meet. Because GPUs render fragments parallel in small blocks, some fragments end up wasted along the edges of triangles. As the quad has two triangles, the fragment blocks along the diagonal get rendered twice, which is inefficient. Besides that rendering a single triangle can have better local cache coherency.</p>
+					
+					<figure>
+						<img src="full-screen-triangle/quad.png" width="256" height="156">
+						<figcaption>Redundant block rendering, exaggerated.</figcaption>
+					</figure>
+					
+					<p>While the performance difference between a quad and single triangle might be tiny, it's enough that the standard approach nowadays is to go with the full-screen triangle, so we'll use it as well. However, Unity doesn't have a standard blit method for that, so we have to create one ourselves.</p>
+					
+					<section>
+						<h3>Mesh</h3>
+						
+						<p>The first step is to create the triangle. We'll keep track of it via a static <code>Mesh</code> field in <code>MyPostProcessingStack</code> and create it when needed via a static <code>InitializeStatic</code> method, which we invoke at the start of <code>Render</code>.
+						
+						<pre translate="no">	<ins>static Mesh fullScreenTriangle;</ins>
+
+	<ins>static void InitializeStatic () {</ins>
+		<ins>if (fullScreenTriangle) {</ins>
+			<ins>return;</ins>
+		<ins>}</ins>
+	<ins>}</ins>
+	
+	public void Render (CommandBuffer cb, int cameraColorId, int cameraDepthId) {
+		<ins>InitializeStatic();</ins>
+		cb.Blit(cameraColorId, BuiltinRenderTextureType.CameraTarget);
+	}</pre>
+						
+						<p>The mesh needs three vertices and a single triangle. We'll draw it directly in clip space so we can skip a matrix multiplication and ignore the Z dimension. This means that the center of the screen is the origin and the XY coordinates are either &minus;1 or 1 at the edges. The direction of the Y axis depends on the platform, but that doesn't matter for our triangle. To create a full-screen triangle, you can use vertices `[[-1],[-1]]`, `[[-1],[3]]`, and `[[3],[-1]]`.</p>
+						
+						<figure>
+							<img src="full-screen-triangle/triangle.png" width="335" height="335">
+							<figcaption>Triangle relative to clip space.</figcaption>
+						</figure>
+						
+						<pre translate="no">	static void InitializeStatic () {
+		if (fullScreenTriangle) {
+			return;
+		}
+		<ins>fullScreenTriangle = new Mesh {</ins>
+			<ins>name = "My Post-Processing Stack Full-Screen Triangle",</ins>
+			<ins>vertices = new Vector3[] {</ins>
+				<ins>new Vector3(-1f, -1f, 0f),</ins>
+				<ins>new Vector3(-1f,  3f, 0f),</ins>
+				<ins>new Vector3( 3f, -1f, 0f)</ins>
+			<ins>},</ins>
+			<ins>triangles = new int[] { 0, 1, 2 },</ins>
+		<ins>};</ins>
+		<ins>fullScreenTriangle.UploadMeshData(true);</ins>
+	}</pre>
+						
+					</section>
+					
+					<section>
+						<h3>Shader</h3>
+						
+						<p>The second step is to write a shader to copy the texture. Create a <em translate="no">Hidden/My Pipeline/PostEffectStack</em> shader for that with a single pass that doesn't perform culling and ignores depth. Have it use <code class="shader">CopyPassVertex</code> and <code class="shader">CopyPassFragment</code> functions, which we'll define in a separate <em translate="no">PostEffectStack.hlsl</em> include file.</p>
+						
+						<pre class="shader"><ins>Shader "Hidden/My Pipeline/PostEffectStack" {</ins>
+	<ins>SubShader {</ins>
+		<ins>Pass {</ins>
+			<ins>Cull Off</ins>
+			<ins>ZTest Always</ins>
+			<ins>ZWrite Off</ins>
+			
+			<ins>HLSLPROGRAM</ins>
+			<ins>#pragma target 3.5</ins>
+			<ins>#pragma vertex CopyPassVertex</ins>
+			<ins>#pragma fragment CopyPassFragment</ins>
+			<ins>#include "../ShaderLibrary/PostEffectStack.hlsl"</ins>
+			<ins>ENDHLSL</ins>
+		<ins>}</ins>
+	<ins>}</ins>
+<ins>}</ins></pre>
+						
+						<p>The shader code is short. We only need the vertex position, which doesn't have to be transformed. Besides that we'll output UV coordinates per vertex, which are simply the XY coordinates halved plus &frac12;. We use those per fragment to sample the texture. We can directly sample <em translate="no">_CameraColorTexture</em>, so let's start with that.</p>
+						
+						<pre class="shader"><ins>#ifndef MYRP_POST_EFFECT_STACK_INCLUDED</ins>
+<ins>#define MYRP_POST_EFFECT_STACK_INCLUDED</ins>
+
+<ins>#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"</ins>
+
+<ins>TEXTURE2D(_CameraColorTexture);</ins>
+<ins>SAMPLER(sampler_CameraColorTexture);</ins>
+
+<ins>struct VertexInput {</ins>
+	<ins>float4 pos : POSITION;</ins>
+<ins>};</ins>
+
+<ins>struct VertexOutput {</ins>
+	<ins>float4 clipPos : SV_POSITION;</ins>
+	<ins>float2 uv : TEXCOORD0;</ins>
+<ins>};</ins>
+
+<ins>VertexOutput CopyPassVertex (VertexInput input) {</ins>
+	<ins>VertexOutput output;</ins>
+	<ins>output.clipPos = float4(input.pos.xy, 0.0, 1.0);</ins>
+	<ins>output.uv = input.pos.xy * 0.5 + 0.5;</ins>
+	<ins>return output;</ins>
+<ins>}</ins>
+
+<ins>float4 CopyPassFragment (VertexOutput input) : SV_TARGET {</ins>
+	<ins>return SAMPLE_TEXTURE2D(</ins>
+		<ins>_CameraColorTexture, sampler_CameraColorTexture, input.uv</ins>
+	<ins>);</ins>
+<ins>}</ins>
+
+<ins>#endif // MYRP_POST_EFFECT_STACK_INCLUDED</ins></pre>
+						
+						<p>Have <code>MyPostProcessingStack</code> keep track of a static material that uses this shader. <code>Shader.Find</code> is the simplest way to get a hold of it.</p>
+						
+						<pre translate="no">	<ins>static Material material;</ins>
+
+	static void InitializeStatic () {
+		&hellip;
+
+		<ins>material =</ins>
+			<ins>new material(Shader.Find("Hidden/My Pipeline/PostEffectStack")) {</ins>
+				<ins>name = "My Post-Processing Stack material",</ins>
+				<ins>hideFlags = HideFlags.HideAndDontSave</ins>
+			<ins>};</ins>
+	}</pre>
+						
+						<p>That always works in the editor, but will fail in a build if the shader is not included. We can enforce that by adding it to the <em translate="no">Always Included Shaders</em> array in the <em translate="no">Graphics</em> project settings. There are other ways to ensure that the shader gets included, but this is the approach that requires the least amount of code.</p>
+						
+						<figure>
+							<img src="full-screen-triangle/always-included.png" width="328" height="108">
+							<figcaption>Always include post-processing shader.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Drawing</h3>
+						
+						<p>Now we can copy the color texture by invoking <code>CommandBuffer.DrawMesh</code> instead of <code>Blit</code>. At minimum, we need to specify the mesh, transformation matrix, and material to use. As we don't transform vertices any matrix will do.</p>
+						
+						<pre translate="no">	public void Render (CommandBuffer cb, int cameraColorId, int cameraDepthId) {
+		InitializeStatic();
+		<del>//cb.Blit(cameraColorId, BuiltinRenderTextureType.CameraTarget);</del>
+		<ins>cb.DrawMesh(fullScreenTriangle, Matrix4x4.identity, material);</ins>
+	}</pre>
+						
+						<p>But <code>Blit</code> does more than just draw a quad. It also sets the render target. We now have to do that ourselves.</p>
+						
+						<pre translate="no">		<ins>cb.SetRenderTarget(</ins>
+			<ins>BuiltinRenderTextureType.CameraTarget,</ins>
+			<ins>RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store</ins>
+		<ins>);</ins>
+		cb.DrawMesh(fullScreenTriangle, Matrix4x4.identity, material);</pre>
+						
+						<p>We now render the final result with our own triangle, which you can verify via the frame debugger. The draw call is now listed as <em translate="no">Draw Mesh</em> and uses only three vertices and no matrix. The result looks good, except that it might appear upside down. That happens because Unity performs a vertical flip in some cases to get consistent results. For example, when not using OpenGL the scene view window and small camera preview will be flipped.</p>
+						
+						<p>Our shader can detect whether a flip happens by checking the X component of the <code class="shader">_ProjectionParams</code> vector, which got set when our pipeline invoked <code>SetupCameraProperties</code>. If it is negative then we should flip the V coordinate.</p>
+						
+						<pre class="shader"><ins>float4 _ProjectionParams;</ins>
+
+&hellip;
+
+VertexOutput CopyPassVertex (VertexInput input) {
+	&hellip;
+	<ins>if (_ProjectionParams.x &lt; 0.0) {</ins>
+		<ins>output.uv.y = 1.0 - output.uv.y;</ins>
+	<ins>}</ins>
+	return output;
+}</pre>
+					</section>
+					
+					<section>
+						<h3>Variable Source Texture</h3>
+						
+						<p><code>CommandBuffer.Blit</code> can work with any source texture. It does this by binding it to the <em translate="no">_MainTex</em> shader property. We can do the same by invoking <code>CommandBuffer.SetGlobalTexture</code> before drawing our triangle in <code>MyPostProcessingStack.Render</code>.</p>
+						
+						<pre translate="no">	<ins>static int mainTexId = Shader.PropertyToID("_MainTex");</ins>
+
+	&hellip;
+	
+	public void Render (
+		CommandBuffer cb, int cameraColorId, int cameraDepthId
+	) {
+		<ins>cb.SetGlobalTexture(mainTexId, cameraColorId);</ins>
+		&hellip;
+	}</pre>
+						
+						<p>Then adjust the shader so it samples <em translate="no">_MainTexture</em> instead of <em translate="no">_CameraColorTexture</em>. This way our stack no longer needs to know which shader property the pipeline uses.</p>
+						
+						<pre class="shader">TEXTURE2D(<ins>_MainTex</ins>);
+SAMPLER(<ins>sampler_MainTex</ins>);
+
+&hellip;
+
+float4 CopyPassFragment (VertexOutput input) : SV_TARGET {
+	return SAMPLE_TEXTURE2D(<ins>_MainTex</ins>, <ins>sampler_MainTex</ins>, input.uv);
+}</pre>
+						
+					</section>
+				</section>
+				
+				<section>
+					<h2>Blurring</h2>
+					
+					<p>To see our post-processing stack in action, let's create a simple blur effect.
+					
+					<section>
+						<h3>Shader</h3>
+						
+						<p>We'll put the code for all of our post-processing effects in the same shader, using a different pass for each. That way we can reuse code in the shader file and only have to deal with a single material. Begin by renaming <code>CopyPassVertex</code> to <code>DefaultPassVertex</code> in the HLSL file, because it's a simple vertex program that can be used for many effects. Then add a <code>BlurPassFragment</code>, initially a duplicate of <code>CopyPassFragment</code>.</p>
+						
+						<pre class="shader">VertexOutput <ins>DefaultPassVertex</ins> (VertexInput input) {
+	&hellip;
+}
+
+float4 CopyPassFragment (VertexOutput input) : SV_TARGET {
+	return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
+}
+
+<ins>float4 BlurPassFragment (VertexOutput input) : SV_TARGET {</ins>
+	<ins>return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);</ins>
+<ins>}</ins></pre>
+						
+						<p>Then adjust the shader file to match, adding a second pass for blurring. Move the culling and depth configuration up to the subshader level so we don't have to repeat that code. The include directive can also be shared this way, by putting it inside an <code class="shader">HLSLINCLUDE</code> block.</p>
+						
+						<pre class="shader">Shader "Hidden/My Pipeline/PostEffectStack" {
+	SubShader {
+		<ins>Cull Off</ins>
+		<ins>ZTest Always</ins>
+		<ins>ZWrite Off</ins>
+		
+		<ins>HLSLINCLUDE</ins>
+		<ins>#include "../ShaderLibrary/PostEffectStack.hlsl"</ins>
+		<ins>ENDHLSL</ins>
+		
+		Pass { <ins>// 0 Copy</ins>
+			<del>//Cull Off</del>
+			<del>//ZTest Always</del>
+			<del>//ZWrite Off</del>
+			
+			HLSLPROGRAM
+			#pragma target 3.5
+			#pragma vertex <ins>DefaultPassVertex</ins>
+			#pragma fragment CopyPassFragment
+			ENDHLSL
+		}
+		
+		<ins>Pass { // 1 Blur</ins>
+			<ins>HLSLPROGRAM</ins>
+			<ins>#pragma target 3.5</ins>
+			<ins>#pragma vertex DefaultPassVertex</ins>
+			<ins>#pragma fragment BlurPassFragment</ins>
+			<ins>ENDHLSL</ins>
+		<ins>}</ins>
+	}
+}</pre>
+						
+						<p>Now we can select the blur pass in <code>MyPostProcessingStack.Render</code>, by adding 1 as a fourth argument. The required third argument is the submesh index, which is always zero. To make it clearer which pass we are rendering, define a <code>Pass</code> enum inside <code>MyPostProcessingStack</code> for the copy and blur passes.</p>
+						
+						<pre translate="no">	<ins>enum Pass { Copy, Blur };</ins>
+
+	&hellip;
+	
+	public void Render (CommandBuffer cb, int cameraColorId, int cameraDepthId) {
+		&hellip;
+		cb.DrawMesh(
+			fullScreenTriangle, Matrix4x4.identity, material, <ins>0, (int)Pass.Blur</ins>
+		);
+	}</pre>
+						
+					</section>
+					
+					<section>
+						<h3>Filtering</h3>
+						
+						<p>Blurring is done by filtering the image, which means sampling and combining multiple pixels of the source texture per rendered fragment. To make that easy, add a <code>BlurSample</code> function to the HLSL file that has parameters for the original UV coordinates plus separate U and V offsets. The offsets are defined in pixels. We can use the relevant screen-space derivatives of the U and V coordinates to convert the offsets to UV space. Begin by sampling the source texture without any offset. As the effect works at pixel scale, it's easiest to see by increasing the scale factor of the game window.</p>
+						
+						<pre class="shader"><ins>float4 BlurSample (float2 uv, float uOffset = 0.0, float vOffset = 0.0) {</ins>
+	<ins>uv += float2(uOffset * ddx(uv.x), vOffset * ddy(uv.y));</ins>
+	<ins>return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, uv);</ins>
+<ins>}</ins>
+
+float4 BlurPassFragment (VertexOutput input) : SV_TARGET {
+	return <ins>BlurSample(input.uv)</ins>;
+}</pre>
+						
+						<figure>
+							<img src="blurring/normal.png" width="400" height="240">
+							<figcaption>Unmodified image at &times;10 scale.</figcaption>
+						</figure>
+						
+						<p>The simplest blur operation is a 2&times;2 box filter, which averages a block of four pixels. We could do that by sampling four times, but we can also do it by sampling once at the corner of four pixels, by offsetting the UV coordinates half a pixel in both dimensions. Bilinear texture filtering will then take care of averaging for us.</p>
+						
+						<figure>
+							<img src="blurring/2x2-box-filter.png" width="156" height="156">
+							<figcaption>2x2 box filter.</figcaption>
+						</figure>
+						
+						<pre class="shader">	return BlurSample(input.uv<ins>, 0.5, 0.5</ins>);</pre>
+						
+						<p>However, the default filter mode is point, which clamps to the nearest pixel, so that currently only moves the image. We have to change <code>MyPipeline.Render</code> so it uses bilinear filtering for its color texture. This change only matters when not sampling at the center of pixels.</p>
+						
+						<pre translate="no">			cameraBuffer.GetTemporaryRT(
+				cameraColorTextureId, camera.pixelWidth, camera.pixelHeight, 0<ins>,</ins>
+				<ins>FilterMode.Bilinear</ins>
+			);</pre>
+						
+						<figure>
+							<img src="blurring/2x2.png" width="400" height="240">
+							<figcaption>2x2 box filter applied.</figcaption>
+						</figure>
+						
+						<p>While this blurs the image, it also moves it a bit due to the offset. We can eliminate the directional bias by sampling four times with offsets in all four diagonal directions, then averaging them. As this is the final rendering step we don't need the alpha channel so can set it to 1. That way we avoid calculating the average of the alpha channel.</p>
+						
+						<pre class="shader">float4 BlurPassFragment (VertexOutput input) : SV_TARGET {
+	<ins>float4 color =</ins>
+		BlurSample(input.uv, 0.5, 0.5) <ins>+</ins>
+		<ins>BlurSample(input.uv, -0.5, 0.5) +</ins>
+		<ins>BlurSample(input.uv, 0.5, -0.5) +</ins>
+		<ins>BlurSample(input.uv, -0.5, -0.5);</ins>
+	<ins>return float4(color.rgb * 0.25, 1);</ins>
+}</pre>
+						
+						<figure>
+							<img src="blurring/3x3.png" width="400" height="240">
+							<figcaption>Averaging four samples.</figcaption>
+						</figure>
+
+						<p>This covers a 3&times;3 pixel region with overlapping 2&times;2 samples, which means that pixels nearer to the center contribute more to the final color. This operation is known as 3&times;3 tent filter.</p>
+						
+						<figure>
+							<img src="blurring/3x3-tent-filter.png" width="231" height="231">
+							<figcaption>3x3 tent filter.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Blurring Twice</h3>
+						
+						<p>The blur effect might appear strong when zoomed in, but is subtle when zoomed out and might be hardly noticeable when rendering at a high resolution. We can strengthen the effect by increasing the filter region further, but that also makes the pass more complex. Another approach is to keep the filer that we have but apply it more than once. For example, performing a second blur pass would increase the filter size to 5&times;5. Let's do that.</p>
+						
+						<p>First, put all code for a single blit in a separate <code>Blit</code> method so we can reuse it. Its parameters are the command buffer, source and destination IDs, and the pass.</p>
+						
+						<pre translate="no">	public void Render (CommandBuffer cb, int cameraColorId, int cameraDepthId) {
+		InitializeStatic();
+		<ins>Blit(</ins>
+			<ins>cb, cameraColorId, BuiltinRenderTextureType.CameraTarget, Pass.Blur</ins>
+		<ins>);</ins>
+	<ins>}</ins>
+	
+	<ins>void Blit (</ins>
+		<ins>CommandBuffer cb,</ins>
+		<ins>RenderTargetIdentifier sourceId, RenderTargetIdentifier destinationId,</ins>
+		<ins>Pass pass = Pass.Copy</ins>
+	<ins>) {</ins>
+		cb.SetGlobalTexture(mainTexId, sourceId);
+		cb.SetRenderTarget(
+			<ins>destinationId</ins>,
+			RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store
+		);
+		cb.DrawMesh(
+			fullScreenTriangle, Matrix4x4.identity, material, 0, (int)<ins>pass</ins>
+		);
+	}</pre>
+						
+						<p>Now we can blit twice in <code>Render</code>, but we cannot blit from the color texture to itself. The result would be undefined and differs per platform. So we have to get a temporary render texture to store the intermediate result. To be able to create this texture we have to add the width and height as parameters.</p>
+						
+						<pre translate="no">	<ins>static int tempTexId = Shader.PropertyToID("_MyPostProcessingStackTempTex");</ins>
+
+	&hellip;
+
+	public void Render (
+		CommandBuffer cb, int cameraColorId, int cameraDepthId<ins>,</ins>
+		<ins>int width, int height</ins>
+	) {
+		InitializeStatic();
+		<ins>cb.GetTemporaryRT(tempTexId, width, height, 0, FilterMode.Bilinear);</ins>
+		<ins>Blit(cb, cameraColorId, tempTexId, Pass.Blur);</ins>
+		Blit(cb, <ins>tempTexId</ins>, BuiltinRenderTextureType.CameraTarget, Pass.Blur);
+		<ins>cb.ReleaseTemporaryRT(tempTexId);</ins>
+	}</pre>
+						
+						<p>Supply the width and height in <code>MyPipeline.Render</code>.</p>
+						
+						<pre translate="no">			defaultStack.Render(
+				postProcessingBuffer, cameraColorTextureId, cameraDepthTextureId<ins>,</ins>
+				<ins>camera.pixelWidth, camera.pixelHeight</ins>
+			);</pre>
+						
+						<figure>
+							<img src="blurring/blurred-twice.png" width="400" height="240">
+							<figcaption>Blurred twice.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Configurable Blur</h3>
+						
+						<p>Blurring twice produces softer results, but still won't be obvious at high resolutions. To make it stand out we'll have to add a few more passes. Let's make this configurable by adding a blur strength slider to <code>MyPostProcessingStack</code>.</p>
+						
+						<pre translate="no">	<ins>[SerializeField, Range(0, 10)]</ins>
+	<ins>int blurStrength;</ins></pre>
+						
+						<p>Move the blurring to a separate <code>Blur</code> method. Invoke it in <code>Render</code> only when the strength is positive, otherwise perform a regular copy.
+						
+						<pre translate="no">	public void Render (
+		CommandBuffer cb, int cameraColorId, int cameraDepthId,
+		int width, int height
+	) {
+		InitializeStatic();
+		<ins>if (blurStrength > 0) {</ins>
+			<ins>Blur(cb, cameraColorId, width, height);</ins>
+		<ins>}</ins>
+		<ins>else {</ins>
+			<ins>Blit(cb, cameraColorId, BuiltinRenderTextureType.CameraTarget);</ins>
+		<ins>}</ins>
+	}</pre>
+						
+						<p>Let's begin by always blurring twice when the strength is greater than one. If not we can suffice with a single blur straight to the camera target.</p>
+						
+						<pre translate="no">	<ins>void Blur (CommandBuffer cb, int cameraColorId, int width, int height) {</ins>
+		<ins>cb.GetTemporaryRT(tempTexId, width, height, 0, FilterMode.Bilinear);</ins>
+		<ins>}</ins>
+		<ins>if (blurStrength > 1) {</ins>
+			<ins>Blit(cb, cameraColorId, tempTexId, Pass.Blur);</ins>
+			<ins>Blit(cb, tempTexId, BuiltinRenderTextureType.CameraTarget, Pass.Blur);</ins>
+		<ins>}</ins>
+		<ins>else {</ins>
+			<ins>Blit(</ins>
+				<ins>cb, cameraColorId, BuiltinRenderTextureType.CameraTarget, Pass.Blur</ins>
+			<ins>);</ins>
+		<ins>}</ins>
+		<ins>cb.ReleaseTemporaryRT(tempTexId);</ins>
+	}</pre>
+						
+						<p>We can make this work for any strength by beginning with a loop in which we perform a double blur until at most two passes remain. Inside that loop we can alternate between using the temporary texture and the original color texture as the render target.</p>
+						
+						<pre translate="no">		cb.GetTemporaryRT(tempTexId, width, height, 0, FilterMode.Bilinear);
+		<ins>int passesLeft;</ins>
+		<ins>for (passesLeft = blurStrength; passesLeft > 2; passesLeft -= 2) {</ins>
+			<ins>Blit(cb, cameraColorId, tempTexId, Pass.Blur);</ins>
+			<ins>Blit(cb, tempTexId, cameraColorId, Pass.Blur);</ins>
+		<ins>}</ins>
+		if (<ins>passesLeft</ins> > 1) {
+			Blit(cb, cameraColorId, tempTexId, Pass.Blur);
+			Blit(cb, tempTexId, BuiltinRenderTextureType.CameraTarget, Pass.Blur);
+		}</pre>
+						
+						<p>And in the special case of only blurring once we can avoid getting the temporary texture.</p>
+						
+						<pre translate="no">		<ins>if (blurStrength == 1) {</ins>
+			<ins>Blit(</ins>
+				<ins>cb, cameraColorId, BuiltinRenderTextureType.CameraTarget,Pass.Blur</ins>
+			<ins>);</ins>
+			<ins>return;</ins>
+		<ins>}</ins>
+		cb.GetTemporaryRT(tempTexId, width, height, 0, FilterMode.Bilinear);</pre>
+						
+						<figure>
+							<img src="blurring/blur-strength.png" width="320" height="44" alt="inspector"><br>
+							<img src="blurring/blur-strength-5.png" width="400" height="240" alt="scene">
+							<figcaption>Blur strength 5.</figcaption>
+						</figure>
+						
+						<p>Let's wrap up our blur effect by grouping all its draw calls under a <em translate="no">Blur</em> entry in the frame debugger, by beginning and ending a nested sample in the <code>Blur</code> method.</p>
+						
+						<pre translate="no">	void Blur (CommandBuffer cb, int cameraColorId, int width, int height) {
+		<ins>cb.BeginSample("Blur");</ins>
+		if (blurStrength == 1) {
+			Blit(
+				cb, cameraColorId, BuiltinRenderTextureType.CameraTarget,Pass.Blur
+			);
+			<ins>cb.EndSample("Blur");</ins>
+			return;
+		}
+		&hellip;
+		<ins>cb.EndSample("Blur");</ins>
+	}</pre>
+						
+						<figure>
+							<img src="blurring/frame-debugger.png" width="298" height="114">
+							<figcaption>Blurring in the frame debugger.</figcaption>
+						</figure>
+						
+					</section>
+				</section>
+				
+				<section>
+					<h2>Using the Depth Buffer</h2>
+					
+					<p>As mentioned earlier, some post-processing effects depend on the depth buffer. We'll provide an example of how to do this by adding an effect that draws lines to indicate the depth.</p>
+					
+					<section>
+						<h3>Depth Stripes</h3>
+						
+						<p>Add a fragment function to the HLSL file for drawing depth stripes. Begin by sampling the depth, which we'll make available via <em translate="no">_MainTex</em>. We can use the <code class="shader">SAMPLE_DEPTH_TEXTURE</code> macro to make it work for all platforms.</p>
+						
+						<pre class="shader"><ins>float4 DepthStripesPassFragment (VertexOutput input) : SV_TARGET {</ins>
+	<ins>return SAMPLE_DEPTH_TEXTURE(_MainTex, sampler_MainTex, input.uv);</ins>
+<ins>}</ins></pre>
+						
+						<p>We need the world-space depth&mdash;which is the distance from the near place, not the camera's position&mdash;which we can find via the <code class="shader">LinearEyeDepth</code> function. Besides the raw depth it also needs <em translate="no">_ZBufferParams</em>, which is another vector set by <code>SetupCameraProperties</code>.</p>
+						
+						<pre class="shader"><ins>float4 _ZBufferParams;</ins>
+
+&hellip;
+
+float4 DepthStripesPassFragment (VertexOutput input) : SV_TARGET {
+	<ins>float rawDepth =</ins> SAMPLE_DEPTH_TEXTURE(_MainTex, sampler_MainTex, input.uv);
+	<ins>return LinearEyeDepth(rawDepth, _ZBufferParams);</ins>
+}</pre>
+						
+						<p>The simplest way to draw smooth stripes based on the depth `d` is to use `sin^2pid`. The result isn't beautiful but suffices to illustrate that the depth information is used.</p>
+						
+						<pre class="shader">float4 DepthStripesPassFragment (VertexOutput input) : SV_TARGET {
+	float rawDepth = SAMPLE_DEPTH_TEXTURE(_MainTex, sampler_MainTex, input.uv);
+	<ins>float depth =</ins> LinearEyeDepth(rawDepth, _ZBufferParams);
+	<ins>return pow(sin(3.14 * depth), 2.0);</ins>
+}</pre>
+						
+						<p>Add a pass for the depth stripes to the shader.</p>
+						
+						<pre class="shader">		<ins>Pass { // 2 DepthStripes</ins>
+			<ins>HLSLPROGRAM</ins>
+			<ins>#pragma target 3.5</ins>
+			<ins>#pragma vertex DefaultPassVertex</ins>
+			<ins>#pragma fragment DepthStripesPassFragment</ins>
+			<ins>ENDHLSL</ins>
+		<ins>}</ins></pre>
+						
+						<p>Also add the pass to the enum in <code>MyPostProcessingStack</code> and then blit from depth to color with it in <code>Render</code>. Do this before blurring, but set the blur strength to zero to disable it.</p>
+						
+						<pre translate="no">	enum Pass { Copy, Blur<ins>, DepthStripes</ins> };
+
+	&hellip;
+
+	public void Render (
+		CommandBuffer cb, int cameraColorId, int cameraDepthId,
+		int width, int height
+	) {
+		InitializeStatic();
+		<ins>Blit(cb, cameraDepthId, cameraColorId, Pass.DepthStripes);</ins>
+
+		&hellip;
+	}</pre>
+						
+						<figure>
+							<img src="using-the-depth-buffer/depth-stripes.png" width="320" height="220">
+							<figcaption>Depth stripes.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Mixing Depth and Color</h3>
+						
+						<p>Instead of completely replacing the original image we can factor the striped into it. This requires us to use two source textures. We could directly use <code>_CameraDepthTexture</code>, but let's keep the stack unaware of how exactly the pipeline renders depth and instead bind it to <em translate="no">_DepthTex</em> to accompany <em translate="no">_MainTex</em>. Also, to keep blurring working we have to render to the color texture, which requires a temporary texture and an extra copy. Put all that code in a separate <code>DepthStripes</code> method that groups the draws under <em translate="no">Depth Stripes</em>.</p>
+						
+						<pre translate="no">	<ins>static int depthTexId = Shader.PropertyToID("_DepthTex");</ins>
+	
+	&hellip;
+	
+	public void Render (
+		CommandBuffer cb, int cameraColorId, int cameraDepthId,
+		int width, int height
+	) {
+		InitializeStatic();
+		<del>//Blit(cb, depthTextureId, colorTextureId, Pass.DepthStripes);</del>
+		<ins>DepthStripes(cb, cameraColorId, cameraDepthId, width, height);</ins>
+
+		&hellip;
+	}
+
+	&hellip;
+
+	<ins>void DepthStripes (</ins>
+		<ins>CommandBuffer cb, int cameraColorId, int cameraDepthId,</ins>
+		<ins>int width, int height</ins>
+	<ins>) {</ins>
+		<ins>cb.BeginSample("Depth Stripes");</ins>
+		<ins>cb.GetTemporaryRT(tempTexId, width, height);</ins>
+		<ins>cb.SetGlobalTexture(depthTexId, cameraDepthId);</ins>
+		<ins>Blit(cb, cameraColorId, tempTexId, Pass.DepthStripes);</ins>
+		<ins>Blit(cb, tempTexId, cameraColorId);</ins>
+		<ins>cb.ReleaseTemporaryRT(tempTexId);</ins>
+		<ins>cb.EndSample("Depth Stripes");</ins>
+	<ins>}</ins></pre>
+						
+						<p>Then adjust <code class="shader">DepthStripesPassFragment</code> so it samples both the color texture and depth texture and multiplies the color with the striples.</p>
+						
+						<pre class="shader"><ins>TEXTURE2D(_DepthTex);</ins>
+<ins>SAMPLER(sampler_DepthTex);</ins>
+
+&hellip;
+
+float4 DepthStripesPassFragment (VertexOutput input) : SV_TARGET {
+	float rawDepth = SAMPLE_DEPTH_TEXTURE(<ins>_DepthTex</ins>, <ins>sampler_DepthTex</ins>, input.uv);
+	float depth = LinearEyeDepth(rawDepth, _ZBufferParams);
+	<ins>float4 color = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);</ins>
+	return <ins>color *</ins> pow(sin(3.14 * depth), 2.0);
+}</pre>
+						
+						<figure>
+							<img src="using-the-depth-buffer/colored-depth-stripes.png" width="320" height="220">
+							<figcaption>Colored depth stripes.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Skipping the Sky Box</h3>
+						
+						<p>The stripes get applied to everything, also the sky box. But the sky box doesn't render to the depth buffer, which means that it ends up with the greatest possible depth value. However the results are unstable and if a lot of the sky is visible a big portion of the window can flicker terribly during camera movement. It is best to not to modify the sky. The default raw depth value is either zero or one, depending on whether the depth buffer is reversed, which is the case for non-OpenGL platforms. If so <code class="shader">UNITY_REVERSED_Z</code> is defined, which we can use to check whether the fragment has a valid depth. If not, return the original color.</p>
+						
+						<pre class="shader">	<ins>#if UNITY_REVERSED_Z</ins>
+		<ins>bool hasDepth = rawDepth != 0;</ins>
+	<ins>#else</ins>
+		<ins>bool hasDepth = rawDepth != 1;</ins>
+	<ins>#endif</ins>
+	<ins>if (hasDepth) {</ins>
+		<ins>color *=</ins> pow(sin(3.14 * depth), 2.0);
+	<ins>}</ins>
+	return <ins>color;</ins></pre>
+					</section>
+					
+					<section>
+						<h3>Opaque-Only Post-Processing</h3>
+						
+						<p>Besides the sky box, transparent geometry also doesn't write to the depth buffer. Thus stripes get applied on top of transparent surfaces based on what's behind them. Effects like depth-of-field behave in the same way. For some effects it's better that they aren't applied to transparent object at all. That can be accomplished by rendering them before transparent geometry, making them post-opaque pre-transparent effects.</p>
+						
+						<p>We can make the depth stripes affect only opaque geometry by splitting <code>MyPostProcessingStack.Render</code> in two methods: <code>RenderAfterOpaque</code> and <code>RenderAfterTransparent</code>. The first initializes and does the stripes while the latter does the blur.</p>
+						
+						<pre translate="no">	<ins>public void RenderAfterOpaque (</ins>
+		<ins>CommandBuffer cb, int cameraColorId, int cameraDepthId,</ins>
+		<ins>int width, int height</ins>
+	<ins>) {</ins>
+		<ins>InitializeStatic();</ins>
+		<ins>DepthStripes(cb, cameraColorId, cameraDepthId, width, height);</ins>
+	<ins>}</ins>
+
+	public void <ins>RenderAfterTransparent</ins> (
+		CommandBuffer cb, int cameraColorId, int cameraDepthId,
+		int width, int height
+	) {
+		<del>//InitializeStatic();</del>
+		<del>//DepthStripes(cb, cameraColorId, cameraDepthId, width, height);</del>
+		if (blurStrength > 0) {
+			Blur(cb, cameraColorId, width, height);
+		}
+		else {
+			Blit(cb, cameraColorId, BuiltinRenderTextureType.CameraTarget);
+		}
+	}</pre>
+						
+						<p><code>MyPipeline.Render</code> now also has to invoke the stack directly after drawing the sky box, using the appropriate method.</p>
+						
+						<pre translate="no">		context.DrawSkybox(camera);
+
+		<ins>if (defaultStack) {</ins>
+			<ins>defaultStack.RenderAfterOpaque(</ins>
+				<ins>postProcessingBuffer, cameraColorTextureId, cameraDepthTextureId,</ins>
+				<ins>camera.pixelWidth, camera.pixelHeight</ins>
+			<ins>);</ins>
+			<ins>context.ExecuteCommandBuffer(postProcessingBuffer);</ins>
+			<ins>postProcessingBuffer.Clear();</ins>
+		<ins>}</ins>
+
+		drawSettings.sorting.flags = SortFlags.CommonTransparent;
+		filterSettings.renderQueueRange = RenderQueueRange.transparent;
+		context.DrawRenderers(
+			cull.visibleRenderers, ref drawSettings, filterSettings
+		);
+
+		DrawDefaultPipeline(context, camera);
+
+		if (defaultStack) {
+			defaultStack.<ins>RenderAfterTransparent</ins>(
+				postProcessingBuffer, cameraColorTextureId, cameraDepthTextureId,
+				camera.pixelWidth, camera.pixelHeight
+			);
+			&hellip;
+		}</pre>
+						
+						<p>We also have to make sure that the render target is set up correctly after rendering the opaque post-processing effects. We have to set the color and depth targets again, and this time we do care that they are loaded.</p>
+						
+						<pre translate="no">		if (activeStack) {
+			activeStack.RenderAfterOpaque(
+				postProcessingBuffer, cameraColorTextureId, cameraDepthTextureId,
+				camera.pixelWidth, camera.pixelHeight
+			);
+			context.ExecuteCommandBuffer(postProcessingBuffer);
+			postProcessingBuffer.Clear();
+			<ins>cameraBuffer.SetRenderTarget(</ins>
+				<ins>cameraColorTextureId,</ins>
+				<ins>RenderBufferLoadAction.Load, RenderBufferStoreAction.Store,</ins>
+				<ins>cameraDepthTextureId,</ins>
+				<ins>RenderBufferLoadAction.Load, RenderBufferStoreAction.Store</ins>
+			<ins>);</ins>
+			<ins>context.ExecuteCommandBuffer(cameraBuffer);</ins>
+			<ins>cameraBuffer.Clear();</ins>
+		}</pre>
+						
+						<figure>
+							<img src="using-the-depth-buffer/frame-debugger.png" width="298" height="178" alt="frame debugger"><br>
+							<img src="using-the-depth-buffer/after-opaque.png" width="320" height="220" alt="scene">
+							<figcaption>Drawing depth stripes after opaque geometry.</figcaption>
+						</figure>
+					</section>
+					
+					<section>
+						<h3>Optional Stripes</h3>
+						
+						<p>Because the depth stripes are just a test, let's make them optional by adding a toggle to <code>MyPostProcessingStack</code>.</p>
+						
+						<pre translate="no">	<ins>[SerializeField]</ins>
+	<ins>bool depthStripes;</ins>
+
+	&hellip;
+
+	public void RenderAfterOpaque (
+		CommandBuffer cb, int cameraColorId, int cameraDepthId,
+		int width, int height
+	) {
+		InitializeStatic();
+		<ins>if (depthStripes) {</ins>
+			DepthStripes(cb, cameraColorId, cameraDepthId, width, height);
+		<ins>}</ins>
+	}</pre>
+						
+						<figure>
+							<img src="using-the-depth-buffer/optional-stripes.png" width="320" height="60">
+							<figcaption>Depth stripes enabled.</figcaption>
+						</figure>
+					</section>
+				</section>
+				
+				<section>
+					<h2>Post-Processing Per Camera</h2>
+					
+					<p>Currently the only way to enable post-processing is to configure a default stack, which get applied to all cameras. This includes not only the main camera and scene camera, but also cameras used to render reflection probes and any other cameras you might use. So the default stack is only appropriate for effects that should be applied to all those cameras. Typically most post-processing effects are applied to the main camera only. Also, there might be multiple cameras that each need different effects. So let's make it possible to select a stack per camera.</p>
+					
+					<section>
+						<h3>Camera Configuration</h3>
+						
+						<p>We cannot add configuration options to the existing <code>Camera</code> component. What we can do instead is create a new component type that contains the extra options. Name it <code>MyPipelineCamera</code>, have it require that it's attached to a game object that has a <code>Camera</code> component, and add a configurable post-processing stack field. Also add a public getter property to retrieve the stack.</p>
+						
+						<pre translate="no"><ins>using UnityEngine;</ins>
+
+<ins>[RequireComponent(typeof(Camera))]</ins>
+<ins>public class MyPipelineCamera : MonoBehaviour {</ins>
+
+	<ins>[SerializeField]</ins>
+	<ins>MyPostProcessingStack postProcessingStack = null;</ins>
+	
+	<ins>public MyPostProcessingStack PostProcessingStack {</ins>
+		<ins>get {</ins>
+			<ins>return postProcessingStack;</ins>
+		<ins>}</ins>
+	<ins>}</ins>
+<ins>}</ins></pre>
+						
+						<p>Attach this component to the main camera and assign our stack to it. The default stack of the pipeline asset can then be set to none.</p>
+						
+						<figure>
+							<img src="post-processing-per-camera/my-pipeline-camera.png" width="320" height="58">
+							<figcaption>Extra camera component with stack.</figcaption>
+						</figure>
+						
+						<p>To make this work <code>MyPipeline.Render</code> now has to get the <code>MyPipelineCamera</code> component from the camera used for rendering. If the component exists, use its stack as the active stack instead of the default.</p>
+						
+						<pre translate="no">		<ins>var myPipelineCamera = camera.GetComponent&lt;MyPipelineCamera>();</ins>
+		<ins>MyPostProcessingStack activeStack = myPipelineCamera ?</ins>
+			<ins>myPipelineCamera.PostProcessingStack : defaultStack;</ins>
+
+		if (<ins>activeStack</ins>) {
+			cameraBuffer.GetTemporaryRT(
+				cameraColorTextureId, camera.pixelWidth, camera.pixelHeight, 0,
+				FilterMode.Bilinear
+			);
+			&hellip;
+		}
+
+		&hellip;
+		
+		if (<ins>activeStack</ins>) {
+			<ins>activeStack</ins>.RenderAfterOpaque(
+				postProcessingBuffer, cameraColorTextureId, cameraDepthTextureId,
+				camera.pixelWidth, camera.pixelHeight
+			);
+			&hellip;
+		}
+
+		&hellip;
+
+		if (<ins>activeStack</ins>) {
+			<ins>activeStack</ins>.RenderAfterTransparent(
+				postProcessingBuffer, cameraColorTextureId, cameraDepthTextureId,
+				camera.pixelWidth, camera.pixelHeight
+			);
+			&hellip;
+		}</pre>
+					</section>
+					
+					<section>
+						<h3>Scene Camera</h3>
+						
+						<p>We can now select a post-processing stack for each camera in the scene, but we cannot directly control the camera used to render the scene window. What we can do instead is attach the <code>ImageEffectAllowedInSceneView</code> attribute to <code>MyPipelineCamera</code>.</p>
+						
+						
+						<pre translate="no">[<ins>ImageEffectAllowedInSceneView,</ins> RequireComponent(typeof(Camera))]
+public class MyPipelineCamera : MonoBehaviour { &hellip; }</pre>
+						
+						<p>Despite the attribute's name, it doesn't apply to image effects specifically. Unity will simply copy all components of the active main camera that have this attribute to the scene camera. So to make this work the camera must have the <em translate="no">MainCamera</em> tag.</p>
+						
+						<figure>
+							<img src="post-processing-per-camera/main-camera.png" width="320" height="42">
+							<figcaption>Camera tagged as main.</figcaption>
+						</figure>
+						
+						<p>The next tutorial is <a href="https://catlikecoding.com/unity/tutorials/scriptable-render-pipeline/image-quality/">Image Quality</a>.</p>
+					</section>
+					
+					<a href="https://bitbucket.org/catlikecodingunitytutorials/scriptable-render-pipeline-11-post-processing/" class="repository">repository</a>
+					<a href="Post-Processing.pdf" download rel="nofollow">PDF</a>
+				</section>
+				
+			</article>
+		</main>
+
+		<footer>
+			<p>Enjoying the <a href="../../../tutorials">tutorials</a>? Are they useful? Want more?</p>
+			<p><b><a href="https://www.patreon.com/catlikecoding">Please support me on Patreon!</a></b></p>
+			<p><a href="https://www.patreon.com/catlikecoding"><img src="../../become-a-patron.png" alt="Become my patron!" width="217" height="51"></a></p>
+			<p><b><a href="../../donating.html">Or make a direct donation</a>!</b></p>
+			<p>made by <a href="../../../../about/index.html" rel="author">Jasper Flick</a></p>
+		</footer>
+		
+		<script src="../../tutorials.js"></script>
+	</body>
+</html>
